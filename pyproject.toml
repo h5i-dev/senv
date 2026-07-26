@@ -32,7 +32,7 @@ Repository = "https://github.com/h5i-dev/h5i-python"
 Issues = "https://github.com/h5i-dev/h5i-python/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6", "mypy>=1.8"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/h5i"]

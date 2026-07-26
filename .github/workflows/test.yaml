@@ -46,10 +46,16 @@ jobs:
       - run: pip install build twine
       - run: python -m build
       - run: twine check dist/*
+      - name: Wheel ships py.typed (PEP 561)
+        run: unzip -l dist/*.whl | grep -F 'h5i/py.typed'
       - name: Wheel installs and imports
         run: |
           pip install dist/*.whl
           python -c "import h5i.orchestra as o; print(o.__version__)"
+      - name: Installed wheel is typed (mypy smoke)
+        run: |
+          pip install mypy
+          python -m mypy -c "from h5i.orchestra import Conductor; reveal_type(Conductor)"
 
   # Build the Rust engine from the sibling h5i repo and run the cross-process
   # integration suite against the real `h5i orchestra serve` binary. The
