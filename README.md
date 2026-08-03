@@ -5,9 +5,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/h5i-dev/h5i-python/actions/workflows/test.yaml"><img alt="tests" src="https://github.com/h5i-dev/h5i-python/actions/workflows/test.yaml/badge.svg"></a>
-  <a href="https://github.com/h5i-dev/h5i-python/blob/main/LICENSE"><img alt="Apache-2.0" src="https://img.shields.io/github/license/h5i-dev/h5i-python?color=blue"></a>
-  <a href="https://github.com/h5i-dev/h5i-python/releases"><img alt="release" src="https://img.shields.io/github/v/release/h5i-dev/h5i-python?label=release"></a>
+  <a href="https://github.com/h5i-dev/h5i-orchestra/actions/workflows/test.yaml"><img alt="tests" src="https://github.com/h5i-dev/h5i-orchestra/actions/workflows/test.yaml/badge.svg"></a>
+  <a href="https://github.com/h5i-dev/h5i-orchestra/blob/main/LICENSE"><img alt="Apache-2.0" src="https://img.shields.io/github/license/h5i-dev/h5i-orchestra?color=blue"></a>
+  <a href="https://github.com/h5i-dev/h5i-orchestra/releases"><img alt="release" src="https://img.shields.io/github/v/release/h5i-dev/h5i-orchestra?label=release"></a>
 </p>
 
 <h1 align="center">h5i-orchestra: Programmable Multi-Agent Orchestration</h1>
