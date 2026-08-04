@@ -38,7 +38,7 @@ Install the Python SDK from GitHub:
 
 ```bash
 pip install h5i-orchestra
-# pip install "git+https://github.com/h5i-dev/h5i-python.git"
+# pip install "git+https://github.com/h5i-dev/h5i-orchestra.git"
 ```
 
 ## 2. Quickstart
