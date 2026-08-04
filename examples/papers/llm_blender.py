@@ -15,8 +15,9 @@ and the fuser gets the top-k by win count.
 
 import asyncio
 import sys
+from collections.abc import Mapping
 from itertools import combinations
-from typing import Any, Mapping
+from typing import Any
 
 from h5i.orchestra import Conductor
 

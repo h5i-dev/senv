@@ -1,7 +1,6 @@
 """Unit tests for the herdr launcher and opener (``_herdr``)."""
 
 import json
-
 import stat
 
 import pytest

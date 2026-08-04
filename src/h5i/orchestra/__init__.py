@@ -32,7 +32,6 @@ lives in the ``h5i`` binary.
 
 from . import patterns, policy
 from ._conductor import PROTOCOL_VERSION, Agent, Conductor, Scope
-from ._herdr import HerdrLauncher
 from ._errors import (
     AskParseError,
     BridgeClosedError,
@@ -41,6 +40,7 @@ from ._errors import (
     ProtocolError,
     RpcError,
 )
+from ._herdr import HerdrLauncher
 from ._types import (
     ApplyResult,
     Artifact,
@@ -58,32 +58,29 @@ from .patterns import approves
 __version__ = "0.1.0"
 
 __all__ = [
-    "Conductor",
-    "Agent",
-    "Scope",
-    "HerdrLauncher",
     "PROTOCOL_VERSION",
-    # data
-    "Artifact",
-    "Review",
-    "Verification",
-    "Verdict",
+    "Agent",
     "ApplyResult",
+    "Artifact",
+    "AskParseError",
+    "BridgeClosedError",
+    "CompareRow",
+    "Conductor",
+    "GateAnswer",
+    "H5iError",
+    "HerdrLauncher",
+    "OrchestraError",
+    "ProtocolError",
+    "Review",
+    "RpcError",
     "Run",
     "RunAgent",
-    "CompareRow",
-    "GateAnswer",
+    "Scope",
     "TurnContext",
-    # errors
-    "OrchestraError",
-    "BridgeClosedError",
-    "ProtocolError",
-    "RpcError",
-    "H5iError",
-    "AskParseError",
-    # modules & helpers
-    "policy",
-    "patterns",
-    "approves",
+    "Verdict",
+    "Verification",
     "__version__",
+    "approves",
+    "patterns",
+    "policy",
 ]

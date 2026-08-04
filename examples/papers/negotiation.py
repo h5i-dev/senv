@@ -14,7 +14,8 @@ price trajectory is host-side state, and every game is journaled.
 
 import asyncio
 import sys
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from h5i.orchestra import Conductor
 

@@ -34,7 +34,8 @@ import json
 import os
 import shutil
 import sys
-from typing import Any, Callable, Mapping
+from collections.abc import Callable, Mapping
+from typing import Any
 
 from ._errors import OrchestraError
 from ._types import TurnContext

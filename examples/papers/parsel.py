@@ -17,7 +17,8 @@ verification of the composition. The compositional counterpart of
 import asyncio
 import json
 import sys
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from h5i.orchestra import Conductor, patterns
 
@@ -80,18 +81,22 @@ async def main(task: str) -> None:
             [
                 (
                     coders[i % len(coders)],
-                    f"Implement EXACTLY this function, with unit tests for "
-                    f"it (assume the other functions in the graph exist as "
-                    f"specified):\n{json.dumps(f, indent=2)}\n\n"
-                    f"Full graph for context:\n{graph}\n\nPart of: {task}",
+                    (
+                        f"Implement EXACTLY this function, with unit tests for "
+                        f"it (assume the other functions in the graph exist as "
+                        f"specified):\n{json.dumps(f, indent=2)}\n\n"
+                        f"Full graph for context:\n{graph}\n\nPart of: {task}"
+                    ),
                 )
                 for i, f in enumerate(functions)
             ],
             reduce=(
                 composer,
-                f"Compose the granted per-function implementations into one "
-                f"coherent module for: {task}\nWire them per this dependency "
-                f"graph, resolve duplicate helpers, keep all tests:\n{graph}",
+                (
+                    f"Compose the granted per-function implementations into one "
+                    f"coherent module for: {task}\nWire them per this dependency "
+                    f"graph, resolve duplicate helpers, keep all tests:\n{graph}"
+                ),
             ),
         )
         merged = outcome.merged

@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from h5i.orchestra import PROTOCOL_VERSION
 from h5i.orchestra._conductor import Conductor

@@ -10,12 +10,12 @@ same journaled, auditable path as the built-ins.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Union
 
 from ._types import Run, Verdict
 
-__all__ = ["BuiltinPolicy", "tests_then_smallest_diff", "Policy"]
+__all__ = ["BuiltinPolicy", "Policy", "tests_then_smallest_diff"]
 
 
 @dataclass(frozen=True)
@@ -30,7 +30,4 @@ class BuiltinPolicy:
 #: commands, pick the smallest diff.
 tests_then_smallest_diff = BuiltinPolicy("tests_then_smallest_diff")
 
-Policy = Union[
-    BuiltinPolicy,
-    Callable[[Run], Union[Verdict, dict, Awaitable[Union[Verdict, dict]]]],
-]
+Policy = BuiltinPolicy | Callable[[Run], Verdict | dict | Awaitable[Verdict | dict]]

@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pytest
 
-
 EXAMPLES = Path(__file__).parents[1] / "examples"
 CHEAP_MODELS = {"claude-haiku-4-5", "gpt-5.4-mini"}
 

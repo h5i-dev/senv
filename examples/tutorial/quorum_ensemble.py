@@ -22,8 +22,8 @@ journaled: a killed run resumes without re-paying completed turns.
 
 import asyncio
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from h5i.orchestra import Agent, Artifact, Conductor, Review, Verdict, patterns
 

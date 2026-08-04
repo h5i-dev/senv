@@ -48,7 +48,7 @@ async def main(task: str) -> None:
         )
 
         # Implementation and test suite in parallel, mutually blind.
-        implementation, tests = await asyncio.gather(
+        _implementation, tests = await asyncio.gather(
             programmer.work(task, expect_independent=True),
             test_designer.work(
                 f"Design the test suite ONLY for: {task}\nWrite thorough "

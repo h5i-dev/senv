@@ -15,7 +15,8 @@ confidence-weighted vote, not a head count.
 
 import asyncio
 import sys
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from h5i.orchestra import Conductor
 

@@ -14,7 +14,8 @@ runtimes on the two sides sharpen the disagreement.
 
 import asyncio
 import sys
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from h5i.orchestra import Conductor
 
