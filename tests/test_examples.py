@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pytest
 
-
 EXAMPLES = Path(__file__).parents[1] / "examples"
 CHEAP_MODELS = {"claude-haiku-4-5", "gpt-5.4-mini"}
 
@@ -14,7 +13,7 @@ CHEAP_MODELS = {"claude-haiku-4-5", "gpt-5.4-mini"}
     ids=lambda p: str(p.relative_to(EXAMPLES)),
 )
 def test_examples_are_valid_python(path: Path):
-    ast.parse(path.read_text(), filename=str(path))
+    ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 
 
 @pytest.mark.parametrize("name", ["arena_score.py", "ensemble_score.py"])
@@ -41,7 +40,7 @@ def test_resident_examples_do_not_preflight_live_sessions(name: str):
     ids=lambda p: str(p.relative_to(EXAMPLES)),
 )
 def test_examples_pin_cheap_models(path: Path):
-    tree = ast.parse(path.read_text())
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     hire_calls = [
         call
         for call in ast.walk(tree)

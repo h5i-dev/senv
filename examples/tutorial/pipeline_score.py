@@ -32,20 +32,26 @@ async def main(task: str) -> None:
             [
                 (
                     architect,
-                    f"Design this task: {task}. Write docs/design.md with the "
-                    "approach, interface, and test plan. Submit only the doc.",
+                    (
+                        f"Design this task: {task}. Write docs/design.md with the "
+                        "approach, interface, and test plan. Submit only the doc."
+                    ),
                 ),
                 (
                     builder,
-                    "Implement the granted design exactly. If the design is "
-                    "ambiguous, choose the smallest reading and note it in "
-                    "your summary.",
+                    (
+                        "Implement the granted design exactly. If the design is "
+                        "ambiguous, choose the smallest reading and note it in "
+                        "your summary."
+                    ),
                 ),
                 (
                     hardener,
-                    "The granted artifact implements the feature. Add edge-case "
-                    "tests (empty repo, no commits, huge history) and fix what "
-                    "they catch. Keep the diff additive where possible.",
+                    (
+                        "The granted artifact implements the feature. Add edge-case "
+                        "tests (empty repo, no commits, huge history) and fix what "
+                        "they catch. Keep the diff additive where possible."
+                    ),
                 ),
             ],
         )

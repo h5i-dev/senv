@@ -35,7 +35,8 @@ import os
 import shlex
 import shutil
 import sys
-from typing import Any, Callable, Mapping, NamedTuple
+from collections.abc import Callable, Mapping
+from typing import Any, NamedTuple
 
 __all__ = ["Opener", "SessionWatcher", "resolve_opener", "session_prefix"]
 
@@ -269,7 +270,7 @@ class SessionWatcher:
                     f"pane {pane_id} (or: tmux attach -t {session})"
                 )
                 return
-        except Exception as e:  # a broken viewer must not fail the score
+        except Exception as e:  # noqa: BLE001  # a broken viewer must not fail the score
             self._echo(
                 f"[h5i] agent '{agent}' session up, but its viewer failed ({e}) — "
                 f"attach with: tmux attach -t {session}"

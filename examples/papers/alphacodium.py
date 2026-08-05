@@ -16,7 +16,8 @@ and test generation are validated-JSON ``ask`` turns; the iterate loop is
 import asyncio
 import json
 import sys
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from h5i.orchestra import Conductor, Review, Verification
 
@@ -28,7 +29,7 @@ N_AI_TESTS = 4
 
 def parse_reflection(value: Any) -> dict[str, Any]:
     if not isinstance(value, Mapping):
-        raise ValueError("reply must be a JSON object")
+        raise TypeError("reply must be a JSON object")
     missing = [k for k in ("goal", "inputs", "outputs", "edge_cases") if k not in value]
     if missing:
         raise ValueError(f"reflection is missing sections: {missing}")

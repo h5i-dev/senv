@@ -18,7 +18,8 @@ import asyncio
 import json
 import os
 import shutil
-from typing import Any, Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
+from typing import Any
 
 from ._errors import (
     BridgeClosedError,
@@ -81,7 +82,7 @@ class Bridge:
         *,
         cwd: str | None = None,
         on_request: OnRequest | None = None,
-    ) -> "Bridge":
+    ) -> Bridge:
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv,
@@ -144,7 +145,7 @@ class Bridge:
         self._closed = self._closed or BridgeClosedError("bridge closed")
         try:
             self._writer.close()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         if self._process is not None:
             try:
@@ -156,7 +157,7 @@ class Bridge:
             self._reader_task.cancel()
             try:
                 await self._reader_task
-            except (asyncio.CancelledError, Exception):
+            except asyncio.CancelledError:
                 pass
         self._fail_pending()
 

@@ -15,7 +15,8 @@ votes in recorded evidence, not vibes; approval counting and the tie-break
 
 import asyncio
 import sys
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from h5i.orchestra import Conductor, Verdict, patterns
 
@@ -31,7 +32,7 @@ ASPECTS = (
 def parse_approvals(candidate_ids: list[str]):
     def parse(value: Any) -> dict[str, bool]:
         if not isinstance(value, Mapping) or not isinstance(value.get("approvals"), list):
-            raise ValueError(
+            raise TypeError(
                 'reply must be {"approvals": [{"artifact_id": "...", "pass": true|false, "reason": "..."}]}'
             )
         votes: dict[str, bool] = {}

@@ -27,41 +27,48 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any
 
 from ._conductor import Agent, Conductor
 from ._errors import AskParseError, OrchestraError
-from ._types import Artifact, CompareRow, Review, Run, Verdict, Verification, approves_text
+from ._types import (
+    Artifact,
+    CompareRow,
+    Review,
+    Run,
+    Verdict,
+    Verification,
+    approves_text,
+)
 from .policy import Policy, tests_then_smallest_diff
 
 __all__ = [
-    "approves",
-    # composition helpers
-    "merge_reviews",
-    "review_cycle",
-    "ReviewCycleOutcome",
-    "verify_and_judge",
-    "ask_with_valid_citations",
-    "render_evidence",
-    "mean_score_verdict",
-    "smaller_diff",
-    # patterns
-    "ensemble",
-    "EnsembleOutcome",
-    "integrate",
-    "IntegrateOutcome",
-    "pipeline",
-    "arena",
     "ArenaOutcome",
-    "map_reduce",
-    "MapReduceOutcome",
-    "judge_panel",
-    "JudgePanelOutcome",
     "Ballot",
-    "debate",
-    "DebateOutcome",
     "DebateConclusion",
+    "DebateOutcome",
+    "EnsembleOutcome",
+    "IntegrateOutcome",
+    "JudgePanelOutcome",
+    "MapReduceOutcome",
+    "ReviewCycleOutcome",
+    "approves",
+    "arena",
+    "ask_with_valid_citations",
+    "debate",
+    "ensemble",
+    "integrate",
+    "judge_panel",
+    "map_reduce",
+    "mean_score_verdict",
+    "merge_reviews",
+    "pipeline",
+    "render_evidence",
+    "review_cycle",
+    "smaller_diff",
+    "verify_and_judge",
 ]
 
 
@@ -414,9 +421,9 @@ class Ballot:
     cited_ids: tuple[str, ...] = ()
 
     @classmethod
-    def from_value(cls, value: Mapping[str, Any]) -> "Ballot":
+    def from_value(cls, value: Mapping[str, Any]) -> Ballot:
         if not isinstance(value, Mapping):
-            raise ValueError(f"ballot must be an object, got {value!r}")
+            raise TypeError(f"ballot must be an object, got {value!r}")
         return cls(
             artifact_id=str(value.get("artifact_id", "")),
             score=int(value.get("score", 0)),
@@ -504,7 +511,7 @@ async def ask_with_valid_citations(
         try:
             raw_ballots = value["ballots"] if isinstance(value, Mapping) else None
             if not isinstance(raw_ballots, list):
-                raise ValueError('reply must be {"ballots": [...]}')
+                raise TypeError('reply must be {"ballots": [...]}')
             card = [Ballot.from_value(b) for b in raw_ballots]
         except (ValueError, TypeError, KeyError) as e:
             problems = [f"unparseable ballots ({e})"]
@@ -621,7 +628,7 @@ class DebateConclusion:
     rationale: str
 
     @classmethod
-    def from_value(cls, value: Any) -> "DebateConclusion":
+    def from_value(cls, value: Any) -> DebateConclusion:
         if not isinstance(value, Mapping) or "winner" not in value:
             raise ValueError('reply must be {"winner": "<agent-id>", "rationale": "…"}')
         return cls(winner=str(value["winner"]), rationale=str(value.get("rationale", "")))

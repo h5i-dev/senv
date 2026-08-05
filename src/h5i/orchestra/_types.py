@@ -11,20 +11,21 @@ Objects a *score* constructs itself (a custom ``Verdict``, a merged
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
 __all__ = [
-    "Artifact",
-    "Review",
-    "Verification",
-    "Verdict",
     "ApplyResult",
-    "RunAgent",
-    "Run",
+    "Artifact",
     "CompareRow",
     "GateAnswer",
+    "Review",
+    "Run",
+    "RunAgent",
     "TurnContext",
+    "Verdict",
+    "Verification",
     "approves_text",
 ]
 
@@ -97,7 +98,7 @@ class Artifact:
     raw: Mapping[str, Any] = field(repr=False)
 
     @classmethod
-    def from_raw(cls, raw: Mapping[str, Any]) -> "Artifact":
+    def from_raw(cls, raw: Mapping[str, Any]) -> Artifact:
         return cls(
             id=_s(raw, "id"),
             owner_agent=_s(raw, "owner_agent"),
@@ -131,7 +132,7 @@ class Review:
     raw: Mapping[str, Any] | None = field(default=None, repr=False)
 
     @classmethod
-    def from_raw(cls, raw: Mapping[str, Any]) -> "Review":
+    def from_raw(cls, raw: Mapping[str, Any]) -> Review:
         return cls(
             reviewer=_s(raw, "reviewer"),
             target=_s(raw, "target"),
@@ -190,7 +191,7 @@ class Verification:
         return self.sealed_from is not None
 
     @classmethod
-    def from_raw(cls, raw: Mapping[str, Any]) -> "Verification":
+    def from_raw(cls, raw: Mapping[str, Any]) -> Verification:
         return cls(
             id=_s(raw, "id"),
             submission_id=_s(raw, "submission_id"),
@@ -222,7 +223,7 @@ class Verdict:
     raw: Mapping[str, Any] | None = field(default=None, repr=False)
 
     @classmethod
-    def from_raw(cls, raw: Mapping[str, Any]) -> "Verdict":
+    def from_raw(cls, raw: Mapping[str, Any]) -> Verdict:
         return cls(
             method=_s(raw, "method"),
             decided_by=_s(raw, "decided_by"),
@@ -252,7 +253,7 @@ class ApplyResult:
     raw: Mapping[str, Any] = field(repr=False)
 
     @classmethod
-    def from_raw(cls, raw: Mapping[str, Any]) -> "ApplyResult":
+    def from_raw(cls, raw: Mapping[str, Any]) -> ApplyResult:
         return cls(
             submission_id=_s(raw, "submission_id"),
             source_commit_oid=_s(raw, "source_commit_oid"),
@@ -275,7 +276,7 @@ class RunAgent:
     raw: Mapping[str, Any] = field(repr=False)
 
     @classmethod
-    def from_raw(cls, raw: Mapping[str, Any]) -> "RunAgent":
+    def from_raw(cls, raw: Mapping[str, Any]) -> RunAgent:
         return cls(
             agent_id=_s(raw, "agent_id"),
             env_id=_s(raw, "env_id"),
@@ -307,7 +308,7 @@ class Run:
     raw: Mapping[str, Any] = field(repr=False)
 
     @classmethod
-    def from_raw(cls, raw: Mapping[str, Any]) -> "Run":
+    def from_raw(cls, raw: Mapping[str, Any]) -> Run:
         verdict = raw.get("verdict")
         return cls(
             id=_s(raw, "id"),
@@ -346,7 +347,7 @@ class CompareRow:
     raw: Mapping[str, Any] = field(repr=False)
 
     @classmethod
-    def from_raw(cls, raw: Mapping[str, Any]) -> "CompareRow":
+    def from_raw(cls, raw: Mapping[str, Any]) -> CompareRow:
         return cls(
             agent_id=_s(raw, "agent_id"),
             env_id=_s(raw, "env_id"),
@@ -372,7 +373,7 @@ class GateAnswer:
     raw: Mapping[str, Any] = field(repr=False)
 
     @classmethod
-    def from_raw(cls, raw: Mapping[str, Any]) -> "GateAnswer":
+    def from_raw(cls, raw: Mapping[str, Any]) -> GateAnswer:
         return cls(sender=_s(raw, "from"), body=_s(raw, "body"), raw=dict(raw))
 
     @property
@@ -398,7 +399,7 @@ class TurnContext:
     raw: Mapping[str, Any] = field(repr=False)
 
     @classmethod
-    def from_raw(cls, raw: Mapping[str, Any]) -> "TurnContext":
+    def from_raw(cls, raw: Mapping[str, Any]) -> TurnContext:
         return cls(
             run_id=_s(raw, "run_id"),
             agent_id=_s(raw, "agent_id"),

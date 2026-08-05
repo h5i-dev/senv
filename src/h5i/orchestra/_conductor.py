@@ -23,11 +23,11 @@ import asyncio
 import hashlib
 import inspect
 import sys
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Iterable, Sequence
+from typing import Any
 
 from . import policy as _policy
-from ._watch import SessionWatcher
 from ._errors import BridgeClosedError, OrchestraError, ProtocolError
 from ._rpc import Bridge, resolve_h5i_bin
 from ._types import (
@@ -41,8 +41,9 @@ from ._types import (
     Verdict,
     Verification,
 )
+from ._watch import SessionWatcher
 
-__all__ = ["Conductor", "Agent", "Scope", "PROTOCOL_VERSION"]
+__all__ = ["PROTOCOL_VERSION", "Agent", "Conductor", "Scope"]
 
 PROTOCOL_VERSION = 1
 _SDK_VERSION = "0.1.0"
@@ -161,7 +162,7 @@ class Conductor:
 
     # ── lifecycle ───────────────────────────────────────────────────────────
 
-    async def __aenter__(self) -> "Conductor":
+    async def __aenter__(self) -> Conductor:  # noqa: PYI034
         await self.launch()
         return self
 
@@ -174,7 +175,7 @@ class Conductor:
         argv = [resolve_h5i_bin(self._h5i_bin), "orchestra", "serve"]
         return await Bridge.spawn(argv, cwd=self._repo, on_request=self._serve_request)
 
-    async def launch(self) -> "Conductor":
+    async def launch(self) -> Conductor:
         """Spawn the bridge, shake hands, and open (or resume) the run."""
         if self._bridge is not None:
             return self
@@ -244,7 +245,7 @@ class Conductor:
             watch_task.cancel()
             try:
                 await watch_task
-            except (asyncio.CancelledError, Exception):
+            except asyncio.CancelledError:
                 pass  # a viewer must never mask the real shutdown path
         bridge, self._bridge = self._bridge, None
         if bridge is not None:
@@ -277,7 +278,7 @@ class Conductor:
         profile: str | None = None,
         isolation: str | None = None,
         env: str | None = None,
-    ) -> "Agent":
+    ) -> Agent:
         """Hire an agent into the run: create (or bind ``env``) its sandboxed
         env and enroll it on the roster. Journaled — a resume rebinds.
 
@@ -311,7 +312,7 @@ class Conductor:
         seat = await self._request("agent.hire", params)
         return Agent(self, seat["agent_id"], seat["env_id"])
 
-    async def roster(self) -> list["Agent"]:
+    async def roster(self) -> list[Agent]:
         """Bind every enrolled roster seat — how a driver picks up a team
         whose agents were enrolled elsewhere (not journaled)."""
         seats = await self._request("conductor.roster", {})
@@ -353,7 +354,7 @@ class Conductor:
         command: Sequence[str],
         *,
         isolation: str | None = None,
-        sealed_from: "Artifact | str | None" = None,
+        sealed_from: Artifact | str | None = None,
     ) -> Verification:
         """Neutrally re-execute ``command`` against the artifact owner's
         latest submission in a fresh sandboxed worktree — never the author's
@@ -460,7 +461,7 @@ class Conductor:
             "conductor.step_commit", {"token": token, "result": value}
         )
 
-    def scope(self, prefix: str) -> "Scope":
+    def scope(self, prefix: str) -> Scope:
         """A label namespace for steps in parallel loops:
         ``c.scope(f"item/{i}").step("fetch", …)`` journals as
         ``item/<i>/fetch#1``. Scopes nest."""
@@ -485,7 +486,7 @@ class Conductor:
     async def preflight(
         self,
         *,
-        live: Iterable["Agent"] | None = None,
+        live: Iterable[Agent] | None = None,
         min_isolation: str | None = None,
         clean_worktree: bool = False,
     ) -> None:
@@ -549,7 +550,7 @@ class Scope:
         self._conductor = conductor
         self._prefix = prefix
 
-    def scope(self, sub: str) -> "Scope":
+    def scope(self, sub: str) -> Scope:
         return Scope(self._conductor, f"{self._prefix}/{sub}")
 
     async def step(self, label: str, fn: Callable[[], Any]) -> Any:

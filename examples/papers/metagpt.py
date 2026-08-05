@@ -16,7 +16,8 @@ turn, merged into one revision — ``patterns.merge_reviews`` playing the
 import asyncio
 import json
 import sys
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from h5i.orchestra import Conductor, Review, patterns
 
@@ -27,7 +28,7 @@ VERIFY = ["pytest", "-q"]
 def parse_doc(*required: str):
     def parse(value: Any) -> dict[str, Any]:
         if not isinstance(value, Mapping):
-            raise ValueError("reply must be a JSON object")
+            raise TypeError("reply must be a JSON object")
         missing = [k for k in required if k not in value]
         if missing:
             raise ValueError(f"document is missing required sections: {missing}")

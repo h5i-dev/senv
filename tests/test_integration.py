@@ -30,7 +30,7 @@ def _find_h5i() -> str | None:
     for candidate in candidates:
         if candidate and Path(candidate).is_file():
             probe = subprocess.run(
-                [candidate, "orchestra", "--help"], capture_output=True, timeout=30
+                [candidate, "orchestra", "--help"], capture_output=True, timeout=30, check=False
             )
             if probe.returncode == 0:
                 return candidate
@@ -67,6 +67,7 @@ def h5i_cli(repo: Path, *args: str) -> None:
         env={**os.environ, "H5I_AGENT": "human"},
         capture_output=True,
         text=True,
+        check=False,
     )
     assert out.returncode == 0, f"h5i {args} failed: {out.stderr}"
 
@@ -139,6 +140,7 @@ async def test_cross_process_ensemble(repo: Path):
             capture_output=True,
             text=True,
             timeout=120,
+            check=False,
         )
         assert out.returncode == 0, f"box turn in {env_id} failed: {out.stderr}"
 

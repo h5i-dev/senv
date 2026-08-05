@@ -8,12 +8,12 @@ user's own code (the define-by-run debuggability bargain).
 from __future__ import annotations
 
 __all__ = [
-    "OrchestraError",
+    "AskParseError",
     "BridgeClosedError",
+    "H5iError",
+    "OrchestraError",
     "ProtocolError",
     "RpcError",
-    "H5iError",
-    "AskParseError",
 ]
 
 
