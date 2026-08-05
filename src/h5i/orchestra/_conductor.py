@@ -25,7 +25,7 @@ import inspect
 import sys
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from pathlib import Path
-from typing import Any, Self
+from typing import Any
 
 from . import policy as _policy
 from ._errors import BridgeClosedError, OrchestraError, ProtocolError
@@ -162,7 +162,7 @@ class Conductor:
 
     # ── lifecycle ───────────────────────────────────────────────────────────
 
-    async def __aenter__(self) -> Self:
+    async def __aenter__(self) -> Conductor:  # noqa: PYI034
         await self.launch()
         return self
 
