@@ -13,6 +13,7 @@ mod exec;
 mod policy;
 mod project;
 mod receipt;
+mod trust;
 mod util;
 mod uv;
 
@@ -44,6 +45,7 @@ fn main() -> std::process::ExitCode {
         Command::Status => cmd::inspect::status(&ctx),
         Command::Report(args) => cmd::inspect::report(&ctx, args),
         Command::Allow(args) => cmd::inspect::allow(&ctx, args),
+        Command::Trust => cmd::inspect::trust(&ctx),
         Command::Doctor => cmd::inspect::doctor(&ctx),
         Command::Gc(args) => cmd::inspect::gc(&ctx, args),
         Command::UvPassthrough(args) => cmd::install::passthrough(&ctx, args),

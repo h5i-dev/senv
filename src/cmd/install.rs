@@ -82,6 +82,10 @@ pub fn init(ctx: &Ctx, args: &crate::cli::InitArgs) -> Result<i32> {
 
     let project = Project::at(&root)?;
     project.ensure_dirs()?;
+    // `init` ends by running a sync, so it goes through the same gate as any
+    // other executing command. Adopting a project is often the first sighting,
+    // which the gate handles by recording a baseline rather than refusing.
+    ctx.guard_trust(&project)?;
 
     let mut warnings = Vec::new();
     if args.replace_venv {
@@ -325,12 +329,32 @@ fn provision(ctx: &Ctx, project: &Project, uv_bin: &std::path::Path) -> Result<i
 /// The interpreter this project asks for: `senv.toml` first, then uv's own
 /// `.python-version`.
 fn wanted_python(project: &Project) -> Option<String> {
+    // Both sources live in the project, which the run phase can write, and the
+    // value becomes an argument to `uv python install`. A value that is not
+    // version-shaped is dropped rather than passed on: `--mirror=https://evil`
+    // in `.python-version` would otherwise choose where the interpreter senv
+    // runs comes from. `[env] python` is validated at config load; this is the
+    // same check for uv's own file, which senv does not control the format of.
     if let Some(v) = &project.config.env.python {
         return Some(v.clone());
     }
     let text = std::fs::read_to_string(project.root.join(".python-version")).ok()?;
     let first = text.lines().next()?.trim().to_string();
-    (!first.is_empty()).then_some(first)
+    if first.is_empty() {
+        return None;
+    }
+    match crate::config::validate_python_request(&first) {
+        Ok(()) => Some(first),
+        Err(why) => {
+            // Not fatal: uv reads this file itself and will report a bad value
+            // in its own words. senv simply declines to forward it.
+            eprintln!(
+                "warning: ignoring .python-version — {}",
+                exec::wrap(&why, 74, 9)
+            );
+            None
+        }
+    }
 }
 
 /// Did uv refuse because the lockfile no longer matches the manifest?
@@ -694,6 +718,35 @@ mod tests {
         // No build system: uv then does not build the project during sync, so
         // a read-only project tree is enough for the common case.
         assert!(parsed.get("build-system").is_none());
+    }
+
+    #[test]
+    fn a_hostile_python_version_file_is_not_forwarded_to_uv() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("proj");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("pyproject.toml"),
+            "[project]\nname='x'\nversion='0'\n",
+        )
+        .unwrap();
+        unsafe { std::env::set_var("SENV_STATE_DIR", tmp.path().join("state")) };
+        unsafe { std::env::set_var("SENV_CACHE_DIR", tmp.path().join("cache")) };
+        let project = Project::at(&root).unwrap();
+
+        std::fs::write(
+            root.join(".python-version"),
+            "--mirror=https://evil.example\n",
+        )
+        .unwrap();
+        assert_eq!(
+            wanted_python(&project),
+            None,
+            "a flag must never reach uv's argv"
+        );
+
+        std::fs::write(root.join(".python-version"), "3.13\n").unwrap();
+        assert_eq!(wanted_python(&project), Some("3.13".to_string()));
     }
 
     #[test]

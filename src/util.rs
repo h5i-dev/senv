@@ -181,6 +181,75 @@ fn expand_tilde_in(path: &str, home: Option<&str>) -> String {
     path.to_string()
 }
 
+/// Strip terminal control sequences from text that came from somewhere
+/// untrusted.
+///
+/// senv frames program output inside its own messages ("senv blocked access to
+/// X"), and a program chooses what it prints. Without this, a package can emit
+/// ANSI escapes that repaint or erase senv's lines — turning a refusal into
+/// something that reads like an approval — and BEL/bidi characters that garble
+/// the rest of the session. The command's *own* output is passed through
+/// untouched, exactly as it would appear without senv; this is only for
+/// fragments senv quotes as if senv were saying them.
+pub fn sanitize(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            // ESC: drop the whole sequence, not just the escape byte, or the
+            // payload (`[31m`) would survive as visible garbage.
+            '\u{1b}' => {
+                match chars.peek() {
+                    // CSI: parameters and intermediates, then a final byte in
+                    // 0x40..=0x7e.
+                    Some('[') => {
+                        chars.next();
+                        for f in chars.by_ref() {
+                            if ('\u{40}'..='\u{7e}').contains(&f) {
+                                break;
+                            }
+                        }
+                    }
+                    // OSC: runs until BEL or ST (ESC \).
+                    Some(']') => {
+                        chars.next();
+                        while let Some(f) = chars.next() {
+                            if f == '\u{7}' {
+                                break;
+                            }
+                            if f == '\u{1b}' && chars.peek() == Some(&'\\') {
+                                chars.next();
+                                break;
+                            }
+                        }
+                    }
+                    // Any other two-character escape.
+                    Some(_) => {
+                        chars.next();
+                    }
+                    None => {}
+                }
+            }
+            // Other C0 controls and DEL: a lone \r rewrites the line a caller
+            // already printed, and \n would forge a new message.
+            c if (c < '\u{20}' && c != '\t') || c == '\u{7f}' => {}
+            // Bidi overrides, which can visually reverse a path or a hostname.
+            '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// [`sanitize`], but keeping line breaks.
+///
+/// For untrusted text senv renders as a block (a parser's error with its caret
+/// line, say) rather than as a fragment inside one of its own sentences. Line
+/// breaks survive; escape sequences and every other control character do not.
+pub fn sanitize_multiline(text: &str) -> String {
+    text.lines().map(sanitize).collect::<Vec<_>>().join("\n")
+}
+
 /// The last `n` bytes of `text`, on a character boundary, prefixed with an
 /// ellipsis when truncated. Used to bound what a receipt stores from a failing
 /// command's output.
@@ -224,6 +293,33 @@ mod tests {
         // valid UTF-8 (guaranteed by String's type, so reaching here is the
         // assertion).
         assert!(t.len() <= s.len() + 3);
+    }
+
+    #[test]
+    fn terminal_escapes_cannot_be_smuggled_through_senvs_own_messages() {
+        // The attack: a package prints escapes that repaint senv's framing so
+        // a refusal reads as an approval.
+        let hostile = "\u{1b}[2K\rPermission denied: /home/u/\u{1b}[32mSAFE\u{1b}[0m\u{7}";
+        let clean = sanitize(hostile);
+        assert_eq!(clean, "Permission denied: /home/u/SAFE", "{clean:?}");
+        assert!(!clean.contains('\u{1b}'));
+        assert!(!clean.contains('\r'));
+
+        // OSC (window title / hyperlink) runs to BEL or ST.
+        assert_eq!(sanitize("a\u{1b}]0;title\u{7}b"), "ab");
+        assert_eq!(sanitize("a\u{1b}]8;;http://evil\u{1b}\\b"), "ab");
+
+        // A newline would let output forge an extra senv line.
+        assert_eq!(sanitize("one\ntwo"), "onetwo");
+
+        // Bidi overrides can visually reverse a hostname.
+        assert_eq!(sanitize("evil\u{202e}moc.elpmaxe"), "evilmoc.elpmaxe");
+
+        // Ordinary text, including non-ASCII and tabs, is untouched.
+        assert_eq!(
+            sanitize("ドメイン\tok-1.example.com"),
+            "ドメイン\tok-1.example.com"
+        );
     }
 
     #[test]

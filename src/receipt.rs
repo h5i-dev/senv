@@ -78,6 +78,12 @@ pub struct NetRecord {
 
 /// One thing the boundary refused, recovered from the command's own output.
 ///
+/// `target` and `evidence` come from a program that chose what to print, and
+/// senv quotes them inside its own messages — so both are stripped of terminal
+/// control sequences on the way in. Sanitizing at the point of record rather
+/// than at the point of display means the receipt file is clean too, and no
+/// later renderer has to remember.
+///
 /// This is inference, not instrumentation: at the kernel tiers there is no
 /// egress log to read, so senv reads what the program said when it was refused.
 /// Treated accordingly — a denial here is a lead for `senv report --suggest`,
@@ -262,9 +268,9 @@ impl Receipts {
                     &mut found,
                     Denial {
                         kind: DenialKind::Network,
-                        target,
+                        target: util::sanitize(&target),
                         verdict,
-                        evidence: util::tail(line, 200),
+                        evidence: util::sanitize(&util::tail(line, 200)),
                     },
                 );
             } else if let Some(target) = filesystem_denial(line) {
@@ -273,9 +279,9 @@ impl Receipts {
                     &mut found,
                     Denial {
                         kind: DenialKind::Filesystem,
-                        target,
+                        target: util::sanitize(&target),
                         verdict,
-                        evidence: util::tail(line, 200),
+                        evidence: util::sanitize(&util::tail(line, 200)),
                     },
                 );
             }
@@ -602,6 +608,25 @@ mod tests {
             "there is nothing to suggest"
         );
         assert!(d[0].verdict.reason().unwrap().contains("did not name"));
+    }
+
+    #[test]
+    fn a_denial_can_never_carry_terminal_escapes_into_senvs_output() {
+        // senv quotes these fragments inside its own messages, so a package
+        // that prints escapes could otherwise repaint or erase senv's framing
+        // — making a refusal read as an approval.
+        let r = receipts();
+        let hostile = "\u{1b}[2KPermission denied: '/home/u/\u{1b}[32mdata\u{1b}[0m'\u{7}";
+        let d = r.analyze(hostile);
+        assert_eq!(d.len(), 1, "{d:?}");
+        assert!(!d[0].target.contains('\u{1b}'), "{:?}", d[0].target);
+        assert!(!d[0].evidence.contains('\u{1b}'), "{:?}", d[0].evidence);
+        assert!(!d[0].evidence.contains('\u{7}'));
+        assert!(
+            d[0].target.contains("/home/u/"),
+            "the real path must survive: {:?}",
+            d[0].target
+        );
     }
 
     #[test]

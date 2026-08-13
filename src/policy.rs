@@ -427,10 +427,13 @@ fn run_profile(
 
     p.secret_grants = secret_grants(cfg, phase);
     p.secrets = p.secret_grants.iter().map(|g| g.name.clone()).collect();
-    p.allow_command_extractors = p
-        .secret_grants
-        .iter()
-        .any(|g| g.source_or_default().starts_with("command:"));
+    // Never inferred from the presence of a `command:` source. h5i makes this
+    // opt-in and puts it in the digest precisely so enabling host-side
+    // execution is a deliberate, visible act; deriving it from the secret's own
+    // source undid that, and turned a config file the sandbox can write into a
+    // host-escape primitive. `Config::validate` refuses a `command:` source
+    // unless this is set, and `trust` treats setting it as a widening.
+    p.allow_command_extractors = cfg.env.allow_command_secrets;
     if p.allow_command_extractors {
         notes.push(Note::warn(
             "a secret uses a command: source, which runs host-side code outside the sandbox \

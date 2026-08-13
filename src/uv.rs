@@ -42,8 +42,43 @@ const STAGE_GLOBS: [&str; 6] = [
 ];
 
 /// Locate the `uv` binary, resolved to a real path so it can be granted.
+///
+/// A `[env] uv` path is refused when it resolves inside the project or inside
+/// senv's state, because both are writable by the sandbox: a package that
+/// writes `evil.sh` into the project and points this key at it would have
+/// senv running its binary as senv's own toolchain.
 pub fn find(project: &Project) -> Result<PathBuf> {
-    find_for(Some(&project.config))
+    let path = find_for(Some(&project.config))?;
+    if project.config.env.uv.is_some() {
+        for (label, dir) in [
+            ("project", &project.root),
+            ("senv state", &project.state_dir),
+        ] {
+            if path.starts_with(dir) {
+                return Err(SenvError::refused(
+                    format!("[env] uv points inside your {label} directory"),
+                    format!(
+                        "{} is writable by code running under senv, so senv will not run it as \
+                         its own toolchain — that would turn one sandboxed execution into an \
+                         unsandboxed one.",
+                        path.display()
+                    ),
+                    "point [env] uv at an installed uv (for example ~/.local/bin/uv), or remove \
+                     the key and let senv find it on PATH",
+                ));
+            }
+        }
+    }
+    Ok(path)
+}
+
+/// Is this uv path one the *project* chose, rather than one senv found?
+///
+/// A configured path is untrusted input: `senv.toml` is inside the sandbox's
+/// write grant. senv still runs it — confined, as the install phase's tool —
+/// but never unconfined, which rules out the host-side version probe.
+pub fn is_project_specified(project: &Project) -> bool {
+    project.config.env.uv.is_some()
 }
 
 /// [`find`] without a project — `senv doctor` runs outside one.
@@ -97,10 +132,14 @@ fn is_executable(path: &Path) -> bool {
     true
 }
 
-/// `uv --version`, run on the host.
+/// `uv --version`, run on the host, **unconfined**.
 ///
-/// Unconfined deliberately: this is senv's own tool-discovery, the same trust
-/// level as senv's binary itself, and it runs no project code.
+/// Only ever called for a uv that senv discovered itself — on `PATH` or in a
+/// standard location — which is host-owned and as trusted as senv's own
+/// binary. It must never be called for a path that came from `senv.toml`; see
+/// [`is_project_specified`]. That distinction was a real escape: `senv doctor`
+/// executed the configured path, so a package that wrote a script into the
+/// project and set `[env] uv` got host execution out of a diagnostic command.
 pub fn version(uv: &Path) -> Option<String> {
     let out = Command::new(uv).arg("--version").output().ok()?;
     if !out.status.success() {
@@ -181,7 +220,8 @@ pub fn staging_for(pyproject: &str) -> Staging {
                 || spec.get("workspace").and_then(|w| w.as_bool()) == Some(true);
             if local {
                 return Staging::Impossible(format!(
-                    "[tool.uv.sources] '{name}' is a local path dependency"
+                    "[tool.uv.sources] '{}' is a local path dependency",
+                    crate::util::sanitize(name)
                 ));
             }
         }
@@ -344,7 +384,7 @@ fn unexpected_manifest_changes(before: &str, after: &str) -> Vec<String> {
                     continue;
                 }
                 if !expected.iter().any(|e| e == &["project", sk.as_str()]) {
-                    findings.push(format!("[project] {sk}"));
+                    findings.push(format!("[project] {}", crate::util::sanitize(sk)));
                 }
             }
             continue;
@@ -374,7 +414,7 @@ fn unexpected_manifest_changes(before: &str, after: &str) -> Vec<String> {
             }
             continue;
         }
-        findings.push(format!("[{key}]"));
+        findings.push(format!("[{}]", crate::util::sanitize(key)));
     }
     findings
 }

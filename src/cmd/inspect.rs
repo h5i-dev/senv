@@ -61,7 +61,8 @@ pub struct PhaseStatus {
 }
 
 pub fn status(ctx: &Ctx) -> Result<i32> {
-    let project = ctx.project()?;
+    let project = ctx.project_unchecked()?;
+    ctx.warn_if_untrusted(&project);
     let state = project.load_state();
     let uv_bin = crate::uv::find(&project).ok();
 
@@ -354,7 +355,8 @@ pub struct RecentEntry {
 }
 
 pub fn report(ctx: &Ctx, args: &crate::cli::ReportArgs) -> Result<i32> {
-    let project = ctx.project()?;
+    let project = ctx.project_unchecked()?;
+    ctx.warn_if_untrusted(&project);
     let receipts = Receipts::new(project.receipt_path(), vec![project.venv()]);
     let records = receipts.read();
 
@@ -429,6 +431,7 @@ fn shorten_command(argv: &[String]) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ");
+    let joined = util::sanitize(&joined);
     if joined.chars().count() <= MAX {
         return joined;
     }
@@ -524,7 +527,13 @@ pub struct AllowOutput {
 }
 
 pub fn allow(ctx: &Ctx, args: &crate::cli::AllowArgs) -> Result<i32> {
-    let project = ctx.project()?;
+    // This command widens the policy on purpose and then re-baselines, so it
+    // must start from a policy the user has already accepted. Otherwise
+    // `senv allow example.com` would quietly adopt whatever else had been
+    // added to the file since — laundering an attacker's edit through a
+    // legitimate one.
+    let project = ctx.project_unchecked()?;
+    ctx.guard_trust(&project)?;
     for host in &args.hosts {
         crate::config::validate_host_pattern(host).map_err(|e| {
             SenvError::refused(
@@ -602,6 +611,9 @@ pub fn allow(ctx: &Ctx, args: &crate::cli::AllowArgs) -> Result<i32> {
     run["net"] = toml_edit::value(array);
 
     project::write_atomic(&path, doc.to_string().as_bytes())?;
+    // The user asked for exactly this widening, so record the result as
+    // trusted — otherwise the next command would refuse over senv's own edit.
+    Project::at(&project.root)?.record_trust()?;
 
     let out = AllowOutput {
         config: path.display().to_string(),
@@ -627,6 +639,39 @@ fn render_allow(o: &AllowOutput) {
     if !o.net.is_empty() {
         println!("the run phase may now reach: {}", o.net.join(", "));
     }
+}
+
+// ── trust ───────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct TrustOutput {
+    pub config: String,
+    pub accepted: Vec<String>,
+}
+
+/// Accept the configuration on disk as the baseline.
+pub fn trust(ctx: &Ctx) -> Result<i32> {
+    let project = ctx.project_unchecked()?;
+    let accepted = project.trust_verdict().widenings().to_vec();
+    project.record_trust()?;
+    let out = TrustOutput {
+        config: project.config_path.display().to_string(),
+        accepted,
+    };
+    ctx.emit(&out, |o| {
+        if o.accepted.is_empty() {
+            println!(
+                "nothing to accept — {} already matches what senv recorded",
+                o.config
+            );
+            return;
+        }
+        println!("accepted {} widening(s) in {}:", o.accepted.len(), o.config);
+        for w in &o.accepted {
+            println!("  + {w}");
+        }
+    })?;
+    Ok(0)
 }
 
 // ── doctor ──────────────────────────────────────────────────────────────────
@@ -677,10 +722,31 @@ pub fn doctor(ctx: &Ctx) -> Result<i32> {
 
     // Report on the real project when there is one; otherwise on the defaults,
     // so `senv doctor` works before `senv init`.
-    let project = ctx.project().ok();
-    let uv_version = crate::uv::find_for(project.as_ref().map(|p| &p.config))
-        .ok()
-        .and_then(|p| crate::uv::version(&p));
+    let project = ctx.project_unchecked().ok();
+    if let Some(p) = &project {
+        ctx.warn_if_untrusted(p);
+    }
+    // A project-specified uv is deliberately not executed here: running it to
+    // read its version would be running an attacker-chosen binary unconfined.
+    let project_specified = project
+        .as_ref()
+        .is_some_and(crate::uv::is_project_specified);
+    let uv_version = if project_specified {
+        match project.as_ref().map(crate::uv::find) {
+            // Reported, not executed: running a configured path to read its
+            // version is running an attacker-chosen binary unconfined.
+            Some(Ok(path)) => Some(format!(
+                "{} (configured; not executed here)",
+                path.display()
+            )),
+            Some(Err(e)) => Some(format!("REFUSED — {e}")),
+            None => None,
+        }
+    } else {
+        crate::uv::find_for(project.as_ref().map(|p| &p.config))
+            .ok()
+            .and_then(|p| crate::uv::version(&p))
+    };
 
     let mut verdicts = Vec::new();
     if let Some(project) = &project {
@@ -844,7 +910,7 @@ pub fn gc(ctx: &Ctx, args: &crate::cli::GcArgs) -> Result<i32> {
     }
 
     if args.cache
-        && let Ok(project) = ctx.project()
+        && let Ok(project) = ctx.project_unchecked()
     {
         let cache = project.cache();
         let size = util::dir_size(&cache);

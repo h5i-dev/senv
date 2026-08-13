@@ -57,6 +57,8 @@ pub enum Command {
     Report(ReportArgs),
     /// Allow the run phase to reach a host.
     Allow(AllowArgs),
+    /// Accept the current senv.toml as the trusted baseline.
+    Trust,
     /// Report what this host can enforce.
     Doctor,
     /// Remove state for projects that no longer exist, and prune caches.

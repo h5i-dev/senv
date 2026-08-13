@@ -666,6 +666,228 @@ fn the_enforced_policy_is_pinned_and_recorded() {
     );
 }
 
+// ── escalation regressions ──────────────────────────────────────────────────
+//
+// Each test below was a working exploit during review. The threat model is a
+// malicious package that gets ONE execution under `senv run`: it can write
+// anywhere the run phase grants write, which includes the project directory —
+// and `senv.toml` lives there.
+
+/// A package that rewrites the policy cannot make the next run wider.
+#[test]
+fn a_package_cannot_widen_the_policy_for_the_next_run() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    // One execution is all the attacker gets.
+    let (out, _) = fixture.run_python(
+        "open('senv.toml','w').write('[run]\\nnet = \"host\"\\n\
+         [run.env]\\npass = [\"AWS_SECRET_ACCESS_KEY\"]\\n')",
+    );
+    assert!(
+        out.status.success(),
+        "the write itself is allowed — the project is writable"
+    );
+
+    // Every later command that would execute anything is refused, and says
+    // exactly what changed.
+    let out = fixture.senv(&["run", "python", "-c", "print(1)"]);
+    let text = combined(&out);
+    assert_eq!(out.status.code(), Some(2), "{text}");
+    assert!(text.contains("grants more than senv recorded"), "{text}");
+    assert!(text.contains("net"), "the widening must be named: {text}");
+    assert!(text.contains("AWS_SECRET_ACCESS_KEY"), "{text}");
+    assert!(text.contains("senv trust"), "and the way forward: {text}");
+
+    // Installing is refused too, not just running.
+    assert_eq!(fixture.senv(&["sync"]).status.code(), Some(2));
+
+    // The user, having looked, can accept it — that is the point of the gate.
+    assert!(fixture.senv(&["trust"]).status.success());
+    assert!(
+        fixture
+            .senv(&["run", "python", "-c", "print(1)"])
+            .status
+            .success()
+    );
+}
+
+/// The `command:` secret source runs on the host, outside the sandbox. A
+/// package must not be able to introduce one.
+#[test]
+fn a_package_cannot_obtain_host_execution_through_a_command_secret() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    let marker = fixture.root.parent().unwrap().join("host-rce-marker");
+    let script = format!(
+        "open('senv.toml','w').write('[env]\\nallow-command-secrets = true\\n\
+         [secrets.X]\\nsource = \"command:touch {}\"\\n')",
+        marker.display()
+    );
+    fixture.run_python(&script);
+
+    let out = fixture.senv(&["run", "python", "-c", "print(1)"]);
+    assert_eq!(out.status.code(), Some(2), "{}", combined(&out));
+    assert!(
+        !marker.exists(),
+        "a command: secret introduced by a package executed on the host"
+    );
+
+    // And the gate is independent of the trust check: without the explicit
+    // opt-in the source is refused outright, so it cannot be smuggled in as
+    // part of an otherwise reasonable-looking config the user accepts.
+    std::fs::write(
+        fixture.root.join("senv.toml"),
+        format!(
+            "[secrets.X]\nsource = \"command:touch {}\"\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    // Every command refuses to load it — including `senv trust`, so the gate
+    // cannot be accepted away by a user who did not notice what they were
+    // accepting. The config has to be fixed by hand.
+    for command in [
+        vec!["trust"],
+        vec!["run", "python", "-c", "print(1)"],
+        vec!["status"],
+    ] {
+        let out = fixture.senv(&command);
+        let text = combined(&out);
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "{command:?} should refuse: {text}"
+        );
+        assert!(text.contains("OUTSIDE the sandbox"), "{command:?}: {text}");
+    }
+    assert!(!marker.exists(), "still must not have run");
+}
+
+/// No command may launder a widening into the baseline on the user's behalf.
+#[test]
+fn no_command_accepts_a_widening_as_a_side_effect() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    fixture.run_python("open('senv.toml','w').write('[run]\\nnet = \"host\"\\n')");
+
+    // `init` re-adopts a project and then syncs; `allow` deliberately widens
+    // and re-records. Both once accepted whatever else was in the file.
+    for command in [vec!["init", "--no-sync"], vec!["allow", "example.com"]] {
+        let out = fixture.senv(&command);
+        let text = combined(&out);
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "{command:?} must refuse first: {text}"
+        );
+        assert!(
+            text.contains("grants more than senv recorded"),
+            "{command:?}: {text}"
+        );
+    }
+
+    // The widening is still pending, not silently absorbed.
+    let out = fixture.senv(&["run", "python", "-c", "print(1)"]);
+    assert_eq!(out.status.code(), Some(2), "{}", combined(&out));
+}
+
+/// senv must never execute a binary the sandbox could have written.
+#[test]
+fn a_package_cannot_point_senvs_toolchain_at_its_own_binary() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    let marker = fixture.root.parent().unwrap().join("uv-rce-marker");
+    let script = format!(
+        "import os, stat\n\
+         open('evil.sh','w').write('#!/bin/sh\\ntouch {}\\necho \"uv 9.9.9\"\\n')\n\
+         os.chmod('evil.sh', 0o755)\n\
+         open('senv.toml','w').write('[env]\\nuv = \"' + os.getcwd() + '/evil.sh\"\\n')",
+        marker.display()
+    );
+    fixture.run_python(&script);
+
+    // `doctor` used to run the configured binary to read its version.
+    fixture.senv(&["doctor"]);
+    assert!(
+        !marker.exists(),
+        "senv doctor executed an attacker-supplied binary"
+    );
+
+    // Even once accepted, a uv inside the project is refused outright: the
+    // sandbox can rewrite that file between any two commands.
+    assert!(fixture.senv(&["trust"]).status.success());
+    fixture.senv(&["doctor"]);
+    let out = fixture.senv(&["sync"]);
+    let text = combined(&out);
+    assert!(!marker.exists(), "an in-project uv was executed: {text}");
+    assert!(
+        text.contains("writable by code running under senv"),
+        "{text}"
+    );
+}
+
+/// Output from a program must not be able to forge or repaint senv's own
+/// messages.
+#[test]
+fn program_output_cannot_forge_senvs_framing() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    let (_, text) = fixture.run_python(
+        "import sys\n\
+         sys.stderr.write('\\x1b[2K\\rPermission denied: /home/u/\\x1b[32mSAFE\\x1b[0m\\x07\\n')",
+    );
+    // The program's own line is passed through untouched, as it would be
+    // without senv. What must be clean is senv's quotation of it.
+    let framed: Vec<&str> = text
+        .lines()
+        .skip_while(|l| !l.contains("senv blocked"))
+        .collect();
+    assert!(
+        !framed.is_empty(),
+        "senv should have reported a denial:\n{text}"
+    );
+    for line in framed {
+        assert!(
+            !line.contains('\u{1b}'),
+            "escape survived into senv's output: {line:?}"
+        );
+        assert!(
+            !line.contains('\u{7}'),
+            "BEL survived into senv's output: {line:?}"
+        );
+    }
+}
+
 /// Regression: two senv processes probing the host at the same moment used to
 /// talk each other out of a tier the host supports.
 ///

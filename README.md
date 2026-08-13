@@ -119,6 +119,39 @@ Some denials are deliberate, and senv says so rather than offering to undo
 them — writing to the environment at run time, or reading `~/.ssh`, are the
 guarantees, not bugs.
 
+## The policy lives in your project, so senv watches it
+
+`senv.toml` sits in your project directory — which the run phase grants
+read-write, because that is the point of the run phase. So the policy file is
+writable by exactly the code it governs. A package that runs once could
+otherwise rewrite it and own every later command.
+
+senv keeps a snapshot of the policy you accepted **outside** the sandbox, and
+compares before it runs anything:
+
+- narrowed, or unchanged → nothing to say, it just runs;
+- **widened** → refused, with the change named:
+
+```
+senv: senv.toml grants more than senv recorded, so nothing was run
+  the policy on disk is wider than the one you last accepted:
+    + [run] net: deny → unrestricted
+    + [run.env] pass: added AWS_SECRET_ACCESS_KEY
+  senv.toml lives in your project, which your code can write — so a change it
+  did not make is a change worth looking at before running anything.
+  → if you made this change, run `senv trust` to accept it; if you did not,
+    inspect senv.toml and your recent dependencies first
+```
+
+`senv trust` accepts the current file as the baseline. Editing your own policy
+costs one extra command; a package editing it for you costs the attack.
+
+Two settings get extra treatment because they reach outside the sandbox:
+a secret with a `command:` source needs `[env] allow-command-secrets = true`
+(the command runs on the host), and `[env] uv` is refused outright if it points
+inside your project or senv's state — a binary the sandbox can rewrite must
+never become senv's own toolchain.
+
 ## Configuration
 
 `senv.toml` is optional. With no config you get the fail-closed defaults above;
@@ -128,6 +161,7 @@ the file appears the first time you widen something.
 [env]
 python = "3.13"
 isolation = "auto"              # auto | process | supervised | container | microvm
+allow-command-secrets = false   # true lets a secret source run host code OUTSIDE the sandbox
 
 [install]
 extra-indexes = ["download.pytorch.org"]
@@ -145,7 +179,7 @@ mem = "4G"
 wall = "30m"                    # "none" for a dev server
 
 [secrets.OPENAI_API_KEY]
-source = "env:OPENAI_API_KEY"   # or file:… / command:…
+source = "env:OPENAI_API_KEY"   # or file:… / command:… (command: needs the gate below)
 phases = ["run"]                # never the install phase — that runs build backends
 ```
 
@@ -157,6 +191,7 @@ would otherwise read as enforced while enforcing nothing.
 ```bash
 senv status      # tier, network, grants, limits, and the policy digest per phase
 senv report      # what ran, what was denied, what was redacted
+senv trust       # accept the current senv.toml as the baseline
 senv doctor      # what this host can enforce
 senv gc          # state for projects that no longer exist (dry run unless --prune)
 ```
@@ -203,6 +238,9 @@ have:
 - Code that stays inside the policy — corrupting files in your own project,
   reaching a host you allowlisted — is within policy. That is what the policy
   is for.
+- senv detects a policy widened behind your back; it cannot prevent the write.
+  A package can always edit files in your project — including `pyproject.toml`,
+  so review dependency changes you did not make.
 - Linux and macOS. Windows via WSL2.
 
 See [DESIGN.md](DESIGN.md) for the threat model and the reasoning behind each

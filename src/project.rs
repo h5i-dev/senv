@@ -72,6 +72,12 @@ pub struct State {
     pub install_digest: Option<String>,
     /// Digest of the policy the last run ran under.
     pub run_digest: Option<String>,
+    /// The configuration senv was last told to trust.
+    ///
+    /// Kept here, in senv's state directory, precisely because `senv.toml`
+    /// itself is inside the project — which the run phase grants read-write.
+    /// See [`crate::trust`].
+    pub trusted: Option<crate::trust::PolicySnapshot>,
 }
 
 impl State {
@@ -248,6 +254,31 @@ impl Project {
         let text = serde_json::to_string_pretty(state)
             .map_err(|e| SenvError::internal(format!("serializing state: {e}")))?;
         write_atomic(&path, text.as_bytes())
+    }
+
+    /// Compare the configuration on disk with the snapshot senv recorded.
+    pub fn trust_verdict(&self) -> crate::trust::Verdict {
+        let current = crate::trust::PolicySnapshot::of(&self.config);
+        match self.load_state().trusted {
+            None => crate::trust::Verdict::FirstSight,
+            Some(previous) => {
+                let widenings = current.widenings(&previous);
+                if widenings.is_empty() {
+                    crate::trust::Verdict::Trusted
+                } else {
+                    crate::trust::Verdict::Widened(widenings)
+                }
+            }
+        }
+    }
+
+    /// Record the configuration on disk as the trusted baseline.
+    pub fn record_trust(&self) -> Result<()> {
+        let mut state = self.load_state();
+        state.version = State::VERSION;
+        state.project_root = self.root.display().to_string();
+        state.trusted = Some(crate::trust::PolicySnapshot::of(&self.config));
+        self.save_state(&state)
     }
 
     /// Current on-disk truth about the environment, independent of `state.json`
