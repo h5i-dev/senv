@@ -380,21 +380,26 @@ policy experiments, non-Python ecosystems if h5i's ecosystem table grows.
 
 ---
 
-## 11. Open questions
+## 11. Decisions and open questions
 
-1. **Degraded-install UX.** Is explicit `install.net = "host"` (recorded,
-   warned) the right escape hatch on hosts that can't enforce egress
-   allowlists, or should senv require Podman there? Current lean: allow the
-   explicit downgrade; refusal-with-no-path loses users to plain uv, which is
-   strictly worse.
-2. **`uv.lock` writes in phase A.** `add`/`lock` must write
+Decided:
+
+- **Degraded-install UX**: explicit `install.net = "host"` is allowed as the
+  escape hatch on hosts that can't enforce egress allowlists — never chosen
+  silently, always warned in `status` and stamped into receipts.
+  Refusal-with-no-path would lose users to plain uv, which is strictly worse.
+- **h5i version coupling**: depend on `h5i-sandbox` via a git dependency
+  pinned to a tag or commit hash. Revisit crates.io publishing only if the
+  pinning workflow becomes painful.
+
+Open:
+
+1. **`uv.lock` writes in phase A.** `add`/`lock` must write
    `pyproject.toml`/`uv.lock` in the project root, slightly widening the
    install write set. Acceptable (they're data files senv can diff in
    receipts), but worth a second look versus staging them in the box and
    copying out after validation.
-3. **Watch/dev-server workflows.** Long-running `senv run` with wall-clock
+2. **Watch/dev-server workflows.** Long-running `senv run` with wall-clock
    limits: default 30m is right for tasks, wrong for `senv run
    uvicorn`. Likely a `[run.resources] wall = "none"`? h5i deliberately
    refuses unbounded walls — needs a decision with h5i's model in mind.
-4. **h5i version coupling.** Track h5i tags manually, or propose h5i publish
-   `h5i-sandbox` to crates.io with semver? The latter benefits both projects.
