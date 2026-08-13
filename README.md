@@ -52,7 +52,10 @@ registries at the packet level.
 **The environment is read-only while your code runs.** A compromised package
 cannot patch itself on disk to survive into the next run. It lives outside your
 project tree with `.venv` symlinked to it, so there is no writable parent to
-reach it through.
+reach it through — and there is no writable bytecode cache either, since a
+`.pyc` CPython prefers over the source would be a writable copy of the very
+code being protected. Bytecode is compiled during installation, inside the
+environment, where your code cannot rewrite it.
 
 ## Install
 

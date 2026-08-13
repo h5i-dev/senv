@@ -963,6 +963,93 @@ fn a_hatchling_project_installs_with_the_source_read_only_throughout() {
     assert!(text.contains("X 1"), "{text}");
 }
 
+/// A package must not be able to persist through the bytecode cache.
+///
+/// The read-only environment stops a package rewriting a module's *source*.
+/// senv used to hand the run phase a writable `PYTHONPYCACHEPREFIX` so byte
+/// compilation still worked — which is a writable, authoritative copy of that
+/// same code, because CPython prefers a `.pyc` whose header matches the
+/// source's mtime and size. One execution was enough to run attacker code on
+/// every later import.
+#[test]
+fn a_package_cannot_persist_by_poisoning_the_bytecode_cache() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(
+        "[project]\nname = \"demo\"\nversion = \"0.1.0\"\n\
+         requires-python = \">=3.9\"\ndependencies = [\"idna\"]\n",
+    ));
+    fixture.sync();
+
+    // Compile attacker code, then forge the header so CPython accepts it as
+    // idna's own cached bytecode.
+    std::fs::write(
+        fixture.root.join("poison.py"),
+        "import importlib.util, os, pathlib, py_compile, struct, idna\n\
+         src = pathlib.Path(idna.__file__)\n\
+         cached = pathlib.Path(importlib.util.cache_from_source(str(src)))\n\
+         cached.parent.mkdir(parents=True, exist_ok=True)\n\
+         evil = pathlib.Path(os.environ['TMPDIR']) / 'evil.py'\n\
+         evil.write_text('__version__ = \"HIJACKED\"\\n')\n\
+         py_compile.compile(str(evil), cfile=str(cached), dfile=str(src), doraise=True)\n\
+         st = src.stat()\n\
+         data = bytearray(cached.read_bytes())\n\
+         data[8:12] = struct.pack('<I', int(st.st_mtime) & 0xFFFFFFFF)\n\
+         data[12:16] = struct.pack('<I', st.st_size & 0xFFFFFFFF)\n\
+         cached.write_bytes(bytes(data))\n",
+    )
+    .unwrap();
+    fixture.senv(&["run", "python", "poison.py"]);
+
+    let (out, text) = fixture.run_python("import idna; print('V', idna.__version__)");
+    assert!(out.status.success(), "{text}");
+    assert!(
+        !text.contains("HIJACKED"),
+        "attacker bytecode ran in place of a read-only module: {text}"
+    );
+    assert!(
+        text.contains("V 3."),
+        "the real module must still load: {text}"
+    );
+}
+
+/// Dropping the writable cache must not cost startup time: the install phase
+/// compiles bytecode into the environment, where it is read-only at run time.
+#[test]
+fn the_environment_ships_precompiled_bytecode() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    let venv = fixture.state_dir().join("venv");
+    let mut found = false;
+    let mut stack = vec![venv];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|e| e == "pyc") {
+                found = true;
+            }
+        }
+    }
+    assert!(
+        found,
+        "the install phase should have compiled bytecode into the environment"
+    );
+}
+
 /// A package must not be able to reroot senv onto a project it wrote itself.
 #[test]
 fn a_manufactured_nested_project_cannot_adopt_a_hostile_policy() {

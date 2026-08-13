@@ -337,11 +337,28 @@ the environment lives **outside** the project tree (§8) — there is no writabl
 parent to reach it through, so it does not depend on how Landlock resolves a
 more specific rule inside a granted directory.
 
-Two details make it cost nothing in practice. `PYTHONPYCACHEPREFIX` points at a
-writable scratch directory, so byte compilation still works. And `TMPDIR` is
-set to a granted temp directory, because the default grants make `/tmp`
-readable but not writable — without it every `tempfile.mkdtemp()` would land in
-the project or fail.
+`TMPDIR` is set to a granted temp directory, because the default grants make
+`/tmp` readable but not writable — without it every `tempfile.mkdtemp()` would
+land in the project or fail.
+
+There is deliberately **no writable bytecode cache**, and getting that wrong
+was instructive. senv originally pointed `PYTHONPYCACHEPREFIX` at a writable
+scratch directory so byte compilation kept working against a read-only
+environment. But a `.pyc` is an *authoritative copy of the code*: CPython
+loads it in preference to the source whenever its header matches the source's
+mtime and size, both of which a package can read. So one execution could plant
+bytecode that ran in place of a read-only module on every later import —
+persistence straight through the door the read-only environment exists to
+close. Verified: after the plant, `import idna` executed the attacker's module
+body.
+
+The fix keeps the speed and removes the hole: the install phase compiles
+bytecode **into the environment** (`UV_COMPILE_BYTECODE`), where it is
+read-only at run time, and the run phase is given no writable cache at all.
+Writes to the environment's `__pycache__` fail and CPython ignores that, as it
+always has. The general lesson is worth carrying: *a writable cache of
+read-only code is not a cache, it is a second copy of the thing you were
+protecting.*
 
 `net = "deny"` uses an empty network namespace and works at the lightest tier
 on every Linux kernel — the common case (run untrusted code with no network)

@@ -371,6 +371,11 @@ fn install_profile(
         // uv writes the environment senv points it at; a stale VIRTUAL_ENV
         // inherited from the user's shell would make it warn on every command.
         ("VIRTUAL_ENV".to_string(), venv.display().to_string()),
+        // Compile bytecode here, inside the boundary, so the environment ships
+        // with a `__pycache__` that the run phase can read and nothing can
+        // rewrite. This is what makes dropping the run phase's writable cache
+        // free rather than a startup-time regression.
+        ("UV_COMPILE_BYTECODE".to_string(), "1".to_string()),
     ];
     if let Some(py) = &cfg.env.python {
         env.push(("UV_PYTHON".to_string(), py.clone()));
@@ -476,13 +481,25 @@ fn run_profile(
             "PATH".to_string(),
             format!("{}:{}", bin.display(), system_path()),
         ),
-        // A read-only environment would otherwise make CPython retry a write
-        // for every module it imports; redirecting the cache keeps byte
-        // compilation working and costs nothing.
-        (
-            "PYTHONPYCACHEPREFIX".to_string(),
-            scratch.join("pycache").display().to_string(),
-        ),
+        // Deliberately NO writable bytecode cache.
+        //
+        // senv used to point `PYTHONPYCACHEPREFIX` at a writable scratch
+        // directory so byte compilation kept working against a read-only
+        // environment. That handed the run phase a writable and
+        // *authoritative* copy of every module's code: CPython trusts a `.pyc`
+        // whose header matches the source's mtime and size, and a package can
+        // read both. One execution could therefore plant bytecode that runs in
+        // place of a read-only module on every later run — persistence through
+        // exactly the door the read-only environment exists to close. Verified
+        // before the fix: `import idna` afterwards ran the attacker's module
+        // body instead of idna's.
+        //
+        // Without the prefix, CPython looks for `__pycache__` inside the
+        // environment, which is read-only at run time and was populated by the
+        // install phase (`UV_COMPILE_BYTECODE`). Writes there fail and CPython
+        // ignores that, as it always has. Caches for the project's own modules
+        // still land beside their sources, exactly as plain Python does, and
+        // cost nothing here: that source is writable either way.
         ("TMPDIR".to_string(), tmp.display().to_string()),
         // An inherited PYTHONHOME would point the interpreter somewhere the
         // policy never granted, producing an unreadable startup failure.
@@ -1027,9 +1044,12 @@ mod tests {
             get("TMPDIR"),
             Some(project.tmp("run").display().to_string())
         );
+        // No writable bytecode cache: a `.pyc` there is an authoritative copy
+        // of code that is supposed to be read-only, and CPython will prefer it
+        // over the source whenever the header matches.
         assert!(
-            get("PYTHONPYCACHEPREFIX").is_some(),
-            "a read-only venv needs this"
+            get("PYTHONPYCACHEPREFIX").is_none(),
+            "a writable bytecode cache overrides the read-only environment"
         );
     }
 
