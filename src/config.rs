@@ -253,7 +253,7 @@ impl Config {
         if !path.is_file() {
             return Ok(Config::default());
         }
-        let text = fs::read_to_string(path)?;
+        let text = fs::read_to_string_bounded(path)?;
         let cfg: Config = toml::from_str(&text).map_err(|e| {
             // toml's message already carries the line/column and a caret; the
             // path prefix from SenvError::Config completes it. Sanitized
@@ -474,6 +474,28 @@ mod tests {
         assert_eq!(cfg.install.net, InstallNet::Registries);
         assert_eq!(cfg.install.cache, CacheScope::Project);
         assert!(cfg.secrets.is_empty());
+    }
+
+    #[test]
+    fn an_implausibly_large_config_is_refused_rather_than_loaded() {
+        // A package can write senv.toml, and senv parses it on every command.
+        // A 200 MB file cost 4.7s and 216 MB of RSS per invocation before this
+        // bound — a one-line attack on the security tool itself.
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("senv.toml");
+        let filler = vec![b'x'; 1024 * 1024];
+        let mut body = Vec::from(&b"# "[..]);
+        for _ in 0..(crate::error::fs::MAX_PARSED_BYTES / (1024 * 1024) + 1) {
+            body.extend_from_slice(&filler);
+        }
+        std::fs::write(&path, &body).unwrap();
+
+        let err = Config::load(&path).expect_err("must refuse");
+        assert!(err.to_string().contains("too large"), "{err}");
+
+        // A normal config of any realistic size still loads.
+        std::fs::write(&path, "[run]\nnet = \"deny\"\n").unwrap();
+        assert!(Config::load(&path).is_ok());
     }
 
     #[test]

@@ -312,8 +312,8 @@ pub fn apply_stage(
                 staged_pyproject.display()
             ));
         } else {
-            let before = fs::read_to_string(&project.pyproject_path()).unwrap_or_default();
-            let now = fs::read_to_string(&staged_pyproject)?;
+            let before = fs::read_to_string_bounded(&project.pyproject_path()).unwrap_or_default();
+            let now = fs::read_to_string_bounded(&staged_pyproject)?;
             for unexpected in unexpected_manifest_changes(&before, &now) {
                 result.warnings.push(format!(
                     "pyproject.toml changed outside the dependency lists: {unexpected}"
@@ -336,7 +336,7 @@ pub fn apply_stage(
     if staged_lock.is_file() {
         let after = util::sha256_file(&staged_lock);
         if after != stage.lock_before {
-            let text = fs::read_to_string(&staged_lock)?;
+            let text = fs::read_to_string_bounded(&staged_lock)?;
             toml::from_str::<toml::Value>(&text).map_err(|e| {
                 SenvError::config(&staged_lock, format!("staged lockfile is invalid: {e}"))
             })?;

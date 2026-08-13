@@ -138,6 +138,37 @@ pub mod fs {
         std::fs::read_to_string(path).map_err(|e| SenvError::io(path, e))
     }
 
+    /// Largest file senv will parse from a location the sandbox can write.
+    ///
+    /// Generous next to any real manifest — the biggest `uv.lock` in the wild
+    /// is a few megabytes — and small enough that a package cannot turn the
+    /// user's own tooling into an out-of-memory kill. A 200 MB `senv.toml`
+    /// cost 4.7 s and 216 MB of RSS on *every* senv command before this;
+    /// scaling that up is a one-line attack on the security tool itself.
+    pub const MAX_PARSED_BYTES: u64 = 16 * 1024 * 1024;
+
+    /// Read a file senv is going to parse, refusing an implausible one.
+    pub fn read_to_string_bounded(path: &Path) -> Result<String> {
+        let len = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        if len > MAX_PARSED_BYTES {
+            return Err(SenvError::refused(
+                format!(
+                    "{} is {} MiB, which is too large to be a real one",
+                    path.display(),
+                    len / 1024 / 1024
+                ),
+                "senv parses this file on every command, and it lives somewhere code running \
+                 under senv can write — so an implausible size is refused rather than loaded."
+                    .to_string(),
+                format!(
+                    "inspect {} and replace it with the file you meant",
+                    path.display()
+                ),
+            ));
+        }
+        read_to_string(path)
+    }
+
     pub fn write(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
         std::fs::write(path, contents).map_err(|e| SenvError::io(path, e))
     }

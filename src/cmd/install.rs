@@ -573,7 +573,7 @@ fn staged_operation(
     force_in_place: bool,
     expect_manifest_change: bool,
 ) -> Result<InstallOutput> {
-    let manifest = fs::read_to_string(&project.pyproject_path()).unwrap_or_default();
+    let manifest = fs::read_to_string_bounded(&project.pyproject_path()).unwrap_or_default();
     let staging = if force_in_place {
         Staging::Impossible("--in-place was requested".to_string())
     } else {
