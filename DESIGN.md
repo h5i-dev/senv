@@ -3,7 +3,11 @@
 > **senv** — A security boundary for Python environments.
 > Persistent, sandboxed Python environments powered by [uv](https://github.com/astral-sh/uv) and [h5i](https://github.com/h5i-dev/h5i).
 
-Status: draft v0.1 · 2026-08-13
+Status: **implemented** — v0.1 · 2026-08-13
+
+This document describes senv as built. Where implementation changed a decision,
+the reasoning is recorded here rather than in a changelog: several of those
+changes strengthened the guarantees, and the "why" is the part worth keeping.
 
 ---
 
@@ -65,12 +69,13 @@ egress, secret filtering, and resource limits, and sandboxes the install phase
 
 | Threat | Where it executes | senv mitigation |
 |---|---|---|
-| Malicious sdist build backend / `setup.py` | `senv sync` / `add` | install phase runs sandboxed: egress limited to package registries, writes limited to venv + wheel cache, no secrets in env |
+| Malicious sdist build backend / `setup.py` | `senv sync` / `add` | install phase runs sandboxed: egress limited to package registries, your source read-only, writes limited to the environment + wheel cache, no secrets in env, and resolution staged away from your source entirely |
 | Malicious package code at runtime (typosquats, hijacked releases) | `senv run` / `shell` | network deny by default; fs writes confined to the project; `~/.ssh`, `~/.aws`, cloud credentials unreadable |
 | Credential/env exfiltration | both | env allowlist (`PATH`, `HOME`, `LANG`, `TERM` by default); secrets only via explicit declaration; secret-pattern redaction in logs |
-| Environment self-modification / persistence (malware editing the venv at runtime) | run | venv is mounted **read-only** at run time; only install boxes may write it |
+| Environment self-modification / persistence (malware editing the venv at runtime) | run | the environment is granted **read-only** at run time and lives outside the project, so no writable grant contains it |
 | Resource exhaustion (fork bombs, memory balloons, runaway jobs) | both | rlimits + cgroups: memory, process count, wall clock (default 30 min), file size |
-| Tampering with the enforced policy | — | resolved policy is digested; the digest is pinned in state and stamped into every execution receipt |
+| Tampering with the enforced policy | — | resolved policy is digested; the digest is stamped into every receipt, and the policy is recompiled each run rather than read back from disk |
+| Tampering with the evidence | run | receipts live outside every grant senv issues, so the code they record cannot rewrite them |
 
 ### Out of scope — stated honestly
 
@@ -84,6 +89,10 @@ egress, secret filtering, and resource limits, and sandboxes the install phase
   and the user executes it *outside* senv, senv makes no claim about it.
 - **The registry itself.** senv trusts what uv verifies (lockfile hashes). It
   narrows the blast radius of a bad package; it cannot detect one.
+- **A complete record of what was attempted.** Denials are inferred from what a
+  refused program printed, so `senv report` is a strong lead, not an audit log.
+  Only the container tier observes every request. Enforcement does not depend on
+  this — a denial is enforced whether or not senv recognises the message.
 
 senv inherits h5i's fail-closed philosophy: when a host cannot enforce a
 policy, the operation is **refused with an explanation**, never silently
@@ -96,20 +105,26 @@ weakened.
 uv-shaped, minimal, no container vocabulary:
 
 ```
-senv init [--python <ver>]     create senv.toml, .senv/, and the venv (sandboxed)
-senv add <pkg>...              uv add, inside the install boundary
-senv remove <pkg>...           uv remove, inside the install boundary
-senv sync                      uv sync, inside the install boundary
-senv lock                      uv lock, inside the install boundary
+senv init [--python V] [--replace-venv] [--no-sync]
+                               create or adopt a project, then build its environment
+senv add <pkg>...              resolve in a staging copy, write back, sync
+senv remove <pkg>...           the same, in reverse
+senv sync                      install the locked dependencies
+senv lock [--check]            update (or verify) the lockfile
 senv run <cmd> [args...]       run a command inside the run boundary
-senv shell                     interactive confined shell (commands recorded)
-senv status                    enforced policy, isolation tier, policy digest
-senv report                    what ran, what was denied, what was redacted
-senv allow <host>              add an egress host to the run policy
-senv doctor                    probe host capabilities; explain available tiers
-senv gc                        prune stale caches and state
-senv uv -- <args...>           escape hatch: arbitrary uv command, install boundary
+senv shell                     interactive confined session
+senv status                    the policy that is enforced, per phase, with digests
+senv report [--suggest]        what ran, what was denied, what was redacted
+senv allow <host>...           let the run phase reach a host (writes senv.toml)
+senv doctor                    what this host can enforce
+senv gc [--prune] [--cache]    remove state for projects that no longer exist
+senv uv -- <args...>           any uv command, inside the install boundary
 ```
+
+Every command takes `--json` for tooling and `--project DIR` to act on a
+project other than the one containing the working directory. The mutating
+install commands take `--in-place` (§5). Exit codes pass through from the
+confined command; senv's own failures use exit code 2.
 
 Exit codes pass through from the confined command. `--json` on every
 subcommand for tooling (mirrors h5i's convention).
@@ -129,9 +144,10 @@ Adoption friction is a design constraint, not an afterthought: if switching
 costs more than a minute, users stay on plain uv and get no boundary at all.
 
 **Invariant: a senv project remains a valid uv project at all times.** senv
-only *adds* files (`senv.toml` — optional, `.senv/` — gitignored); it never
-changes the format or location of `pyproject.toml`, `uv.lock`, or `.venv`.
-Consequences:
+adds nothing to your project tree at all: its state lives outside it (§8), the
+only new file is an optional `senv.toml`, and `.venv` keeps working as a
+symlink. It never changes the format or location of `pyproject.toml`,
+`uv.lock`, or `.venv`. Consequences:
 
 - Teammates and CI without senv keep running plain `uv sync` / `uv run`
   against the same repo, unchanged. senv can be adopted by one person on a
@@ -184,9 +200,9 @@ information from *confined* runs.
 │ senv (Rust binary)                             │
 │                                                │
 │  CLI / config (senv.toml → h5i Profile)        │
-│  phase policies (install / run)                │
+│  phase policies (provision / install / run)    │
 │  venv + cache lifecycle (drives uv)            │
-│  receipts & reporting                          │
+│  staging, receipts, denial analysis            │
 ├────────────────────────────────────────────────┤
 │ h5i-sandbox (linked crate)                     │
 │  Profile → resolve() → ResolvedPolicy → run()  │
@@ -219,7 +235,8 @@ Until h5i publishes to crates.io, the dependency is a pinned git tag.
 
 What senv adds on top of the engine:
 
-1. **Phase-specific policies** (install vs. run — §5), senv's core idea.
+1. **Phase-specific policies** (provision vs. install vs. run — §5), senv's
+   core idea.
 2. **venv lifecycle**: driving uv, keeping the venv read-only at run time,
    interpreter installs.
 3. **`senv.toml`**: a Python-project-shaped config surface that compiles down
@@ -229,7 +246,7 @@ What senv adds on top of the engine:
 
 ---
 
-## 5. The two security phases
+## 5. The three security phases
 
 senv's central design decision: **installation and execution are different
 trust problems and get different policies.** Existing tools sandbox one or
@@ -237,50 +254,122 @@ neither; supply-chain attacks overwhelmingly fire at install time (build
 backends, `setup.py`, post-install hooks), while data exfiltration fires at
 run time.
 
-### Phase A — install boundary (`sync` / `add` / `remove` / `lock` / `init`)
+Implementation added a third, narrower phase in front of both.
+
+### Phase 0 — provisioning (`uv python install`)
+
+Downloading a Python interpreter reaches GitHub, not PyPI, and involves no
+third-party code at all. Folding it into the install phase would have meant
+widening that phase's egress permanently for something it needs once, so it is
+its own phase: the only writable path is the shared interpreter directory,
+egress is the python-build-standalone release hosts, and every other phase then
+gets that directory **read-only**. The install phase runs with
+`UV_PYTHON_DOWNLOADS=never`, so it cannot quietly reach for an interpreter
+under a policy that never anticipated one.
+
+senv enters this phase only when uv reports no suitable interpreter, and says
+so on the way in.
+
+### Phase 1 — install boundary (`sync` / `add` / `remove` / `lock` / `uv`)
 
 Runs `uv` confined. Modeled directly on h5i's cache-refresh box: the install
-runs *alone* — no agent, no app code of yours — with exactly one writable
-window and network narrowed to registries.
+runs *alone* — no agent, no app code of yours — with a narrow writable window
+and network narrowed to registries.
 
 | Dimension | Policy |
 |---|---|
-| filesystem read | system paths, the project directory, the uv binary, shared caches (ro) |
-| filesystem write | `.venv/`, the senv wheel cache, `uv.lock`, `pyproject.toml` (for `add`/`remove`) — nothing else |
-| network | egress allowlist: `pypi.org`, `files.pythonhosted.org`, plus configured extra indexes; interpreter downloads additionally allow `github.com` + `objects.githubusercontent.com` during `init --python` only |
-| env | minimal allowlist; **no secrets, ever** — index credentials go through h5i's authenticated-egress proxy so tokens never enter the box |
-| resources | mem 4G, procs 256, wall 30m, fsize caps (h5i defaults) |
+| filesystem read | system paths, the project (**read-only**), the uv binary, the interpreter dir |
+| filesystem write | the environment, the wheel cache, a per-phase temp dir — nothing else |
+| network | egress allowlist: `pypi.org`, `files.pythonhosted.org`, plus configured extra indexes |
+| env | minimal allowlist; **no secrets, ever** — `Config::validate` refuses to let a secret be scoped to this phase, and the install profile would drop one anyway |
+| resources | mem 8G, procs 512, wall 60m (a native wheel build is a compiler) |
+
+Two changes from the original design, both narrowing:
+
+**The project is read-only during installs.** The design gave the install phase
+write access to the project because `uv.lock` and `pyproject.toml` live there.
+Implementation split those apart instead — see staging below — so `senv sync`
+now hands uv the project read-only and a build backend cannot edit your source
+while installing. The predictable false refusal (a backend that insists on
+writing `*.egg-info` into the source tree) is detected and reported with the
+exact setting that permits it, `[install] project-writable = true`. In practice
+modern setuptools and hatchling both build in a temp dir and need nothing.
+
+**Manifest writes go through staging.** This resolves the design's first open
+question. `lock` / `add` / `remove` copy `pyproject.toml`, `uv.lock`,
+`.python-version` and the readme into a staging directory, run uv there, and
+copy the result back after validating it parses. A build backend executing
+during resolution therefore sees a directory containing your manifests and
+**none of your source**.
+
+The copy-back is checked, not trusted. A plain `senv lock` must not change
+`pyproject.toml`; if the staged copy changed anyway, senv refuses to apply it
+and says where the staged file is. For `add`/`remove`, which change it by
+design, senv compares the parsed manifests and reports any key that moved
+outside the dependency lists — `[build-system]` changing during a dependency
+add is exactly the shape worth a sentence on someone's terminal.
+
+Staging cannot work for every project: dynamic metadata, workspaces, and path
+dependencies need the real tree. senv detects those from the manifest itself,
+announces that it is resolving in-place and why, and records it in the receipt.
+That is a deterministic consequence of declared configuration rather than a
+silent fallback — and `--in-place` requests it explicitly.
 
 A malicious build script can therefore: burn CPU inside its limits, write junk
-into the venv it is building, and talk to PyPI. It cannot read your SSH keys,
-phone home to an attacker host, or touch anything outside the venv.
+into the environment it is building, and talk to PyPI. It cannot read your SSH
+keys, edit your source, phone home to an attacker host, or see a credential.
 
-### Phase B — run boundary (`run` / `shell`)
+### Phase 2 — run boundary (`run` / `shell`)
 
 | Dimension | Policy (default) |
 |---|---|
-| filesystem read | system paths, the project, `.venv/` (**read-only**), shared caches (ro) |
-| filesystem write | the project directory and a scratch dir — not the venv |
-| network | **deny** (opt into hosts via `senv allow` / `senv.toml`) |
+| filesystem read | system paths, the environment (**read-only**), the interpreter dir |
+| filesystem write | the project directory, a scratch dir, a per-phase temp dir — not the environment |
+| network | **deny** (opt into hosts via `senv allow` / `senv.toml` / `--allow-net`) |
 | env | `PATH`, `HOME`, `LANG`, `TERM`, `COLORTERM` + declared secrets only |
-| resources | same defaults; all configurable |
+| resources | mem 4G, procs 256, wall 30m; all configurable |
 
-The read-only venv is a deliberate security property: runtime code cannot
-patch installed packages to persist across runs. Bytecode caching still works —
-senv sets `PYTHONPYCACHEPREFIX` to a scratch directory so a read-only venv
-costs nothing.
+The read-only environment is a deliberate security property: runtime code
+cannot patch installed packages to persist across runs. It is airtight because
+the environment lives **outside** the project tree (§8) — there is no writable
+parent to reach it through, so it does not depend on how Landlock resolves a
+more specific rule inside a granted directory.
 
-`net = "deny"` uses a network namespace and works at the lightest tier on
-every Linux kernel — the common case (run untrusted code with no network) has
-no exotic host requirements. Only egress *allowlists* need a stronger tier
-(§6).
+Two details make it cost nothing in practice. `PYTHONPYCACHEPREFIX` points at a
+writable scratch directory, so byte compilation still works. And `TMPDIR` is
+set to a granted temp directory, because the default grants make `/tmp`
+readable but not writable — without it every `tempfile.mkdtemp()` would land in
+the project or fail.
+
+`net = "deny"` uses an empty network namespace and works at the lightest tier
+on every Linux kernel — the common case (run untrusted code with no network)
+has no exotic host requirements. Only egress *allowlists* need a stronger tier
+(§6), and senv escalates the tier automatically when a policy asks for one.
 
 Secrets follow h5i's broker model: declared by id in config, sourced from
-`env:`/`file:`/`command:`, injected only into runs that name them, never
-written to logs (fingerprint only), and scrubbed from receipts by the
-redaction scanner.
+`env:`/`file:`/`command:`, injected only into the phases that name them, never
+written to logs (fingerprint only), and scrubbed from receipts by the redaction
+scanner. `inject = "file"` is refused with h5i's own message, since senv never
+runs at the workspace tier.
 
----
+### Observing what was refused
+
+At the kernel tiers there is no egress log to read, so senv infers denials from
+what the program said when it was refused. `senv run` streams to the terminal,
+which would leave nothing to inspect, so senv mirrors the child's **stderr**
+through itself on the way out: fd 2 is redirected to a pipe that writes through
+to the real terminal and into a bounded buffer. stdout is left alone, since it
+is what most tools test with `isatty` to decide on colour. `senv shell` gets no
+tee at all — the child owns that terminal.
+
+Inference is conservative by construction. A host is accepted only from a URL,
+from quotes, or after a phrase that names one, and never from a bare dotted
+token, because in Python output `socket.gaierror` looks exactly like a
+hostname. A refusal whose destination is never named is still recorded, as a
+refusal with nothing to suggest. Denials against the environment or a
+credential path are classified as **by design** and are never offered as
+something to allow — a tool that helpfully suggested making the venv writable
+would be undoing its own reason to exist.
 
 ## 6. Isolation tiers and platform matrix
 
@@ -319,77 +408,158 @@ not enforceable under Seatbelt.
 
 ## 7. Configuration — `senv.toml`
 
-Project root, checked in. Users write Python-project vocabulary; senv compiles
-it to h5i `Profile`s (inheriting the builtin fail-closed base, so an omitted
-key means "safe default", and an explicit empty list means "empty").
+Project root, checked in, and entirely optional. Users write Python-project
+vocabulary; senv compiles it to h5i `Profile`s by *narrowing* the builtin
+fail-closed base, so a field senv forgets stays safe rather than becoming
+empty.
 
 ```toml
 [env]
 python = "3.13"
 isolation = "auto"            # auto | process | supervised | container | microvm
+image = "..."                 # required by the container / microvm tiers
+uv = "/opt/bin/uv"            # when uv is not on PATH
 
 [install]
-# extra registries beyond pypi.org / files.pythonhosted.org
 extra-indexes = ["download.pytorch.org"]
+net = "registries"            # "registries" (default) | "host" (warned downgrade)
+cache = "project"             # "project" (default) | "shared"
+read = ["~/wheels"]           # extra read-only grants during installs
+project-writable = false      # true only if a build backend must write your source
+[install.resources]
+mem = "8G"
+wall = "60m"
 
 [run]
-net = "deny"                  # "deny" | "host" | ["api.example.com", ".s3.amazonaws.com"]
+net = "deny"                  # "deny" | "host" | ["api.example.com", "*.s3.amazonaws.com"]
 
 [run.fs]
-write = ["$PROJECT"]          # $PROJECT and a scratch dir; venv is always ro at run time
 read  = ["~/datasets"]        # extra ro grants
+write = []                    # the project and a scratch dir are already writable
 
 [run.env]
-pass = ["PATH", "HOME", "LANG", "TERM", "MY_APP_MODE"]
+pass = ["MY_APP_MODE"]        # added to senv's baseline, never replacing it
 
 [run.resources]
 mem = "4G"
-wall = "30m"
+wall = "30m"                  # "none" for a dev server
 procs = 256
 
 [secrets.OPENAI_API_KEY]
 source = "env:OPENAI_API_KEY" # or file:… / command:…
 inject = "env"
+phases = ["run"]              # "run" and/or "shell" — never "install"
 ```
 
+The schema is `deny_unknown_fields` throughout: a misspelled key in a security
+policy must be an error, never a silently-ignored line that reads as though it
+were enforced. Host patterns are validated where the user can see them, and a
+single-label wildcard (`.com`) is refused outright — it is the one typo that
+turns an allowlist into an open door.
+
 Layering: built-in defaults ← `senv.toml` ← per-invocation flags
-(`senv run --allow-net api.example.com -- python app.py`). Every layer can
-narrow; widening beyond `senv.toml` requires a flag that `report` records.
-A `[tool.senv]` table in `pyproject.toml` may later be accepted as an
-alternative home; `senv.toml` is primary in v1 to keep the schema honest.
+(`senv run --allow-net api.example.com -- python app.py`). Widening beyond
+`senv.toml` requires a flag, and the flag is announced and recorded.
+
+Two schema decisions worth stating. `[env] isolation = "workspace"` is
+**rejected**: that h5i tier applies no confinement, and senv has no unconfined
+execution path — someone who wants one should use uv. And a secret can never
+name the install phase, because a credential visible to a dependency's build
+backend is a credential handed to an attacker's `setup.py`.
+
+`wall = "none"` resolves the design's second open question. h5i refuses to
+express an unbounded wall clock, correctly — a confined command that can never
+be killed is a resource leak with a policy file. senv expresses `none` as one
+year: longer than any `uvicorn` session, still a real kill switch, still in the
+digest. The dev-server case is served without weakening the engine.
 
 ---
 
 ## 8. State, integrity, and caching
 
 ```
-project/
-  senv.toml                  # policy source (checked in)
-  pyproject.toml, uv.lock    # uv's domain (checked in)
-  .venv/                     # real uv-managed venv → IDEs/LSPs just work
-  .senv/                     # gitignored
-    policy.resolved.toml     # resolved install+run policies, sha256-digested
-    receipt.jsonl            # append-only: what ran, denials, redactions, digest
-    scratch/                 # run-phase writable scratch (incl. pycache prefix)
+project/                      # senv adds nothing here that was not already yours
+  senv.toml                   # optional policy source (checked in)
+  pyproject.toml, uv.lock     # uv's domain (checked in)
+  .venv -> …/state/…/venv     # a symlink, so editors and language servers work
+
+~/.local/state/senv/projects/<name>-<hash>/
+  venv/                       # the environment itself
+  cache/                      # this project's wheel cache (default)
+  scratch/                    # run-phase writable scratch, incl. the pycache prefix
+  tmp/{install,run,provision} # per-phase TMPDIR
+  stage/                      # manifest staging for lock/add/remove
+  receipt.jsonl               # append-only: what ran, denials, digests
+  policy.{install,run}.toml   # the resolved policy, for inspection
+  state.json                  # provenance, lock hash, last digests
+
 ~/.cache/senv/
-  uv/<lock-hash>/            # wheel cache, keyed by hash of lockfile contents
-  python/                    # uv-managed interpreters
+  uv/                         # shared wheel cache (opt-in)
+  python/                     # uv-managed interpreters, shared, provisioned alone
 ```
 
-- **The venv lives at `.venv/`**, exactly where uv puts it, so editors,
-  language servers, and `PATH` conventions work unmodified. senv's guarantee
-  is not *where* the venv is but *who may write it*: only install boxes.
-- **Integrity**: the resolved policy digest is pinned and stamped into every
-  receipt line. When `senv.toml` changes, senv re-resolves and prints a policy
-  diff before the next confined run. `senv status` shows the digest; receipts
-  make "what policy was actually enforced when this ran" answerable later.
-- **Receipts** reuse h5i's model: append-only JSONL written from outside the
-  box's write grants, secret-scrubbed before write, denials recorded as
-  structured findings. `senv report` renders them.
-- **Caching** borrows h5i's warm-cache design: the shared wheel cache is keyed
-  by lockfile-content hash, offered read-only to run boxes, and writable only
-  inside install boxes — a stale or poisoned-by-another-project cache is never
-  handed out, and run-time code can never seed the cache.
+**Everything senv writes lives outside the project tree.** This changed during
+implementation and it is the most consequential change in the document. The
+original design put `.senv/` — receipts and resolved policies — inside the
+project. But the run phase grants the project read-write, which is the whole
+point: your code edits your files. Anything stored there is therefore writable
+by the very code the boundary exists to contain. **Receipts a compromised
+package can rewrite are not evidence**, and h5i keeps its own receipts outside
+every box grant for exactly this reason. An integration test asserts that a
+process under a senv run policy cannot write the receipt log.
+
+Moving the environment out of tree came with the same move, and made the
+read-only guarantee stronger rather than merely stated: with the venv outside
+the project, no writable grant contains it. `.venv` remains a symlink so
+editors, language servers, and `source .venv/bin/activate` all still resolve —
+Landlock evaluates the resolved target, so a sandboxed process that replaces
+the symlink gains nothing.
+
+The side effect is the best thing about it for adoption: **senv adds no files
+to your project tree**. A senv project is a uv project with an optional
+`senv.toml`.
+
+- **Provenance.** `state.json` records whether the environment was built inside
+  the boundary (`sandboxed`) or adopted from a `.venv` that already existed
+  (`host-installed`). `senv status` reports it. senv does not claim a boundary
+  over bytes that never passed through one.
+- **Integrity.** Each phase's resolved policy is sha256-digested and the digest
+  is stamped into every receipt line, so "which policy was actually enforced
+  when this ran" stays answerable. The `policy.*.toml` files are written for
+  inspection and never read back as input: senv recompiles the policy on every
+  invocation.
+- **Receipts** reuse h5i's model: append-only JSONL, secret values stripped
+  verbatim before writing, then h5i's credential scanner over what remains.
+  Output is kept only when a command failed — a successful command's output is
+  the user's business, not the log's.
+- **Caching is per-project by default**, a change from the design's shared
+  lock-keyed cache. A wheel cache is written *during* the install phase, which
+  is when third-party build backends run; sharing one across projects means a
+  compromised install in project A can reach project B. Per-project costs disk
+  and is the fail-closed default; `cache = "shared"` is one line for anyone who
+  wants the disk back. Interpreters stay shared because they are large — and
+  are only ever written by the provisioning phase, which runs no third-party
+  code at all, and are read-only everywhere else.
+
+### Concurrent invocations
+
+Two senv commands running at once is ordinary — a CI matrix, or a dev server
+beside a manual sync — and it turned out to break tier selection. h5i's cgroup
+probe proves delegation by creating a *fixed* scratch cgroup, writing to it and
+removing it, so two processes probing simultaneously delete each other's
+scratch directory. The loser concludes the host cannot delegate cgroups and
+refuses the install with "this host cannot enforce a network allowlist" — on a
+host that plainly can. Measured at roughly one failure in eight with eight
+concurrent syncs.
+
+senv serializes the probe behind a machine-global advisory lock and warms it
+once per process, since h5i caches the result per process. Zero failures in 32
+concurrent syncs afterwards, and an integration test holds the line.
+
+The underlying race belongs upstream — the probe path wants a pid in it — and
+this is a workaround, not a fix. It is worth stating because the failure mode
+is exactly the one senv must never have: a boundary that reports itself
+unavailable when it is available teaches people to turn it off.
 
 ---
 
@@ -401,59 +571,72 @@ project/
   today. Tagline disambiguates: *"A security boundary for Python
   environments."*
 - **Distribution: Rust binary** via GitHub Releases, `cargo install`, and
-  Homebrew — sidestepping the PyPI name question entirely. A PyPI shim
-  (`pip install senv` fetching the binary) is a later, optional convenience;
-  if pursued, name availability must be verified at upload time first.
-- senv depends on `h5i-sandbox` via a pinned git tag until h5i publishes to
-  crates.io.
+  Homebrew — sidestepping the PyPI name question entirely, and avoiding the
+  circularity of shipping a Python-install boundary through a Python install.
+  A PyPI shim is a later, optional convenience.
+- senv depends on `h5i-sandbox` by **git revision**, pinned to a commit rather
+  than a branch: the policy-digest story depends on the enforcement code being
+  the code that was reviewed.
 
 ---
 
-## 10. Roadmap
+## 10. Status and roadmap
 
-**v0.1 — MVP, the boundary works**
-`init` / `sync` / `add` / `remove` / `run` / `status` / `doctor`.
-Install boundary on Linux `supervised` + macOS Seatbelt; run boundary with
-`net=deny` at the `process` tier. `senv.toml` → Profile compilation, resolved
-digest, `.venv` read-only at run time. `init` adopts existing uv projects
-(`pyproject.toml` / `uv.lock` / `.venv` detection, sandboxed-rebuild offer).
+**v0.1 — built.** Every command in §3, all three phases, `senv.toml`
+compilation, tier auto-selection with fail-closed refusals, staging with
+verified copy-back, out-of-tree state, receipts with redaction, denial
+inference with `report --suggest`, provenance tracking, adoption of existing uv
+projects. 61 unit tests and 19 integration tests; the integration suite drives
+the real binary against the real kernel sandbox and asserts the guarantees
+themselves — the environment is unwritable at run time, credentials are
+unreachable, the network is denied, receipts cannot be tampered with from
+inside.
 
-**v0.2 — legible security**
-`shell` (recorded interactive sessions), `report` (incl. `--suggest` policy
-stanzas from recorded denials), receipts, `allow`, shared lock-keyed wheel
-cache, `gc`, denial messages with suggested fixes.
+**Next**
 
-**v0.3 — tiers and reach**
-`container` and `microvm` tiers, authenticated private indexes via the egress
-auth proxy, `[tool.senv]` in pyproject, CI mode (`--json` everywhere,
-non-interactive refusals).
-
-**Later**
-`senv exec` shims (`.venv/bin/python` transparently confined), per-dependency
-policy experiments, non-Python ecosystems if h5i's ecosystem table grows.
+- Container and microVM tiers exercised in CI, not just reachable by config.
+- Authenticated private indexes through h5i's credential proxy, so an index
+  token never enters the install phase at all.
+- `[tool.senv]` in `pyproject.toml` as an alternative config home.
+- `senv exec` shims, so `.venv/bin/python` is confined even when invoked
+  directly by an editor or a task runner.
+- A per-request egress tally at the kernel tiers, which today only the
+  container tier provides — this is the main gap between what `senv report`
+  shows and what actually happened.
 
 ---
 
 ## 11. Decisions and open questions
 
-Decided:
+Resolved during implementation:
 
-- **Degraded-install UX**: explicit `install.net = "host"` is allowed as the
-  escape hatch on hosts that can't enforce egress allowlists — never chosen
-  silently, always warned in `status` and stamped into receipts.
-  Refusal-with-no-path would lose users to plain uv, which is strictly worse.
-- **h5i version coupling**: depend on `h5i-sandbox` via a git dependency
-  pinned to a tag or commit hash. Revisit crates.io publishing only if the
-  pinning workflow becomes painful.
+- **Degraded installs**: explicit `[install] net = "host"` is the escape hatch
+  on hosts that cannot enforce an egress allowlist — never chosen silently,
+  warned in `status`, stamped into every receipt. Refusal with no path forward
+  would lose users to plain uv, which is strictly worse.
+- **h5i coupling**: a git dependency pinned to a commit hash. Revisit crates.io
+  only if the pinning workflow becomes painful.
+- **`uv.lock` writes during installs** (design open question 1): solved by
+  staging, with a verified copy-back and an announced in-place fallback for
+  projects that cannot be staged (§5).
+- **Dev-server wall clocks** (design open question 2): `wall = "none"` compiles
+  to a finite one-year limit, so h5i's "always a kill switch" invariant holds
+  and the config still reads the way a user thinks (§7).
+- **Where state lives**: outside the project, because the run phase grants the
+  project read-write and receipts inside it would be rewritable by the code
+  they record (§8).
+- **Cache scope**: per-project by default; sharing is opt-in (§8).
 
-Open:
+Still open:
 
-1. **`uv.lock` writes in phase A.** `add`/`lock` must write
-   `pyproject.toml`/`uv.lock` in the project root, slightly widening the
-   install write set. Acceptable (they're data files senv can diff in
-   receipts), but worth a second look versus staging them in the box and
-   copying out after validation.
-2. **Watch/dev-server workflows.** Long-running `senv run` with wall-clock
-   limits: default 30m is right for tasks, wrong for `senv run
-   uvicorn`. Likely a `[run.resources] wall = "none"`? h5i deliberately
-   refuses unbounded walls — needs a decision with h5i's model in mind.
+- **Egress evidence at the kernel tiers.** Denials are inferred from what a
+  program printed, which is a strong lead and not an audit log. The supervised
+  tier enforces by address but keeps no per-request tally. Closing this
+  properly probably means asking h5i for one.
+- **Non-Python ecosystems.** The policy engine is language-agnostic and the
+  phase split (resolve/install/run) generalises. Whether senv should grow into
+  that, or stay the Python tool whose name says so, is a positioning question
+  rather than a technical one.
+- **A shared-cache poisoning story.** Per-project caching sidesteps it rather
+  than solving it. Content-addressed verification on cache reads would let the
+  shared cache be the safe default again.

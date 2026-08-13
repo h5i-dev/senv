@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # The integration suite drives a real `uv`. Without it those tests skip,
+      # which would quietly hide every end-to-end assertion.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      # The install boundary needs a tier that can enforce an egress
+      # allowlist. On Linux that is the supervised tier, which needs these.
+      - name: Install sandbox prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y slirp4netns nftables
+
+      - name: What can this runner enforce?
+        run: cargo run --locked -- doctor || true
+
+      - run: cargo test --locked -- --nocapture
+
+      # Integration tests skip themselves on a host that cannot confine, so a
+      # green suite could mean "nothing ran". Fail loudly instead: this repo's
+      # whole claim is that the boundary is real, and CI has to prove it on at
+      # least one platform.
+      - name: The boundary was actually exercised
+        if: runner.os == 'Linux'
+        run: |
+          out="$(cargo test --locked --test cli -- --nocapture 2>&1)"
+          echo "$out"
+          if echo "$out" | grep -q "SKIP:"; then
+            echo "::error::integration tests skipped on Linux — the sandbox was not exercised"
+            echo "$out" | grep "SKIP:"
+            exit 1
+          fi
