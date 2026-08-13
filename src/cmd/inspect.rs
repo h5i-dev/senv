@@ -137,7 +137,23 @@ fn phase_status(project: &Project, phase: Phase, uv_bin: Option<&std::path::Path
             if let Some(procs) = p.max_procs {
                 resources.insert("procs".to_string(), procs.to_string());
             }
-            resources.insert("wall".to_string(), format_duration(p.wall_secs));
+            // The wall clock is applied by the parent that waits for the
+            // child, and the interactive path hands the terminal over and
+            // simply waits — so for `run` and `shell` it is not enforced.
+            // Everything else here is a kernel rlimit and applies to every
+            // phase. Printing "wall 30m" for a phase that has no deadline is
+            // exactly the kind of untrue status line this tool cannot afford.
+            resources.insert(
+                "wall".to_string(),
+                if phase.is_run_like() {
+                    format!(
+                        "{} (not enforced for run/shell — use cpu)",
+                        format_duration(p.wall_secs)
+                    )
+                } else {
+                    format_duration(p.wall_secs)
+                },
+            );
             PhaseStatus {
                 phase: phase.as_str().to_string(),
                 tier: Some(plan.tier().as_str().to_string()),
@@ -891,19 +907,33 @@ pub fn gc(ctx: &Ctx, args: &crate::cli::GcArgs) -> Result<i32> {
                 continue;
             }
             scanned += 1;
-            let state: Option<project::State> = std::fs::read_to_string(dir.join("state.json"))
-                .ok()
-                .and_then(|t| serde_json::from_str(&t).ok());
+            // Three cases, and conflating them cost a live project both its
+            // environment and its receipts: an unreadable `state.json` is not
+            // evidence that a project is gone, it is evidence that senv cannot
+            // tell — and the safe answer to "cannot tell" is to leave it alone.
+            // An environment on disk settles it either way, and receipts are
+            // the one thing senv promises nothing can destroy.
+            let raw = std::fs::read_to_string(dir.join("state.json"));
+            let has_env = dir.join("venv").join("pyvenv.cfg").is_file();
+            let state: Option<project::State> =
+                raw.as_ref().ok().and_then(|t| serde_json::from_str(t).ok());
             let project_root = state
                 .as_ref()
                 .map(|s| s.project_root.clone())
                 .unwrap_or_default();
-            let reason = if project_root.is_empty() {
-                Some("no state.json — senv cannot tell which project this belongs to")
-            } else if !PathBuf::from(&project_root).exists() {
-                Some("the project directory no longer exists")
-            } else {
-                None
+            let reason = match state {
+                // A readable, parseable record: trust what it says.
+                Some(_) if !project_root.is_empty() => {
+                    if PathBuf::from(&project_root).exists() {
+                        None
+                    } else {
+                        Some("the project directory no longer exists")
+                    }
+                }
+                // Anything else is unidentifiable. Remove it only when there is
+                // no environment here to lose.
+                _ if has_env => None,
+                _ => Some("no usable state.json and no environment — nothing identifies a project"),
             };
             let Some(reason) = reason else { continue };
             let size = util::dir_size(&dir);

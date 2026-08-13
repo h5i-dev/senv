@@ -39,7 +39,7 @@ policies.
 | **Your source** | read-only — a build backend cannot edit it | read-write, it's your code |
 | **The environment** | writable (this is what installs it) | **read-only** |
 | **Credentials** | none; secrets can never be scoped here | only what you declare |
-| **Limits** | memory, processes, wall clock, file size | same, configurable |
+| **Limits** | memory, processes, CPU, file size, wall clock | same, minus the wall clock (see below) |
 
 Two of those deserve a note.
 
@@ -247,6 +247,11 @@ have:
 - Code that stays inside the policy — corrupting files in your own project,
   reaching a host you allowlisted — is within policy. That is what the policy
   is for.
+- The wall-clock limit applies to installs but **not** to `senv run` / `senv
+  shell`: the interactive path hands the terminal to the child and waits
+  without a deadline. Memory, process count, CPU time and file size are kernel
+  limits and do apply everywhere — use `[run.resources] cpu` to bound a runaway
+  command. `senv status` says which is which.
 - senv detects a policy widened behind your back; it cannot prevent the write.
   A package can always edit files in your project — including `pyproject.toml`,
   so review dependency changes you did not make.

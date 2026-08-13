@@ -288,6 +288,12 @@ impl Project {
         let current = crate::trust::PolicySnapshot::of(&self.config);
         match self.load_state().trusted {
             None => crate::trust::Verdict::FirstSight,
+            // A snapshot written by a different senv cannot be compared field
+            // by field; treating it as a difference would accuse every user of
+            // tampering the first time they upgrade.
+            Some(previous) if previous.version != crate::trust::SNAPSHOT_VERSION => {
+                crate::trust::Verdict::FormatChanged
+            }
             Some(previous) => {
                 let widenings = current.widenings(&previous);
                 if widenings.is_empty() {

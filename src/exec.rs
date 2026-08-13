@@ -166,13 +166,21 @@ impl StderrTee {
     fn install() -> Option<StderrTee> {
         let _ = std::io::stderr().flush();
         let mut fds = [0 as libc::c_int; 2];
-        // SAFETY: `fds` is a two-element array, which is what pipe(2) writes.
-        if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
+        // `pipe2(O_CLOEXEC)`, not `pipe`: the confined child inherits every
+        // descriptor that is not close-on-exec, and it was inheriting the
+        // *read* end of this pipe as fd 3. That handed sandboxed code the
+        // stream senv is mirroring, and a child that simply read from it kept
+        // the pipe alive so senv blocked forever waiting for EOF. `dup2` clears
+        // the flag on fd 2 itself, which is the one the child is meant to have.
+        // SAFETY: `fds` is a two-element array, which is what pipe2(2) writes.
+        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
             return None;
         }
         let (read_fd, write_fd) = (fds[0], fds[1]);
-        // SAFETY: duplicating and replacing fd 2; both are checked below.
-        let saved = unsafe { libc::dup(libc::STDERR_FILENO) };
+        // `F_DUPFD_CLOEXEC` rather than `dup`, for the same reason: the saved
+        // copy of the real stderr is senv's, not the child's.
+        // SAFETY: duplicating fd 2; the result is checked below.
+        let saved = unsafe { libc::fcntl(libc::STDERR_FILENO, libc::F_DUPFD_CLOEXEC, 0) };
         if saved < 0 || unsafe { libc::dup2(write_fd, libc::STDERR_FILENO) } < 0 {
             unsafe {
                 libc::close(read_fd);
@@ -215,8 +223,14 @@ impl StderrTee {
                     }
                     written += w as usize;
                 }
-                if collected.len() < MAX_OBSERVED {
-                    collected.extend_from_slice(&buf[..n]);
+                // A ring, not a prefix. Keeping the first 256 KB meant a
+                // denial at the end of a noisy test run was never recorded —
+                // and the end is exactly where a command explains why it
+                // failed.
+                collected.extend_from_slice(&buf[..n]);
+                if collected.len() > MAX_OBSERVED {
+                    let drop = collected.len() - MAX_OBSERVED;
+                    collected.drain(..drop);
                 }
             }
             unsafe { libc::close(read_fd) };

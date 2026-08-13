@@ -327,7 +327,7 @@ pub fn apply_stage(
                     format!("staged manifest is invalid: {e}"),
                 )
             })?;
-            fs::write(&project.pyproject_path(), now.as_bytes())?;
+            fs::write_no_follow(&project.pyproject_path(), now.as_bytes())?;
             result.changed.push("pyproject.toml".to_string());
         }
     }

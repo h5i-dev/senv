@@ -64,7 +64,7 @@ pub fn init(ctx: &Ctx, args: &crate::cli::InitArgs) -> Result<i32> {
     let manifest = if manifest_path.is_file() {
         "adopted"
     } else {
-        fs::write(
+        fs::write_no_follow(
             &manifest_path,
             new_manifest(&root, args.python.as_deref()).as_bytes(),
         )?;
@@ -74,7 +74,7 @@ pub fn init(ctx: &Ctx, args: &crate::cli::InitArgs) -> Result<i32> {
     if let Some(python) = &args.python {
         // uv's own mechanism, so a teammate without senv gets the same
         // interpreter.
-        fs::write(
+        fs::write_no_follow(
             &root.join(".python-version"),
             format!("{python}\n").as_bytes(),
         )?;

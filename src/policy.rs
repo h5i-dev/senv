@@ -65,6 +65,18 @@ const EXTRA_DENY: [&str; 6] = [
 /// longer than any `uvicorn` session and still a real, digested kill switch.
 const UNBOUNDED_WALL_SECS: u64 = 365 * 24 * 60 * 60;
 
+/// The ceilings a phase runs under when its config sets none.
+///
+/// Named because [`crate::trust`] has to reason about them: an omitted setting
+/// is not "no limit", it is *this* limit, and deleting an explicit `wall = "1m"`
+/// therefore raises the ceiling to 30 minutes rather than narrowing anything.
+pub const RUN_DEFAULT_MEM: u64 = 4 * 1024 * 1024 * 1024;
+pub const RUN_DEFAULT_PROCS: u64 = 256;
+pub const RUN_DEFAULT_WALL_SECS: u64 = 30 * 60;
+pub const INSTALL_DEFAULT_MEM: u64 = 8 * 1024 * 1024 * 1024;
+pub const INSTALL_DEFAULT_PROCS: u64 = 512;
+pub const INSTALL_DEFAULT_WALL_SECS: u64 = 60 * 60;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
     Provision,
@@ -338,9 +350,9 @@ fn install_profile(
 
     // Installs are heavier than runs: a native wheel build is a compiler.
     let r = &cfg.install.resources;
-    p.mem_bytes = Some(parse_mem_or(&r.mem, 8 * 1024 * 1024 * 1024)?);
-    p.max_procs = Some(r.procs.unwrap_or(512));
-    p.wall_secs = parse_wall_or(r, 60 * 60)?;
+    p.mem_bytes = Some(parse_mem_or(&r.mem, INSTALL_DEFAULT_MEM)?);
+    p.max_procs = Some(r.procs.unwrap_or(INSTALL_DEFAULT_PROCS));
+    p.wall_secs = parse_wall_or(r, INSTALL_DEFAULT_WALL_SECS)?;
     if let Some(fsize) = &r.fsize {
         p.fsize_bytes = Some(sandbox::parse_mem(fsize)?);
     }
@@ -435,13 +447,19 @@ fn run_profile(
     }
 
     let r = &cfg.run.resources;
-    p.mem_bytes = Some(parse_mem_or(&r.mem, 4 * 1024 * 1024 * 1024)?);
-    p.max_procs = Some(r.procs.unwrap_or(256));
-    p.wall_secs = parse_wall_or(r, 30 * 60)?;
-    if r.wall_is_unbounded() {
+    p.mem_bytes = Some(parse_mem_or(&r.mem, RUN_DEFAULT_MEM)?);
+    p.max_procs = Some(r.procs.unwrap_or(RUN_DEFAULT_PROCS));
+    p.wall_secs = parse_wall_or(r, RUN_DEFAULT_WALL_SECS)?;
+    if cfg.run.resources.wall.is_some() && !r.wall_is_unbounded() {
+        // Better to say this than to let `status` imply a deadline that never
+        // fires: h5i applies the wall clock in the parent that waits for the
+        // child, and the interactive path used by `run`/`shell` hands over the
+        // terminal and waits without one. The kernel limits below (mem, procs,
+        // cpu, fsize) are rlimits and do apply.
         notes.push(Note::info(
-            "[run.resources] wall = \"none\" — this command may run for up to a year before \
-             the wall-clock kill applies."
+            "[run.resources] wall is not enforced for `senv run` or `senv shell` — the \
+             interactive path has no deadline. It is enforced for installs. For a kernel-\
+             enforced ceiling on a runaway command, set [run.resources] cpu."
                 .to_string(),
         ));
     }
@@ -986,14 +1004,17 @@ mod tests {
     }
 
     #[test]
-    fn wall_none_is_finite_and_announced() {
+    fn wall_none_is_finite() {
         let (_t, project) = fixture("[run.resources]\nwall = \"none\"\n");
         let mut notes = Vec::new();
         let opts = PlanOptions::default();
         let (p, _, _) = run_profile(&project, Phase::Run, &opts, &mut notes).unwrap();
         assert_eq!(p.wall_secs, UNBOUNDED_WALL_SECS);
         assert!(p.wall_secs > 0, "there is always a kill switch");
-        assert!(notes.iter().any(|n| n.text.contains("wall")), "{notes:?}");
+        // `none` is expressed as a finite year so h5i's "always a kill switch"
+        // invariant holds; for run/shell there is no deadline anyway, which the
+        // note below the assertion covers separately.
+        assert!(p.wall_secs > 0, "there is always a kill switch");
     }
 
     #[test]

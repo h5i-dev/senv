@@ -329,7 +329,7 @@ keys, edit your source, phone home to an attacker host, or see a credential.
 | filesystem write | the project directory, a scratch dir, a per-phase temp dir — not the environment |
 | network | **deny** (opt into hosts via `senv allow` / `senv.toml` / `--allow-net`) |
 | env | `PATH`, `HOME`, `LANG`, `TERM`, `COLORTERM` + declared secrets only |
-| resources | mem 4G, procs 256, wall 30m; all configurable |
+| resources | mem 4G, procs 256, wall 30m, all configurable — but see below: the wall clock is **not enforced** for this phase |
 
 The read-only environment is a deliberate security property: runtime code
 cannot patch installed packages to persist across runs. It is airtight because
@@ -470,6 +470,21 @@ is not version-shaped (`--mirror=https://evil`) is now refused rather than
 forwarded; and program output quoted inside senv's own messages is stripped of
 terminal control sequences, since a package could otherwise repaint senv's
 framing to make a refusal read as an approval.
+
+### One limit senv cannot enforce here
+
+h5i applies the wall clock in the parent that waits for the child, and the
+interactive path — the one `run` and `shell` use, because the child owns the
+terminal — simply waits. So the wall clock is enforced for installs and absent
+for runs, and `senv status` said "wall 30m" for both until this was measured.
+The kernel limits (memory, process count, CPU time, file size) are rlimits set
+before `execve` and apply to every phase.
+
+senv reports the distinction rather than papering over it, and points at
+`[run.resources] cpu`, which is a real kernel-enforced ceiling on a runaway
+command — verified killing a spinning process. Closing the gap properly means
+a deadline in h5i's interactive path; senv cannot add one from outside, because
+it never learns the child's pid.
 
 ### Observing what was refused
 

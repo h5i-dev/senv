@@ -55,6 +55,14 @@ use crate::config::{CacheScope, Config, InstallNet};
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PolicySnapshot {
+    /// Which shape this snapshot was written in.
+    ///
+    /// Without it, adding a field to this struct turns every stored snapshot
+    /// into one that "differs" from the current config, and senv accuses its
+    /// whole user base of a tampered policy on upgrade. A snapshot from another
+    /// version is treated as no snapshot at all: senv re-baselines and says so.
+    #[serde(default)]
+    pub version: u32,
     pub run_net: NetLevel,
     pub run_hosts: Vec<String>,
     pub run_read: Vec<String>,
@@ -82,61 +90,6 @@ pub struct PolicySnapshot {
 
 /// The resource ceilings a phase runs under. `None` means senv's built-in
 /// default, which is never wider than an explicit value that exceeds it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Limits {
-    pub mem_bytes: Option<u64>,
-    pub wall_secs: Option<u64>,
-    pub procs: Option<u64>,
-    pub fsize_bytes: Option<u64>,
-    pub cpu_secs: Option<u64>,
-}
-
-impl Limits {
-    fn of(r: &crate::config::ResourceSection) -> Limits {
-        let mem = |v: &Option<String>| {
-            v.as_deref()
-                .and_then(|s| h5i_sandbox::sandbox::parse_mem(s).ok())
-        };
-        let secs = |v: &Option<String>| {
-            v.as_deref()
-                .and_then(|s| h5i_sandbox::sandbox::parse_wall(s).ok())
-                .map(|d| d.as_secs())
-        };
-        Limits {
-            mem_bytes: mem(&r.mem),
-            wall_secs: if r.wall_is_unbounded() {
-                Some(u64::MAX)
-            } else {
-                secs(&r.wall)
-            },
-            procs: r.procs,
-            fsize_bytes: mem(&r.fsize),
-            cpu_secs: secs(&r.cpu),
-        }
-    }
-
-    fn widenings(&self, previous: &Limits, label: &str, found: &mut Vec<String>) {
-        let mut raised = |what: &str, new: Option<u64>, old: Option<u64>| {
-            // An unset value means senv's default. Setting one for the first
-            // time is only interesting when the other side had a value it
-            // exceeds; a first explicit ceiling is compared against nothing, so
-            // it is reported to be safe.
-            if let Some(new) = new
-                && old.is_none_or(|old| new > old)
-                && old.is_some()
-            {
-                found.push(format!("[{label}] {what}: raised to {new}"));
-            }
-        };
-        raised("mem", self.mem_bytes, previous.mem_bytes);
-        raised("wall", self.wall_secs, previous.wall_secs);
-        raised("procs", self.procs, previous.procs);
-        raised("fsize", self.fsize_bytes, previous.fsize_bytes);
-        raised("cpu", self.cpu_secs, previous.cpu_secs);
-    }
-}
-
 /// How much network a phase may reach, ordered so "more" is comparable.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -156,6 +109,94 @@ impl NetLevel {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Limits {
+    pub mem_bytes: u64,
+    pub wall_secs: u64,
+    pub procs: u64,
+    /// `u64::MAX` means unbounded, which is what senv applies when these are
+    /// unset — so *removing* an explicit limit correctly reads as a widening.
+    pub fsize_bytes: u64,
+    pub cpu_secs: u64,
+}
+
+impl Limits {
+    /// Effective ceilings, with senv's phase defaults substituted for anything
+    /// the config leaves out.
+    ///
+    /// Comparing the raw `Option`s hid a real widening: with `wall = "1m"`
+    /// recorded and the line then deleted, both sides looked incomparable and
+    /// the change was reported as nothing — while the effective ceiling went
+    /// from one minute to thirty.
+    fn of(r: &crate::config::ResourceSection, defaults: Limits) -> Limits {
+        let mem = |v: &Option<String>| {
+            v.as_deref()
+                .and_then(|s| h5i_sandbox::sandbox::parse_mem(s).ok())
+        };
+        let secs = |v: &Option<String>| {
+            v.as_deref()
+                .and_then(|s| h5i_sandbox::sandbox::parse_wall(s).ok())
+                .map(|d| d.as_secs())
+        };
+        Limits {
+            mem_bytes: mem(&r.mem).unwrap_or(defaults.mem_bytes),
+            wall_secs: if r.wall_is_unbounded() {
+                u64::MAX
+            } else {
+                secs(&r.wall).unwrap_or(defaults.wall_secs)
+            },
+            procs: r.procs.unwrap_or(defaults.procs),
+            fsize_bytes: mem(&r.fsize).unwrap_or(defaults.fsize_bytes),
+            cpu_secs: secs(&r.cpu).unwrap_or(defaults.cpu_secs),
+        }
+    }
+
+    fn run_defaults() -> Limits {
+        Limits {
+            mem_bytes: crate::policy::RUN_DEFAULT_MEM,
+            wall_secs: crate::policy::RUN_DEFAULT_WALL_SECS,
+            procs: crate::policy::RUN_DEFAULT_PROCS,
+            fsize_bytes: u64::MAX,
+            cpu_secs: u64::MAX,
+        }
+    }
+
+    fn install_defaults() -> Limits {
+        Limits {
+            mem_bytes: crate::policy::INSTALL_DEFAULT_MEM,
+            wall_secs: crate::policy::INSTALL_DEFAULT_WALL_SECS,
+            procs: crate::policy::INSTALL_DEFAULT_PROCS,
+            fsize_bytes: u64::MAX,
+            cpu_secs: u64::MAX,
+        }
+    }
+
+    fn widenings(&self, previous: &Limits, label: &str, found: &mut Vec<String>) {
+        let mut raised = |what: &str, new: u64, old: u64| {
+            if new > old {
+                let show = |v: u64| {
+                    if v == u64::MAX {
+                        "unbounded".to_string()
+                    } else {
+                        v.to_string()
+                    }
+                };
+                found.push(format!("[{label}] {what}: {} → {}", show(old), show(new)));
+            }
+        };
+        raised("mem", self.mem_bytes, previous.mem_bytes);
+        raised("wall", self.wall_secs, previous.wall_secs);
+        raised("procs", self.procs, previous.procs);
+        raised("fsize", self.fsize_bytes, previous.fsize_bytes);
+        raised("cpu", self.cpu_secs, previous.cpu_secs);
+    }
+}
+
+/// Bump whenever a field is added to [`PolicySnapshot`] or the meaning of one
+/// changes.
+pub const SNAPSHOT_VERSION: u32 = 1;
 
 impl PolicySnapshot {
     /// The snapshot of senv's own defaults.
@@ -180,6 +221,7 @@ impl PolicySnapshot {
             NetLevel::Allowlist
         };
         let mut snapshot = PolicySnapshot {
+            version: SNAPSHOT_VERSION,
             run_net,
             run_hosts: config.run.net.hosts().to_vec(),
             run_read: config.run.fs.read.clone(),
@@ -217,8 +259,8 @@ impl PolicySnapshot {
                     )
                 })
                 .collect(),
-            run_limits: Limits::of(&config.run.resources),
-            install_limits: Limits::of(&config.install.resources),
+            run_limits: Limits::of(&config.run.resources, Limits::run_defaults()),
+            install_limits: Limits::of(&config.install.resources, Limits::install_defaults()),
         };
         for list in [
             &mut snapshot.run_hosts,
@@ -255,12 +297,19 @@ impl PolicySnapshot {
             ));
         }
 
-        added(
-            &mut found,
-            "[run] net",
-            &self.run_hosts,
-            &previous.run_hosts,
-        );
+        // Only compare host lists when the phase did not *narrow*. Going from
+        // `net = "host"` to an allowlist is the tightening senv's own
+        // documentation recommends, and `hosts()` is empty for `"host"` — so
+        // every entry in the replacement list looked new and senv refused the
+        // improvement.
+        if self.run_net >= previous.run_net {
+            added(
+                &mut found,
+                "[run] net",
+                &self.run_hosts,
+                &previous.run_hosts,
+            );
+        }
         added(
             &mut found,
             "[run.fs] read",
@@ -279,12 +328,14 @@ impl PolicySnapshot {
             &self.run_env_pass,
             &previous.run_env_pass,
         );
-        added(
-            &mut found,
-            "[install] extra-indexes",
-            &self.install_indexes,
-            &previous.install_indexes,
-        );
+        if self.install_net >= previous.install_net {
+            added(
+                &mut found,
+                "[install] extra-indexes",
+                &self.install_indexes,
+                &previous.install_indexes,
+            );
+        }
         added(
             &mut found,
             "[install] read",
@@ -361,6 +412,9 @@ fn changed(found: &mut Vec<String>, label: &str, new: &Option<String>, old: &Opt
 /// What senv should do about the configuration it just loaded.
 #[derive(Debug, Clone)]
 pub enum Verdict {
+    /// senv recorded this project under an older snapshot format, so there is
+    /// nothing meaningful to compare against.
+    FormatChanged,
     /// No record yet. The config is adopted as the baseline.
     ///
     /// This is the right default rather than a hole: reaching a first run means
@@ -402,6 +456,43 @@ mod tests {
 
     fn verdict(before: &str, after: &str) -> Vec<String> {
         PolicySnapshot::of(&config(after)).widenings(&PolicySnapshot::of(&config(before)))
+    }
+
+    #[test]
+    fn narrowing_from_an_open_network_to_an_allowlist_is_not_a_widening() {
+        // This refused the exact tightening senv's own documentation
+        // recommends: `hosts()` is empty for `net = "host"`, so every entry in
+        // the replacement allowlist looked new.
+        let w = verdict(
+            "[run]\nnet = \"host\"\n",
+            "[run]\nnet = [\"api.example.com\", \"b.example.com\"]\n",
+        );
+        assert!(w.is_empty(), "narrowing must not be refused: {w:?}");
+
+        let w = verdict(
+            "[install]\nnet = \"host\"\n",
+            "[install]\nnet = \"registries\"\nextra-indexes = [\"a.example.com\"]\n",
+        );
+        assert!(w.is_empty(), "same for the install phase: {w:?}");
+    }
+
+    #[test]
+    fn deleting_a_limit_is_a_widening_because_the_default_is_larger() {
+        // Comparing raw Options missed this: with `wall = "1m"` recorded and
+        // the line deleted, the effective ceiling goes to senv's 30-minute
+        // default while the comparison saw Some → None and said nothing.
+        let w = verdict("[run.resources]\nwall = \"1m\"\n", "");
+        assert!(w.iter().any(|f| f.contains("wall")), "{w:?}");
+
+        let w = verdict("[run.resources]\ncpu = \"10s\"\n", "");
+        assert!(
+            w.iter()
+                .any(|f| f.contains("cpu") && f.contains("unbounded")),
+            "removing a cpu ceiling makes it unbounded: {w:?}"
+        );
+
+        // And adding one is still narrowing.
+        assert!(verdict("", "[run.resources]\ncpu = \"10s\"\n").is_empty());
     }
 
     #[test]

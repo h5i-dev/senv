@@ -10,21 +10,40 @@ use std::path::PathBuf;
 
 /// The refusal a project senv has never seen gets, when its policy already
 /// grants more than the defaults.
-fn first_sight_error(project: &Project, wide: &[String]) -> SenvError {
+fn first_sight_error(project: &Project, wide: &[String], format_changed: bool) -> SenvError {
     let list = wide
         .iter()
         .map(|w| format!("\n    + {w}"))
         .collect::<Vec<_>>()
         .join("");
+    // After an upgrade the user *has* seen this project before, and being told
+    // otherwise would read as senv having lost track of its own state.
+    let (what, why) = if format_changed {
+        (
+            "senv reads policies in a new format and cannot compare the one it recorded here"
+                .to_string(),
+            format!(
+                "the policy asks for:{list}\n  \
+                 Re-confirming it once after an upgrade is the honest thing to do: senv will \
+                 not carry forward an approval it can no longer check."
+            ),
+        )
+    } else {
+        (
+            format!(
+                "{} grants more than senv's defaults, and senv has not seen this project before",
+                project.config_path.display()
+            ),
+            format!(
+                "the policy asks for:{list}\n  \
+                 senv has no earlier version of this project's policy to compare against, so \
+                 it cannot tell a configuration you wrote from one that was written for you."
+            ),
+        )
+    };
     SenvError::refused(
-        format!(
-            "{} grants more than senv's defaults, and senv has not seen this project before",
-            project.config_path.display()
-        ),
-        format!(
-            "the policy asks for:{list}\n               senv has no earlier version of this project's policy to compare against, so it \
-             cannot tell a configuration you wrote from one that was written for you."
-        ),
+        what,
+        why,
         "read the settings above; if they are what you want, run `senv trust` to accept them",
     )
 }
@@ -77,7 +96,8 @@ impl Ctx {
     /// directly (it creates the marker rather than finding it) and must not be
     /// the one command that skips the check — it ends by running a sync.
     pub fn guard_trust(&self, project: &Project) -> Result<()> {
-        match project.trust_verdict() {
+        let verdict = project.trust_verdict();
+        match verdict {
             crate::trust::Verdict::Widened(widenings) => Err(widened_error(&widenings)),
             // A first sighting is adopted rather than refused: reaching it
             // means the user chose to work in this project, and a senv.toml
@@ -96,13 +116,20 @@ impl Ctx {
             // adopt it silently, and a `command:` secret there is unconfined
             // host execution. A wide config on first contact is exactly the
             // moment to stop.
-            crate::trust::Verdict::FirstSight => {
+            // Same handling as a first sighting, different sentence: after an
+            // upgrade the user has seen this project before, and being told
+            // otherwise would read as senv losing track of its own state.
+            crate::trust::Verdict::FormatChanged | crate::trust::Verdict::FirstSight => {
                 let wide = crate::trust::PolicySnapshot::of(&project.config)
                     .widenings(&crate::trust::PolicySnapshot::defaults());
                 if wide.is_empty() {
                     return project.record_trust();
                 }
-                Err(first_sight_error(project, &wide))
+                Err(first_sight_error(
+                    project,
+                    &wide,
+                    matches!(verdict, crate::trust::Verdict::FormatChanged),
+                ))
             }
             // A change that only narrows becomes the new baseline, so the next
             // widening is measured against what is on disk now.

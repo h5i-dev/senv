@@ -963,6 +963,80 @@ fn a_hatchling_project_installs_with_the_source_read_only_throughout() {
     assert!(text.contains("X 1"), "{text}");
 }
 
+/// senv must not advertise a limit it does not apply.
+///
+/// h5i enforces the wall clock in the parent that waits for the child. The
+/// interactive path used by `run`/`shell` hands over the terminal and waits
+/// without a deadline, so the wall clock is real for installs and absent for
+/// runs — while `status` used to print "wall 30m" for both.
+#[test]
+fn status_does_not_claim_a_wall_clock_it_cannot_enforce() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    let out = fixture.senv(&["--json", "status"]);
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
+    let phase = |name: &str| -> serde_json::Value {
+        json["phases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["phase"] == name)
+            .expect("phase")
+            .clone()
+    };
+
+    let run_wall = phase("run")["resources"]["wall"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        run_wall.contains("not enforced"),
+        "the run phase has no deadline, so status must say so: {run_wall}"
+    );
+    let install_wall = phase("install")["resources"]["wall"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        !install_wall.contains("not enforced"),
+        "installs do have a deadline: {install_wall}"
+    );
+}
+
+/// The CPU-time rlimit is the kernel-enforced backstop that the wall clock is
+/// not, so it has to actually work.
+#[test]
+fn a_cpu_limit_stops_a_runaway_command() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+    std::fs::write(
+        fixture.root.join("senv.toml"),
+        "[run.resources]\ncpu = \"3s\"\n",
+    )
+    .unwrap();
+    assert!(fixture.senv(&["trust"]).status.success());
+
+    let start = std::time::Instant::now();
+    let (out, _) = fixture.run_python("while True: pass");
+    let elapsed = start.elapsed();
+    assert!(!out.status.success(), "a spinning command must be killed");
+    assert!(
+        elapsed < std::time::Duration::from_secs(30),
+        "the CPU limit did not fire: ran for {elapsed:?}"
+    );
+}
+
 /// A package must not be able to persist through the bytecode cache.
 ///
 /// The read-only environment stops a package rewriting a module's *source*.
