@@ -829,6 +829,140 @@ fn a_build_backend_cannot_edit_your_source_during_an_install() {
     );
 }
 
+const SETUPTOOLS: &str = "[project]\nname = \"mypkg\"\nversion = \"0.1.0\"\n\
+     requires-python = \">=3.9\"\ndependencies = []\n\n\
+     [build-system]\nrequires = [\"setuptools>=61\"]\n\
+     build-backend = \"setuptools.build_meta\"\n";
+
+const HATCHLING: &str = "[project]\nname = \"hp\"\nversion = \"0.1.0\"\n\
+     requires-python = \">=3.9\"\ndependencies = []\n\n\
+     [build-system]\nrequires = [\"hatchling\"]\nbuild-backend = \"hatchling.build\"\n";
+
+/// A setuptools project must still install with the source read-only.
+///
+/// Enforcing the read-only install broke these: setuptools' `build_editable`
+/// creates `*.egg-info` inside the source tree. Telling every setuptools user
+/// to set `project-writable = true` would have handed write access to all
+/// their dependencies' build backends too, so senv splits the install instead —
+/// dependencies first with the source read-only, then the project's own
+/// backend, widened only if it actually needs it.
+#[test]
+fn a_setuptools_project_installs_without_opening_the_source_to_dependencies() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(SETUPTOOLS));
+    std::fs::create_dir_all(fixture.root.join("src/mypkg")).unwrap();
+    std::fs::write(fixture.root.join("src/mypkg/__init__.py"), "VALUE = 42\n").unwrap();
+
+    let out = fixture.senv(&["sync"]);
+    let text = combined(&out);
+    assert!(
+        out.status.success(),
+        "a setuptools project must install: {text}"
+    );
+    assert!(
+        text.contains("dependency build backends did not"),
+        "the widening must be announced and scoped: {text}"
+    );
+
+    let (out, text) = fixture.run_python("import mypkg; print('V', mypkg.VALUE)");
+    assert!(out.status.success(), "{text}");
+    assert!(text.contains("V 42"), "{text}");
+}
+
+/// A failing *dependency* must never trigger the project-backend retry.
+///
+/// The retry exists so setuptools can write its own egg-info. If it fired on a
+/// dependency's write-denied error instead, senv would re-run a hostile build
+/// backend with the source writable — the exact thing the install phase denies.
+#[test]
+fn a_dependency_build_failure_never_widens_the_install() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+
+    // A local sdist whose build backend tries to write into the parent project
+    // and reports the same "Permission denied" shape the retry looks for.
+    let fixture = Fixture::new(None);
+    let dep = fixture.root.parent().unwrap().join("hostile");
+    std::fs::create_dir_all(&dep).unwrap();
+    std::fs::write(
+        dep.join("pyproject.toml"),
+        "[project]\nname = \"hostile\"\nversion = \"0.1.0\"\n\
+         [build-system]\nrequires = [\"setuptools>=61\"]\n\
+         build-backend = \"setuptools.build_meta\"\n",
+    )
+    .unwrap();
+    let marker = fixture.root.join("WRITTEN_BY_DEPENDENCY");
+    std::fs::write(
+        dep.join("setup.py"),
+        format!(
+            "from setuptools import setup\n\
+             open(r'{}', 'w').write('x')\n\
+             setup()\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+
+    std::fs::write(
+        fixture.root.join("pyproject.toml"),
+        format!(
+            "[project]\nname = \"victim\"\nversion = \"0.1.0\"\n\
+             requires-python = \">=3.9\"\ndependencies = [\"hostile\"]\n\n\
+             [tool.uv.sources]\nhostile = {{ path = \"{}\" }}\n",
+            dep.display()
+        ),
+    )
+    .unwrap();
+    // A path dependency lives outside the project, so the install phase has to
+    // be told it may read it; otherwise the failure is a missing grant rather
+    // than the denied write this test is about.
+    std::fs::write(
+        fixture.root.join("senv.toml"),
+        format!("[install]\nread = [\"{}\"]\n", dep.display()),
+    )
+    .unwrap();
+    assert!(fixture.senv(&["trust"]).status.success());
+
+    let out = fixture.senv(&["sync"]);
+    assert!(
+        !marker.exists(),
+        "a dependency's build backend wrote into the project: {}",
+        combined(&out)
+    );
+}
+
+/// A backend that does not need to write the source must never get to.
+#[test]
+fn a_hatchling_project_installs_with_the_source_read_only_throughout() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(HATCHLING));
+    std::fs::create_dir_all(fixture.root.join("src/hp")).unwrap();
+    std::fs::write(fixture.root.join("src/hp/__init__.py"), "X = 1\n").unwrap();
+
+    let out = fixture.senv(&["sync"]);
+    let text = combined(&out);
+    assert!(out.status.success(), "{text}");
+    assert!(
+        !text.contains("write access to your source"),
+        "hatchling needs no widening, so senv must not grant one: {text}"
+    );
+
+    let (out, text) = fixture.run_python("import hp; print('X', hp.X)");
+    assert!(out.status.success(), "{text}");
+    assert!(text.contains("X 1"), "{text}");
+}
+
 /// A package must not be able to reroot senv onto a project it wrote itself.
 #[test]
 fn a_manufactured_nested_project_cannot_adopt_a_hostile_policy() {

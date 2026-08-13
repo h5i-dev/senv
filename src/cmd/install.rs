@@ -232,10 +232,22 @@ fn sync_inner(ctx: &Ctx, project: &Project, args: &crate::cli::SyncArgs) -> Resu
         mode.to_string(),
     ];
     argv.extend(args.extra.iter().cloned());
+    // Pass 1 installs only the dependencies, which is where every third-party
+    // build backend in your tree executes — and therefore where the
+    // supply-chain risk actually lives. Your source is read-only for all of it.
+    // Pass 2 (`argv`) then builds your own project.
+    let mut deps_argv = argv.clone();
+    deps_argv.insert(3, "--no-install-project".to_string());
 
     let plan = install_plan(project, &uv_bin, None, false)?;
     exec::print_notes(&plan.notes);
-    let mut run = exec::run_captured(project, &plan, &argv, Some("installing"))?;
+    let mut run = exec::run_captured(project, &plan, &deps_argv, Some("installing dependencies"))?;
+    // Which pass failed decides whether the widening retry below is allowed to
+    // happen at all.
+    let mut deps_ok = run.succeeded();
+    if deps_ok {
+        run = exec::run_captured(project, &plan, &argv, Some("installing"))?;
+    }
 
     // The install phase cannot download an interpreter: fetching one reaches
     // GitHub, which is not on the registries allowlist, and doing it inside a
@@ -245,7 +257,11 @@ fn sync_inner(ctx: &Ctx, project: &Project, args: &crate::cli::SyncArgs) -> Resu
     if !run.succeeded() && needs_interpreter(&run.output) {
         match provision(ctx, project, &uv_bin) {
             Ok(0) => {
-                run = exec::run_captured(project, &plan, &argv, Some("installing"))?;
+                run = exec::run_captured(project, &plan, &deps_argv, Some("installing"))?;
+                deps_ok = run.succeeded();
+                if deps_ok {
+                    run = exec::run_captured(project, &plan, &argv, Some("installing"))?;
+                }
             }
             Ok(_) => {}
             Err(e) => warnings.push(format!("could not install a Python interpreter: {e}")),
@@ -264,14 +280,60 @@ fn sync_inner(ctx: &Ctx, project: &Project, args: &crate::cli::SyncArgs) -> Resu
         changed.extend(locked.changed.iter().cloned());
         warnings.extend(locked.warnings.iter().cloned());
         if locked.exit_code == 0 {
-            run = exec::run_captured(project, &plan, &argv, Some("installing"))?;
+            run = exec::run_captured(project, &plan, &deps_argv, Some("installing"))?;
+            deps_ok = run.succeeded();
+            if deps_ok {
+                run = exec::run_captured(project, &plan, &argv, Some("installing"))?;
+            }
         }
     }
 
-    if !run.succeeded()
-        && let Some(hint) = read_only_project_hint(&run.output)
-    {
-        warnings.push(hint);
+    // Your own project's backend is the only one still to run — the
+    // dependencies are installed by now — so letting it write your source is a
+    // far smaller grant than it looks, and for setuptools it is the only way
+    // the project can be installed at all. Most backends (hatchling, flit,
+    // pdm) never reach this path.
+    //
+    // The alternative was telling every setuptools user to set
+    // `project-writable = true`, which is strictly worse: that hands write
+    // access to all the dependency backends in pass 1 as well, to fix a write
+    // only the project's own backend needs.
+    let mut plan = plan;
+    // `deps_ok` is load-bearing, not a tidiness check. Without it a *dependency*
+    // whose build backend fails trying to write your source would match the
+    // same signature, and senv would helpfully re-run that backend with the
+    // project writable — handing an attacker exactly what this phase exists to
+    // deny. The retry is only ever for the project's own backend, which runs
+    // after the dependencies are already installed.
+    if deps_ok && !run.succeeded() && read_only_project_hint(&run.output).is_some() {
+        let writable = install_plan(project, &uv_bin, None, true)?;
+        if !ctx.json {
+            eprintln!(
+                "note: {}",
+                exec::wrap(
+                    "your project's build backend needs to write into your source tree \
+                     (setuptools creates *.egg-info there). Retrying that step with the \
+                     project writable — the dependencies were already installed with it \
+                     read-only.",
+                    74,
+                    6
+                )
+            );
+        }
+        let retry = exec::run_captured(project, &writable, &argv, Some("building the project"))?;
+        if retry.succeeded() {
+            warnings.push(
+                "your project's own build backend ran with write access to your source; \
+                 dependency build backends did not"
+                    .to_string(),
+            );
+            run = retry;
+            plan = writable;
+        } else if let Some(hint) = read_only_project_hint(&run.output) {
+            // Report the original read-only failure, which names the setting,
+            // rather than a second one that reads as the same problem.
+            warnings.push(hint);
+        }
     }
 
     finish(project, &plan, run, argv, false, changed, warnings, true)
