@@ -249,7 +249,24 @@ pub fn prepare_stage(project: &Project) -> Result<Stage> {
 
     for name in STAGE_FILES.iter().chain(STAGE_GLOBS.iter()) {
         let src = project.root.join(name);
-        if src.is_file() {
+        // `symlink_metadata`, not `is_file`: these paths live in the project,
+        // which the run phase can write, and senv does this copy *unconfined*.
+        // A package that replaces `README.md` with a link to `~/.ssh/id_ed25519`
+        // would otherwise have senv carry the key into the staging directory —
+        // which is the install phase's own writable working directory, readable
+        // by every build backend that runs there. senv would be exfiltrating
+        // the credential across its own boundary on the attacker's behalf.
+        let Ok(meta) = std::fs::symlink_metadata(&src) else {
+            continue;
+        };
+        if meta.file_type().is_symlink() {
+            eprintln!(
+                "warning: not staging {name} — it is a symbolic link, and senv will not copy \
+                 whatever it points at into the install sandbox"
+            );
+            continue;
+        }
+        if meta.is_file() {
             fs::copy(&src, &dir.join(name))?;
         }
     }
@@ -323,7 +340,7 @@ pub fn apply_stage(
             toml::from_str::<toml::Value>(&text).map_err(|e| {
                 SenvError::config(&staged_lock, format!("staged lockfile is invalid: {e}"))
             })?;
-            fs::write(&project.lock_path(), text.as_bytes())?;
+            fs::write_no_follow(&project.lock_path(), text.as_bytes())?;
             result.changed.push("uv.lock".to_string());
         }
     }

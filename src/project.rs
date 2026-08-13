@@ -256,6 +256,33 @@ impl Project {
         write_atomic(&path, text.as_bytes())
     }
 
+    /// The nearest ancestor directory that senv already tracks as a project,
+    /// if any.
+    ///
+    /// A project nested inside another one is legitimate in a monorepo and is
+    /// also the signature of an attack: the run phase can write anywhere in the
+    /// project, so a package can create `tests/pyproject.toml` plus a hostile
+    /// `tests/senv.toml`, and a user who later runs senv from that directory
+    /// gets a different project with no recorded baseline. senv reports it
+    /// rather than refusing, because breaking monorepos to catch this would be
+    /// the wrong trade — the refusal that actually stops it is the first-sight
+    /// check on a wide policy.
+    pub fn enclosing_project(&self) -> Option<PathBuf> {
+        let projects = state_root().ok()?.join("projects");
+        let mut dir = self.root.parent();
+        while let Some(candidate) = dir {
+            if projects
+                .join(project_key(candidate))
+                .join("state.json")
+                .is_file()
+            {
+                return Some(candidate.to_path_buf());
+            }
+            dir = candidate.parent();
+        }
+        None
+    }
+
     /// Compare the configuration on disk with the snapshot senv recorded.
     pub fn trust_verdict(&self) -> crate::trust::Verdict {
         let current = crate::trust::PolicySnapshot::of(&self.config);
@@ -378,7 +405,7 @@ impl VenvLink {
 /// Root of senv's state, honouring `SENV_STATE_DIR` and then XDG.
 pub fn state_root() -> Result<PathBuf> {
     if let Some(dir) = std::env::var_os("SENV_STATE_DIR") {
-        return Ok(PathBuf::from(dir));
+        return absolute_root("SENV_STATE_DIR", dir);
     }
     if let Some(dir) = std::env::var_os("XDG_STATE_HOME") {
         let dir = PathBuf::from(dir);
@@ -392,7 +419,7 @@ pub fn state_root() -> Result<PathBuf> {
 /// Root of senv's shared caches, honouring `SENV_CACHE_DIR` and then XDG.
 pub fn cache_root() -> Result<PathBuf> {
     if let Some(dir) = std::env::var_os("SENV_CACHE_DIR") {
-        return Ok(PathBuf::from(dir));
+        return absolute_root("SENV_CACHE_DIR", dir);
     }
     if let Some(dir) = std::env::var_os("XDG_CACHE_HOME") {
         let dir = PathBuf::from(dir);
@@ -401,6 +428,30 @@ pub fn cache_root() -> Result<PathBuf> {
         }
     }
     Ok(home()?.join(".cache").join("senv"))
+}
+
+/// senv's roots must be absolute.
+///
+/// A relative value is resolved against the working directory, which changes
+/// per invocation — and one that resolved *into* a project would put the venv
+/// and the receipts inside the run phase's write grant, quietly voiding the
+/// invariant the whole state layout exists for. The XDG variables are already
+/// filtered this way; these two were not.
+fn absolute_root(var: &str, value: std::ffi::OsString) -> Result<PathBuf> {
+    let path = PathBuf::from(value);
+    if !path.is_absolute() {
+        return Err(SenvError::refused(
+            format!("{var} must be an absolute path"),
+            format!(
+                "{} is relative, so it would move with the working directory — and if it \
+                 resolved inside a project, senv's state would land inside the sandbox's own \
+                 write grant.",
+                path.display()
+            ),
+            format!("set {var} to an absolute path, or unset it to use the default"),
+        ));
+    }
+    Ok(path)
 }
 
 pub fn home() -> Result<PathBuf> {
@@ -457,19 +508,80 @@ fn symlink(target: &Path, link: &Path) -> Result<()> {
 
 /// Write via a temp file and rename, so a crash mid-write cannot leave a
 /// truncated `state.json` that the next command fails to parse.
+///
+/// The temp file is created with `O_EXCL | O_NOFOLLOW` under an unpredictable
+/// name. Both matter when the destination is inside a project: a fixed name was
+/// pre-plantable as a symlink, and `senv allow` then wrote its output to
+/// wherever that symlink pointed — outside the sandbox, as the user. `O_EXCL`
+/// is what actually closes it; the random suffix keeps a stale temp from a
+/// crashed run out of the way.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write;
+
     let parent = path
         .parent()
         .ok_or_else(|| SenvError::internal(format!("{} has no parent", path.display())))?;
     fs::create_dir_all(parent)?;
-    let tmp = parent.join(format!(
-        ".{}.tmp",
-        path.file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default()
-    ));
-    fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, path).at(path)
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "senv".to_string());
+
+    let mut last_err = None;
+    for _ in 0..8 {
+        let tmp = parent.join(format!(".{name}.{}.tmp", temp_suffix()));
+        match fs::create_new_no_follow(&tmp) {
+            Ok(mut file) => {
+                let written = file
+                    .write_all(bytes)
+                    .and_then(|_| file.sync_all())
+                    .map_err(|e| SenvError::io(&tmp, e));
+                if let Err(e) = written {
+                    let _ = std::fs::remove_file(&tmp);
+                    return Err(e);
+                }
+                drop(file);
+                // `rename` replaces the destination itself rather than
+                // following it, so a symlink at `path` is destroyed instead of
+                // written through.
+                return match std::fs::rename(&tmp, path) {
+                    Ok(()) => Ok(()),
+                    Err(e) => {
+                        let _ = std::fs::remove_file(&tmp);
+                        Err(SenvError::io(path, e))
+                    }
+                };
+            }
+            // Occupied or a symlink: try another name rather than touching it.
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| {
+        SenvError::internal(format!(
+            "could not create a temp file next to {}",
+            path.display()
+        ))
+    }))
+}
+
+/// An unpredictable-enough suffix for a temp file name.
+///
+/// Not a security control — `O_EXCL` is. This only avoids collisions between
+/// concurrent writers and stale files from crashed runs, so the clock and the
+/// pid are sufficient and keep senv free of another dependency.
+fn temp_suffix() -> String {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static SEQ: AtomicU32 = AtomicU32::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    format!(
+        "{:x}{:x}{:x}",
+        std::process::id(),
+        nanos,
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    )
 }
 
 /// `chmod 0700`, best-effort on platforms without Unix permissions.

@@ -403,6 +403,50 @@ strongest honest guarantee available when the policy has to live next to the
 code, and it converts a silent, permanent compromise into a refusal that names
 what changed.
 
+A second review pass, done independently against the hardened tree, found the
+worst one — and it was a case of believing a guarantee rather than testing it.
+
+**The install phase never had the project read-only.** senv listed the project
+under `fs_read` and concluded it was read-only. But h5i grants the *working
+directory* read-write implicitly: `$WORK` is in the builtin `fs_write`, and the
+enforcement path unions that over any read grant naming the same path. The
+correct switch is `ResolvedPolicy::work_readonly`, which senv never set. So
+`senv sync` ran with your source writable — a build backend could edit
+`conftest.py` or `senv.toml` — while `senv status` printed "the project,
+read-only". Both are fixed, and the unit test that gave false assurance (it
+asserted the project was absent from `fs_write`, which was true and irrelevant)
+now asserts on the *resolved* policy instead.
+
+The lesson generalises: **assert on what the engine will enforce, not on the
+strings senv handed it.** Every other guarantee in this document was verified
+by running a program under the policy and watching it fail; this one was not,
+and it was the one that was wrong.
+
+Two further findings from that pass:
+
+- **A manufactured nested project bypassed the trust gate.** State is keyed by
+  project root, and discovery takes the nearest marker walking up — so a package
+  could create `tests/pyproject.toml` plus a hostile `tests/senv.toml`, and a
+  user who later ran senv from that directory got a project with no recorded
+  baseline, adopted silently. Verified as unconfined host execution. First
+  sight is now fail-closed: a policy that grants more than senv's defaults is
+  refused until `senv trust` accepts it, whether or not senv has seen the
+  project before. A project nested inside another tracked project is also
+  reported, since that is the shape of the attack (and a normal monorepo, so it
+  warns rather than refuses).
+- **Staging followed symlinks in both directions.** senv does those copies
+  unconfined. A package replacing `README.md` with a link to `~/.ssh/id_ed25519`
+  had senv copy the key into the staging directory — which is the install
+  phase's own writable working directory, readable by every build backend that
+  runs there. senv would have been carrying the credential across its own
+  boundary. Sources are now checked with `symlink_metadata` and skipped;
+  destinations are written with `O_NOFOLLOW`.
+
+The recurring shape across all of these is worth naming: **senv's own
+unconfined code touches paths inside the sandbox's write grant.** Anywhere that
+happens — reading a config, copying a manifest, writing a lockfile, executing a
+tool — the path is attacker-controlled input and has to be treated as such.
+
 Two smaller findings from the same review, both fixed: `.python-version` and
 `[env] python` are attacker-writable and became `uv` arguments, so a value that
 is not version-shaped (`--mirror=https://evil`) is now refused rather than

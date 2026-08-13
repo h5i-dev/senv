@@ -142,6 +142,80 @@ pub mod fs {
         std::fs::write(path, contents).map_err(|e| SenvError::io(path, e))
     }
 
+    /// Write a file, refusing to follow a symlink at the final component.
+    ///
+    /// Every file senv writes into a project — `pyproject.toml`, `uv.lock`,
+    /// `.python-version`, `senv.toml` — sits in a directory the run phase
+    /// grants read-write. A package that replaces one of them with a symlink
+    /// turns senv's own next write into an arbitrary-file-write **outside** the
+    /// sandbox, performed by senv, unconfined. That was a working exploit:
+    /// planting `.senv.toml.tmp` as a symlink made `senv allow` overwrite a
+    /// file elsewhere on the disk.
+    ///
+    /// `O_NOFOLLOW` fails with `ELOOP` on a symlink instead, which senv reports
+    /// rather than papering over: a manifest that is a symlink is either a
+    /// setup senv should not silently rewrite, or an attack.
+    pub fn write_no_follow(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
+        use std::io::Write;
+        #[cfg(unix)]
+        let mut file = {
+            use std::os::unix::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(path)
+                .map_err(|e| symlink_aware(path, e))?
+        };
+        #[cfg(not(unix))]
+        let mut file = std::fs::File::create(path).map_err(|e| SenvError::io(path, e))?;
+
+        file.write_all(contents.as_ref())
+            .map_err(|e| SenvError::io(path, e))
+    }
+
+    /// Create a new file that must not already exist and must not be a
+    /// symlink. Used for the temp file behind an atomic write.
+    pub fn create_new_no_follow(path: &Path) -> Result<std::fs::File> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .custom_flags(libc::O_NOFOLLOW)
+                .mode(0o600)
+                .open(path)
+                .map_err(|e| symlink_aware(path, e))
+        }
+        #[cfg(not(unix))]
+        {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+                .map_err(|e| SenvError::io(path, e))
+        }
+    }
+
+    /// Turn the kernel's `ELOOP` into an explanation, since "Too many levels of
+    /// symbolic links" does not tell anyone what senv refused or why.
+    fn symlink_aware(path: &Path, e: std::io::Error) -> SenvError {
+        #[cfg(unix)]
+        if e.raw_os_error() == Some(libc::ELOOP) {
+            return SenvError::refused(
+                format!("{} is a symbolic link", path.display()),
+                "senv will not write through a symlink in your project: code running under \
+                 senv can create one, which would turn this write into a write somewhere else \
+                 on your disk."
+                    .to_string(),
+                format!("replace {} with a regular file", path.display()),
+            );
+        }
+        SenvError::io(path, e)
+    }
+
     pub fn create_dir_all(path: &Path) -> Result<()> {
         std::fs::create_dir_all(path).map_err(|e| SenvError::io(path, e))
     }

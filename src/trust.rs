@@ -69,8 +69,72 @@ pub struct PolicySnapshot {
     pub image: Option<String>,
     pub uv: Option<String>,
     pub allow_command_secrets: bool,
-    /// `NAME=source`, so a source changing under a stable name is visible.
+    /// `NAME=source|inject|phases`, so a grant changing shape under a stable
+    /// name is visible — an `env:` secret quietly becoming a `command:` one, or
+    /// a shell-only secret being re-scoped to every run.
     pub secrets: Vec<String>,
+    /// Resource ceilings, in the units the policy compiles to. Raising one is
+    /// widening: a run-phase wall clock moved from 30 minutes to a year is a
+    /// persistence primitive, not a convenience.
+    pub run_limits: Limits,
+    pub install_limits: Limits,
+}
+
+/// The resource ceilings a phase runs under. `None` means senv's built-in
+/// default, which is never wider than an explicit value that exceeds it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Limits {
+    pub mem_bytes: Option<u64>,
+    pub wall_secs: Option<u64>,
+    pub procs: Option<u64>,
+    pub fsize_bytes: Option<u64>,
+    pub cpu_secs: Option<u64>,
+}
+
+impl Limits {
+    fn of(r: &crate::config::ResourceSection) -> Limits {
+        let mem = |v: &Option<String>| {
+            v.as_deref()
+                .and_then(|s| h5i_sandbox::sandbox::parse_mem(s).ok())
+        };
+        let secs = |v: &Option<String>| {
+            v.as_deref()
+                .and_then(|s| h5i_sandbox::sandbox::parse_wall(s).ok())
+                .map(|d| d.as_secs())
+        };
+        Limits {
+            mem_bytes: mem(&r.mem),
+            wall_secs: if r.wall_is_unbounded() {
+                Some(u64::MAX)
+            } else {
+                secs(&r.wall)
+            },
+            procs: r.procs,
+            fsize_bytes: mem(&r.fsize),
+            cpu_secs: secs(&r.cpu),
+        }
+    }
+
+    fn widenings(&self, previous: &Limits, label: &str, found: &mut Vec<String>) {
+        let mut raised = |what: &str, new: Option<u64>, old: Option<u64>| {
+            // An unset value means senv's default. Setting one for the first
+            // time is only interesting when the other side had a value it
+            // exceeds; a first explicit ceiling is compared against nothing, so
+            // it is reported to be safe.
+            if let Some(new) = new
+                && old.is_none_or(|old| new > old)
+                && old.is_some()
+            {
+                found.push(format!("[{label}] {what}: raised to {new}"));
+            }
+        };
+        raised("mem", self.mem_bytes, previous.mem_bytes);
+        raised("wall", self.wall_secs, previous.wall_secs);
+        raised("procs", self.procs, previous.procs);
+        raised("fsize", self.fsize_bytes, previous.fsize_bytes);
+        raised("cpu", self.cpu_secs, previous.cpu_secs);
+    }
 }
 
 /// How much network a phase may reach, ordered so "more" is comparable.
@@ -94,6 +158,18 @@ impl NetLevel {
 }
 
 impl PolicySnapshot {
+    /// The snapshot of senv's own defaults.
+    ///
+    /// Not `Default::default()`: the derived zero value has `install_net =
+    /// Deny`, while senv's actual default is a registry allowlist. Comparing
+    /// against the zero value reported "install net: deny → an allowlist" as a
+    /// widening for every project that had never been seen — a warning that
+    /// fires on nothing, which is the failure mode this whole mechanism is
+    /// supposed to avoid.
+    pub fn defaults() -> PolicySnapshot {
+        PolicySnapshot::of(&Config::default())
+    }
+
     /// Reduce a configuration to what a reviewer would care about.
     pub fn of(config: &Config) -> PolicySnapshot {
         let run_net = if config.run.net.is_host() {
@@ -125,14 +201,24 @@ impl PolicySnapshot {
                 .secrets
                 .iter()
                 .map(|(name, s)| {
+                    let mut phases = s.phases.clone();
+                    phases.sort();
                     format!(
-                        "{name}={}",
+                        "{name}={}|{}|{}",
                         s.source
                             .clone()
-                            .unwrap_or_else(|| format!("env:SENV_SECRET_{name}"))
+                            .unwrap_or_else(|| format!("env:SENV_SECRET_{name}")),
+                        s.inject.clone().unwrap_or_else(|| "env".to_string()),
+                        if phases.is_empty() {
+                            "run,shell".to_string()
+                        } else {
+                            phases.join(",")
+                        }
                     )
                 })
                 .collect(),
+            run_limits: Limits::of(&config.run.resources),
+            install_limits: Limits::of(&config.install.resources),
         };
         for list in [
             &mut snapshot.run_hosts,
@@ -227,6 +313,11 @@ impl PolicySnapshot {
             );
         }
 
+        self.run_limits
+            .widenings(&previous.run_limits, "run.resources", &mut found);
+        self.install_limits
+            .widenings(&previous.install_limits, "install.resources", &mut found);
+
         // These three are conservative: any change at all is reported, because
         // each redirects what senv executes or how strongly it confines, and
         // there is no ordering in which a change is obviously safe.
@@ -314,6 +405,20 @@ mod tests {
     }
 
     #[test]
+    fn senvs_own_defaults_are_not_a_widening_of_themselves() {
+        // The regression this guards: comparing against the struct's zero
+        // value rather than the default *config* made every fresh project
+        // report a phantom "install net: deny → an allowlist".
+        let w = PolicySnapshot::of(&Config::default()).widenings(&PolicySnapshot::defaults());
+        assert!(
+            w.is_empty(),
+            "a default config must match the default baseline: {w:?}"
+        );
+        let w = PolicySnapshot::of(&config("")).widenings(&PolicySnapshot::defaults());
+        assert!(w.is_empty(), "an empty senv.toml is the default too: {w:?}");
+    }
+
+    #[test]
     fn opening_the_network_is_a_widening() {
         let w = verdict("", "[run]\nnet = \"host\"\n");
         assert_eq!(w.len(), 1, "{w:?}");
@@ -385,6 +490,41 @@ mod tests {
     }
 
     #[test]
+    fn raising_a_resource_ceiling_is_a_widening() {
+        // A run-phase wall clock moved from 30 minutes to a year keeps a
+        // process alive long after the command "finished".
+        let w = verdict(
+            "[run.resources]\nwall = \"30m\"\n",
+            "[run.resources]\nwall = \"none\"\n",
+        );
+        assert!(w.iter().any(|f| f.contains("wall")), "{w:?}");
+
+        let w = verdict(
+            "[run.resources]\nprocs = 64\n",
+            "[run.resources]\nprocs = 4096\n",
+        );
+        assert!(w.iter().any(|f| f.contains("procs")), "{w:?}");
+
+        // Lowering one is not.
+        assert!(
+            verdict(
+                "[run.resources]\nmem = \"8G\"\n",
+                "[run.resources]\nmem = \"1G\"\n"
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn re_scoping_a_secret_to_more_phases_is_a_widening() {
+        let w = verdict(
+            "[secrets.TOKEN]\nphases = [\"shell\"]\n",
+            "[secrets.TOKEN]\nphases = [\"run\", \"shell\"]\n",
+        );
+        assert!(w.iter().any(|f| f.contains("TOKEN")), "{w:?}");
+    }
+
+    #[test]
     fn a_secret_whose_source_changes_is_reported_even_under_the_same_name() {
         // Renaming the source is how an env: secret quietly becomes a
         // command: secret.
@@ -406,7 +546,7 @@ mod tests {
             cfg.run.fs.read[0].contains('\u{1b}'),
             "the fixture must actually be hostile"
         );
-        let w = PolicySnapshot::of(&cfg).widenings(&PolicySnapshot::default());
+        let w = PolicySnapshot::of(&cfg).widenings(&PolicySnapshot::defaults());
         assert!(!w.iter().any(|f| f.contains('\u{1b}')), "{w:?}");
     }
 }

@@ -775,6 +775,164 @@ fn a_package_cannot_obtain_host_execution_through_a_command_secret() {
     assert!(!marker.exists(), "still must not have run");
 }
 
+/// The install phase must not be able to edit your source.
+///
+/// This was false in the first implementation: h5i grants the working
+/// directory read-write implicitly, so listing the project under `fs_read` did
+/// not make it read-only, and `senv status` reported a guarantee that was not
+/// being enforced.
+#[test]
+fn a_build_backend_cannot_edit_your_source_during_an_install() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    // `senv uv --` runs an arbitrary uv command inside the install boundary,
+    // which is the same confinement a build backend gets.
+    let out = fixture.senv(&[
+        "uv",
+        "--",
+        "run",
+        "--no-project",
+        "--python",
+        "/usr/bin/python3",
+        "python",
+        "-c",
+        "open('PWNED_BY_INSTALL','w').write('x')",
+    ]);
+    assert!(
+        !fixture.root.join("PWNED_BY_INSTALL").exists(),
+        "the install phase wrote to the project: {}",
+        combined(&out)
+    );
+
+    // And status must not claim otherwise.
+    let out = fixture.senv(&["--json", "status"]);
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
+    let install = json["phases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["phase"] == "install")
+        .expect("an install phase");
+    let writable = install["writable"].as_array().expect("writable list");
+    let root = fixture.root.display().to_string();
+    assert!(
+        !writable
+            .iter()
+            .any(|w| w.as_str().is_some_and(|w| w.starts_with(&root))),
+        "status lists the project as writable during installs: {install}"
+    );
+}
+
+/// A package must not be able to reroot senv onto a project it wrote itself.
+#[test]
+fn a_manufactured_nested_project_cannot_adopt_a_hostile_policy() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    let marker = fixture.root.parent().unwrap().join("nested-escape-marker");
+    let script = format!(
+        "import pathlib\n\
+         d = pathlib.Path('tests'); d.mkdir(exist_ok=True)\n\
+         (d/'pyproject.toml').write_text('[project]\\nname=\"t\"\\nversion=\"0\"\\n\
+         requires-python=\">=3.9\"\\ndependencies=[]\\n')\n\
+         (d/'senv.toml').write_text('[env]\\nallow-command-secrets = true\\n\
+         [secrets.TOKEN]\\nsource = \"command:touch {}; echo t\"\\nphases = [\"run\"]\\n')",
+        marker.display()
+    );
+    fixture.run_python(&script);
+
+    // The user cd's into the directory the package created.
+    let nested = fixture.root.join("tests");
+    let out = Command::new(BIN)
+        .args(["run", "python", "-c", "print('hello')"])
+        .current_dir(&nested)
+        .env("SENV_STATE_DIR", &fixture.state)
+        .env("SENV_CACHE_DIR", &fixture.cache)
+        .env_remove("VIRTUAL_ENV")
+        .output()
+        .expect("senv runs");
+    let text = combined(&out);
+
+    assert!(
+        !marker.exists(),
+        "a manufactured project reached host execution: {text}"
+    );
+    assert_eq!(out.status.code(), Some(2), "{text}");
+    assert!(
+        text.contains("has not seen this project before") || text.contains("OUTSIDE the sandbox"),
+        "the refusal should explain why: {text}"
+    );
+}
+
+/// senv must not copy whatever a symlink points at into the install sandbox.
+#[test]
+fn staging_does_not_carry_host_secrets_across_the_boundary() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    let secret = fixture.root.parent().unwrap().join("pretend-private-key");
+    std::fs::write(&secret, "SUPER-SECRET-KEY\n").unwrap();
+
+    // README.md is one of the files senv stages for project metadata.
+    let script = format!("import os\nos.symlink('{}', 'README.md')", secret.display());
+    fixture.run_python(&script);
+
+    let out = fixture.senv(&["lock"]);
+    let staged = fixture.state_dir().join("stage").join("README.md");
+    let carried = std::fs::read_to_string(&staged).unwrap_or_default();
+    assert!(
+        !carried.contains("SUPER-SECRET-KEY"),
+        "senv carried a host secret into the install sandbox: {}",
+        combined(&out)
+    );
+}
+
+/// senv must not write through a symlink planted in the project.
+#[test]
+fn senv_never_writes_through_a_symlink_in_the_project() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    let outside = fixture.root.parent().unwrap().join("precious.txt");
+    std::fs::write(&outside, "irreplaceable\n").unwrap();
+
+    // The temp file behind senv's atomic write used to have a fixed name, so
+    // it could be pre-planted as a symlink and `senv allow` would write
+    // through it.
+    let script = format!(
+        "import os\nos.symlink('{}', '.senv.toml.tmp')",
+        outside.display()
+    );
+    fixture.run_python(&script);
+    fixture.senv(&["allow", "example.com"]);
+    assert_eq!(
+        std::fs::read_to_string(&outside).unwrap(),
+        "irreplaceable\n",
+        "senv wrote through a planted symlink"
+    );
+}
+
 /// No command may launder a widening into the baseline on the user's behalf.
 #[test]
 fn no_command_accepts_a_widening_as_a_side_effect() {

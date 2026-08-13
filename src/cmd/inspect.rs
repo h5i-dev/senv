@@ -142,7 +142,7 @@ fn phase_status(project: &Project, phase: Phase, uv_bin: Option<&std::path::Path
                 phase: phase.as_str().to_string(),
                 tier: Some(plan.tier().as_str().to_string()),
                 network: describe_net(p),
-                writable: writable_summary(project, p, phase),
+                writable: writable_summary(project, p, plan.work_readonly),
                 readable: readable_summary(project, p),
                 resources,
                 policy_digest: Some(plan.digest.clone()),
@@ -176,19 +176,19 @@ fn describe_net(p: &h5i_sandbox::sandbox_policy::Profile) -> String {
     }
 }
 
-/// Writable paths, with `$WORK` spelled out — it is implicit in the profile and
-/// invisible to a reader who does not know that.
+/// Writable paths, with `$WORK` spelled out.
+///
+/// `$WORK` is granted implicitly by h5i and never appears in `fs_write`, so it
+/// has to be added here from the enforcement mode rather than inferred from the
+/// grant lists. Inferring it was how `status` came to report the project as
+/// read-only during installs while it was in fact writable.
 fn writable_summary(
     project: &Project,
     p: &h5i_sandbox::sandbox_policy::Profile,
-    phase: Phase,
+    work_readonly: bool,
 ) -> Vec<String> {
     let mut out = Vec::new();
-    if phase.is_run_like()
-        || p.fs_read
-            .iter()
-            .all(|r| r != &project.root.display().to_string())
-    {
+    if !work_readonly {
         out.push(format!("{} (the project)", project.root.display()));
     }
     out.extend(
@@ -200,12 +200,6 @@ fn writable_summary(
     out
 }
 
-/// The read-only grants worth showing.
-///
-/// h5i's baseline system paths are filtered out — they are the same on every
-/// project and drown the two lines that matter. Matched exactly rather than by
-/// prefix: a project or environment that happens to live under `/tmp` is a
-/// real grant a reader needs to see, and prefix-matching silently hid it.
 fn readable_summary(project: &Project, p: &h5i_sandbox::sandbox_policy::Profile) -> Vec<String> {
     const BASELINE: [&str; 13] = [
         "/usr",
@@ -455,18 +449,37 @@ fn suggest_stanza(hosts: &[String], paths: &[String]) -> String {
     if !hosts.is_empty() {
         out.push_str("\n[run]\nnet = [\n");
         for h in hosts {
-            out.push_str(&format!("  \"{h}\",\n"));
+            out.push_str(&format!("  {},\n", toml_string(h)));
         }
         out.push_str("]\n");
     }
     if !paths.is_empty() {
         out.push_str("\n[run.fs]\nread = [\n");
         for p in paths {
-            out.push_str(&format!("  \"{p}\",\n"));
+            out.push_str(&format!("  {},\n", toml_string(p)));
         }
         out.push_str("]\n");
     }
     out
+}
+
+/// Quote a value as a TOML basic string.
+///
+/// These come from a program's output, and the result is text a user pastes
+/// into their policy. Today the extractor cannot produce a `"` — it tokenizes
+/// on quotes — so nothing can break out of the string. That is a property of
+/// one function elsewhere in this file, which is a thin thing to rest on when
+/// the consequence is a policy that grants more than it appears to.
+fn toml_string(value: &str) -> String {
+    let escaped: String = value
+        .chars()
+        .flat_map(|c| match c {
+            '"' => "\\\"".chars().collect::<Vec<_>>(),
+            '\\' => "\\\\".chars().collect(),
+            c => vec![c],
+        })
+        .collect();
+    format!("\"{escaped}\"")
 }
 
 fn render_report(o: &ReportOutput) {

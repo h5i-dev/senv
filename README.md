@@ -146,6 +146,12 @@ senv: senv.toml grants more than senv recorded, so nothing was run
 `senv trust` accepts the current file as the baseline. Editing your own policy
 costs one extra command; a package editing it for you costs the attack.
 
+The same applies the first time senv sees a project: if its `senv.toml` already
+grants more than the defaults, senv shows you what and waits for `senv trust`.
+That is the right moment to read a policy that arrived with someone else's
+code — and it is what stops a package from manufacturing a fresh project in a
+subdirectory to escape its own baseline.
+
 Two settings get extra treatment because they reach outside the sandbox:
 a secret with a `command:` source needs `[env] allow-command-secrets = true`
 (the command runs on the host), and `[env] uv` is refused outright if it points

@@ -8,6 +8,27 @@ use crate::error::{Result, SenvError};
 use crate::project::Project;
 use std::path::PathBuf;
 
+/// The refusal a project senv has never seen gets, when its policy already
+/// grants more than the defaults.
+fn first_sight_error(project: &Project, wide: &[String]) -> SenvError {
+    let list = wide
+        .iter()
+        .map(|w| format!("\n    + {w}"))
+        .collect::<Vec<_>>()
+        .join("");
+    SenvError::refused(
+        format!(
+            "{} grants more than senv's defaults, and senv has not seen this project before",
+            project.config_path.display()
+        ),
+        format!(
+            "the policy asks for:{list}\n               senv has no earlier version of this project's policy to compare against, so it \
+             cannot tell a configuration you wrote from one that was written for you."
+        ),
+        "read the settings above; if they are what you want, run `senv trust` to accept them",
+    )
+}
+
 /// The refusal a widened configuration gets.
 ///
 /// Long on purpose. It has to distinguish "you edited this and forgot" from
@@ -63,25 +84,25 @@ impl Ctx {
             // that arrived with the repository is trusted exactly as much as
             // the code beside it. It is still worth saying out loud when that
             // config grants more than the defaults.
+            // A first sighting has no baseline to compare against, so a
+            // configuration that grants more than senv's defaults has to be
+            // looked at rather than adopted.
+            //
+            // This is what closes the nested-project bypass: the run phase can
+            // write anywhere in the project, so a package can manufacture a
+            // whole new project in a subdirectory the user plausibly cd's into
+            // — `tests/`, say — with its own hostile `senv.toml`. That project
+            // has no recorded state, so a permissive first sighting would
+            // adopt it silently, and a `command:` secret there is unconfined
+            // host execution. A wide config on first contact is exactly the
+            // moment to stop.
             crate::trust::Verdict::FirstSight => {
-                if !self.json {
-                    let wide = crate::trust::PolicySnapshot::of(&project.config)
-                        .widenings(&crate::trust::PolicySnapshot::default());
-                    if !wide.is_empty() {
-                        eprintln!(
-                            "note: {} grants more than senv's defaults:",
-                            project.config_path.display()
-                        );
-                        for w in &wide {
-                            eprintln!("  + {w}");
-                        }
-                        eprintln!(
-                            "  Accepted as this project's baseline; later widening needs `senv trust`."
-                        );
-                        eprintln!();
-                    }
+                let wide = crate::trust::PolicySnapshot::of(&project.config)
+                    .widenings(&crate::trust::PolicySnapshot::defaults());
+                if wide.is_empty() {
+                    return project.record_trust();
                 }
-                project.record_trust()
+                Err(first_sight_error(project, &wide))
             }
             // A change that only narrows becomes the new baseline, so the next
             // widening is measured against what is on disk now.
@@ -103,6 +124,16 @@ impl Ctx {
         };
         let project = Project::discover(&start)?;
         project.ensure_dirs()?;
+        if !self.json
+            && self.project_dir.is_none()
+            && let Some(outer) = project.enclosing_project()
+        {
+            eprintln!(
+                "note: this project sits inside {}, which senv also tracks. Each has its own \
+                 policy and environment — check you are in the one you meant.",
+                outer.display()
+            );
+        }
         Ok(project)
     }
 

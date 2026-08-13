@@ -133,6 +133,8 @@ impl Note {
 pub struct Plan {
     pub phase: Phase,
     pub policy: ResolvedPolicy,
+    /// True when the working directory is granted read-only.
+    pub work_readonly: bool,
     /// The working directory, which h5i grants implicitly.
     pub work: PathBuf,
     /// Environment injected after h5i's `env.pass` allowlist. senv builds the
@@ -165,6 +167,14 @@ pub struct PlanOptions {
     pub extra_hosts: Vec<String>,
     /// Path to the `uv` binary, which must be granted read access.
     pub uv: Option<PathBuf>,
+}
+
+/// Does the install phase write to its working directory?
+///
+/// A staging directory is senv's own scratch, so it is writable by
+/// construction; the project is writable only when asked for.
+fn project_writable(project: &Project, opts: &PlanOptions) -> bool {
+    opts.work_override.is_some() || opts.project_writable || project.config.install.project_writable
 }
 
 /// Compile the policy for `phase`.
@@ -202,9 +212,26 @@ pub fn plan(project: &Project, phase: Phase, opts: &PlanOptions) -> Result<Plan>
     sandbox::verify_exec(&policy)?;
 
     let digest = policy.digest()?;
+
+    // h5i grants the working directory read-write *implicitly* — `$WORK` is in
+    // the builtin `fs_write`, and `build_confined_command` unions it over any
+    // read grant naming the same path. So listing the project under `fs_read`
+    // does not make it read-only, and for a while senv believed it did: `senv
+    // sync` ran with the project writable while `senv status` reported
+    // "read-only", and a build backend could edit your source during an
+    // install. `work_readonly` is the switch that actually moves `$WORK` into
+    // the read-only set.
+    //
+    // Runtime-only and serde-skipped upstream, so it does not perturb the
+    // digest — it is an enforcement mode for this invocation, not policy.
+    let work_readonly = phase == Phase::Install && !project_writable(project, opts);
+    let mut policy = policy;
+    policy.work_readonly = work_readonly;
+
     Ok(Plan {
         phase,
         policy,
+        work_readonly,
         work,
         env,
         digest,
@@ -271,7 +298,7 @@ fn install_profile(
     // writable as `$WORK`. The project itself is read-only unless the user
     // opened it, which is what stops a build backend from editing your source
     // while it installs.
-    let project_writable = staged || opts.project_writable || cfg.install.project_writable;
+    let project_writable = project_writable(project, opts);
     if !project_writable {
         p.fs_read.push(project.root.display().to_string());
     } else if !staged {
@@ -784,24 +811,86 @@ mod tests {
 
     #[test]
     fn the_install_phase_can_write_the_environment_but_not_the_project() {
+        // Asserted on the *resolved* policy, not on the profile's strings.
+        // The earlier version of this test checked that `fs_write` did not
+        // contain the project path and concluded the project was read-only —
+        // but h5i grants the working directory read-write implicitly through
+        // `$WORK`, which is a different entry entirely. The test passed while
+        // `senv sync` ran with the project writable.
         let (_t, project) = fixture("");
-        let p = profile_for(&project, Phase::Install);
-        let venv = project.venv().display().to_string();
-        assert!(p.fs_write.iter().any(|w| w == &venv));
+        let opts = PlanOptions {
+            uv: Some(PathBuf::from("/usr/bin/true")),
+            ..Default::default()
+        };
+        let plan = match plan(&project, Phase::Install, &opts) {
+            Ok(plan) => plan,
+            // A host that cannot enforce the install phase cannot answer the
+            // question this test asks.
+            Err(_) => return,
+        };
+        assert_eq!(
+            plan.work, project.root,
+            "the project is the working directory"
+        );
         assert!(
-            p.fs_read
+            plan.policy.work_readonly,
+            "the working directory IS the project, so it must be granted read-only"
+        );
+        assert!(plan.work_readonly);
+
+        let venv = project.venv().display().to_string();
+        assert!(plan.policy.profile.fs_write.iter().any(|w| w == &venv));
+        assert!(
+            plan.policy
+                .profile
+                .fs_read
                 .iter()
                 .any(|r| r == &project.root.display().to_string()),
-            "the project is granted read-only during an install: {:?}",
-            p.fs_read
+            "and readable, or uv could not see the manifest"
         );
+    }
+
+    #[test]
+    fn asking_for_a_writable_project_turns_the_read_only_grant_off() {
+        let (_t, project) = fixture("[install]\nproject-writable = true\n");
+        let opts = PlanOptions {
+            uv: Some(PathBuf::from("/usr/bin/true")),
+            ..Default::default()
+        };
+        let Ok(plan) = plan(&project, Phase::Install, &opts) else {
+            return;
+        };
         assert!(
-            !p.fs_write
-                .iter()
-                .any(|w| w == &project.root.display().to_string()),
-            "a build backend must not be able to edit your source: {:?}",
-            p.fs_write
+            !plan.policy.work_readonly,
+            "the user asked for write access"
         );
+    }
+
+    #[test]
+    fn a_staged_install_keeps_its_staging_directory_writable() {
+        // The stage is senv's own scratch and uv must write the manifests it
+        // resolves there, so `work_readonly` must not leak into that case.
+        let (_t, project) = fixture("");
+        let opts = PlanOptions {
+            uv: Some(PathBuf::from("/usr/bin/true")),
+            work_override: Some(project.stage()),
+            ..Default::default()
+        };
+        crate::error::fs::create_dir_all(&project.stage()).unwrap();
+        let Ok(plan) = plan(&project, Phase::Install, &opts) else {
+            return;
+        };
+        assert!(!plan.policy.work_readonly, "uv writes the staged manifests");
+        assert_eq!(plan.work, project.stage());
+    }
+
+    #[test]
+    fn the_run_phase_keeps_the_project_writable() {
+        let (_t, project) = fixture("");
+        let Ok(plan) = plan(&project, Phase::Run, &PlanOptions::default()) else {
+            return;
+        };
+        assert!(!plan.policy.work_readonly, "your code edits your files");
     }
 
     #[test]
