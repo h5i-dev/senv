@@ -123,6 +123,58 @@ Design rules:
   was blocked and the one-line config change that would allow it — a blocked
   `pip install` mid-run suggests adding the host or re-running `senv sync`.
 
+### Migrating from uv / venv — zero-rewrite adoption
+
+Adoption friction is a design constraint, not an afterthought: if switching
+costs more than a minute, users stay on plain uv and get no boundary at all.
+
+**Invariant: a senv project remains a valid uv project at all times.** senv
+only *adds* files (`senv.toml` — optional, `.senv/` — gitignored); it never
+changes the format or location of `pyproject.toml`, `uv.lock`, or `.venv`.
+Consequences:
+
+- Teammates and CI without senv keep running plain `uv sync` / `uv run`
+  against the same repo, unchanged. senv can be adopted by one person on a
+  team without a team-wide decision.
+- Opting out is deleting nothing — stop typing `senv` and you are back on uv.
+- Zero required config. With no `senv.toml`, the fail-closed defaults apply;
+  the file first appears when the user first widens something (`senv allow`
+  writes it).
+
+**`senv init` adopts, it does not scaffold.** In an existing project it
+detects `pyproject.toml`, `uv.lock`, `.python-version`, and `.venv`, and takes
+them as-is. An existing host-installed `.venv` poses a provenance question —
+its bytes never passed through the install boundary — so `init` offers a
+sandboxed rebuild (one `senv sync`, cheap thanks to uv's wheel cache and the
+lockfile). Declining is allowed; `senv status` then reports the venv as
+`host-installed (unverified)` until the first sandboxed sync.
+
+**Muscle-memory mapping** — every habit has a same-shape equivalent:
+
+| Habit | senv equivalent |
+|---|---|
+| `uv sync` / `uv lock` / `uv add X` | `senv sync` / `senv lock` / `senv add X` (same flags, passed through to uv) |
+| `uv run pytest` | `senv run pytest` |
+| `source .venv/bin/activate` + work | `senv shell` |
+| any other uv command | `senv uv -- <args…>` |
+
+**The first week of denials.** The realistic migration cost is not commands
+but policy: an app that used to call external APIs, read `~/datasets`, or see
+`AWS_PROFILE` now gets denied by default. Two mitigations, neither of which
+weakens the boundary:
+
+- Every denial prints the exact copy-pasteable `senv.toml` line (or `senv
+  allow` command) that would permit it — already a design rule above.
+- `senv report --suggest` aggregates the denials recorded in receipts across
+  runs and emits a complete suggested policy stanza to review and paste.
+  The boundary never auto-widens; suggestions are offline text, and applying
+  them is always an explicit, diffable edit to a checked-in file.
+
+There is deliberately no "observe mode" that runs unconfined to learn a
+policy — that would mean running untrusted code without a boundary exactly
+once, which is once too many. Denial-driven suggestion gets the same
+information from *confined* runs.
+
 ---
 
 ## 4. Architecture
@@ -363,11 +415,13 @@ project/
 `init` / `sync` / `add` / `remove` / `run` / `status` / `doctor`.
 Install boundary on Linux `supervised` + macOS Seatbelt; run boundary with
 `net=deny` at the `process` tier. `senv.toml` → Profile compilation, resolved
-digest, `.venv` read-only at run time.
+digest, `.venv` read-only at run time. `init` adopts existing uv projects
+(`pyproject.toml` / `uv.lock` / `.venv` detection, sandboxed-rebuild offer).
 
 **v0.2 — legible security**
-`shell` (recorded interactive sessions), `report`, receipts, `allow`, shared
-lock-keyed wheel cache, `gc`, denial messages with suggested fixes.
+`shell` (recorded interactive sessions), `report` (incl. `--suggest` policy
+stanzas from recorded denials), receipts, `allow`, shared lock-keyed wheel
+cache, `gc`, denial messages with suggested fixes.
 
 **v0.3 — tiers and reach**
 `container` and `microvm` tiers, authenticated private indexes via the egress
