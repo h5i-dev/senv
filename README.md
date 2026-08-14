@@ -319,10 +319,6 @@ and cannot enforce Linux cgroup memory or process limits.
 - **Runtime wall-clock limits are not currently enforced.** CPU and file-size
   rlimits apply everywhere; memory and process limits use Linux cgroups and do
   not apply on macOS.
-- **macOS Python startup can vary by interpreter.** Apple's system Python may
-  recompile imports on each run because its bytecode cache is outside the
-  managed environment. `senv init --python 3.13` selects a managed interpreter
-  without that behavior.
 - **Policy tampering is detected, not prevented.** A dependency can edit files
   in the writable project; senv refuses a widened policy until you trust it.
 
