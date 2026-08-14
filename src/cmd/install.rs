@@ -431,11 +431,14 @@ fn wanted_python(project: &Project) -> Option<String> {
 
 /// Did uv refuse because the lockfile no longer matches the manifest?
 fn lock_is_stale(output: &str) -> bool {
+    // Deliberately specific. A bare "does not exist" appears in plenty of
+    // unrelated uv and Python messages, and matching it silently re-locked and
+    // rewrote uv.lock on failure paths that had nothing to do with staleness.
     const SIGNS: [&str; 4] = [
         "needs to be updated",
         "not up-to-date",
         "Unable to find lockfile",
-        "does not exist",
+        "lockfile does not exist",
     ];
     SIGNS.iter().any(|s| output.contains(s))
 }
@@ -590,6 +593,8 @@ fn staged_operation(
         uv::staging_for(&manifest)
     };
 
+    let before_manifest = util::sha256_file(&project.pyproject_path());
+    let before_lock = util::sha256_file(&project.lock_path());
     let mut warnings = Vec::new();
     match staging.reason() {
         None => {
@@ -634,8 +639,18 @@ fn staged_operation(
             let plan = install_plan(project, uv_bin, None, true)?;
             exec::print_notes(&plan.notes);
             let run = exec::run_captured(project, &plan, &argv, Some("resolving"))?;
+            // Measured, not assumed. Reporting both files unconditionally
+            // told workspace users that senv had rewritten their manifest when
+            // it had not touched it.
             let changed = if run.succeeded() {
-                vec!["pyproject.toml".to_string(), "uv.lock".to_string()]
+                [
+                    ("pyproject.toml", project.pyproject_path(), before_manifest),
+                    ("uv.lock", project.lock_path(), before_lock),
+                ]
+                .into_iter()
+                .filter(|(_, path, before)| util::sha256_file(path) != *before)
+                .map(|(name, _, _)| name.to_string())
+                .collect()
             } else {
                 Vec::new()
             };
@@ -672,12 +687,25 @@ pub fn passthrough(ctx: &Ctx, args: &crate::cli::UvArgs) -> Result<i32> {
 
 // ── shared ──────────────────────────────────────────────────────────────────
 
+/// Empty a phase's temp directory before the phase runs.
+///
+/// `TMPDIR` for each phase lives under senv's state and nothing ever cleaned
+/// it, so every crashed test run left its temp files there permanently. Doing
+/// it at the start rather than the end means a crash still leaves the evidence
+/// available until the next run.
+fn clear_tmp(project: &Project, phase: &str) {
+    let dir = project.tmp(phase);
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::create_dir_all(&dir);
+}
+
 fn install_plan(
     project: &Project,
     uv_bin: &std::path::Path,
     work_override: Option<PathBuf>,
     project_writable: bool,
 ) -> Result<Plan> {
+    clear_tmp(project, "install");
     policy::plan(
         project,
         Phase::Install,

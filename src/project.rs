@@ -113,6 +113,16 @@ impl Project {
         let mut dir = start.as_path();
         loop {
             if MARKERS.iter().any(|m| dir.join(m).is_file()) {
+                // A uv workspace is one project with one lockfile and one
+                // environment, and uv resolves it from the root no matter which
+                // member you stand in. Rooting senv at the member instead
+                // produced a `uv.lock` inside the member — a file people commit
+                // and plain uv never creates — from a resolution that could not
+                // even read the workspace root, because the root is outside the
+                // member's grants.
+                if let Some(root) = workspace_root_above(dir) {
+                    return Project::at(&root);
+                }
                 return Project::at(dir);
             }
             match dir.parent() {
@@ -426,6 +436,35 @@ impl VenvLink {
 }
 
 // ── roots ───────────────────────────────────────────────────────────────────
+
+/// The nearest ancestor of `dir` whose `pyproject.toml` declares a uv
+/// workspace.
+///
+/// Membership globs are deliberately not evaluated. Getting `members =
+/// ["packages/*", "!packages/legacy"]` subtly wrong would mean rooting some
+/// projects in the wrong place, and the failure mode of being slightly
+/// over-eager here is a note telling the user which project senv picked —
+/// while the failure mode of missing a workspace is a corrupt lockfile
+/// committed to their repository.
+fn workspace_root_above(dir: &Path) -> Option<PathBuf> {
+    let mut candidate = dir.parent();
+    while let Some(current) = candidate {
+        let manifest = current.join("pyproject.toml");
+        if manifest.is_file()
+            && let Ok(text) = crate::error::fs::read_to_string_bounded(&manifest)
+            && let Ok(value) = toml::from_str::<toml::Value>(&text)
+            && value
+                .get("tool")
+                .and_then(|t| t.get("uv"))
+                .and_then(|u| u.get("workspace"))
+                .is_some()
+        {
+            return Some(current.to_path_buf());
+        }
+        candidate = current.parent();
+    }
+    None
+}
 
 /// Root of senv's state, honouring `SENV_STATE_DIR` and then XDG.
 pub fn state_root() -> Result<PathBuf> {

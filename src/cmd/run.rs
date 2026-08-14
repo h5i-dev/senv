@@ -34,6 +34,11 @@ pub fn run(ctx: &Ctx, args: &crate::cli::RunArgs) -> Result<i32> {
         })?;
     }
 
+    // Start each run with an empty TMPDIR: it lives under senv's state and was
+    // never cleaned, so temp files from crashed runs accumulated forever.
+    let tmp = project.tmp("run");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let _ = std::fs::create_dir_all(&tmp);
     let plan = policy::plan(
         &project,
         Phase::Run,

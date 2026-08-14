@@ -1047,6 +1047,55 @@ fn a_cpu_limit_stops_a_runaway_command() {
     );
 }
 
+/// A uv workspace is one project: one lockfile, one environment, resolved from
+/// the root whichever member you stand in.
+///
+/// Rooting senv at the member wrote a `uv.lock` inside the member — a file
+/// people commit and plain uv never creates — from a resolution that could not
+/// even read the workspace root, because the root is outside the member's
+/// grants.
+#[test]
+fn a_workspace_member_uses_the_workspace_root() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+
+    let fixture = Fixture::new(Some(
+        "[project]\nname = \"mono\"\nversion = \"0.1.0\"\n\
+         requires-python = \">=3.9\"\ndependencies = []\n\n\
+         [tool.uv.workspace]\nmembers = [\"packages/*\"]\n",
+    ));
+    let member = fixture.root.join("packages/app");
+    std::fs::create_dir_all(&member).unwrap();
+    std::fs::write(
+        member.join("pyproject.toml"),
+        "[project]\nname = \"app\"\nversion = \"0.1.0\"\n\
+         requires-python = \">=3.9\"\ndependencies = [\"idna\"]\n",
+    )
+    .unwrap();
+
+    let out = Command::new(BIN)
+        .args(["sync"])
+        .current_dir(&member)
+        .env("SENV_STATE_DIR", &fixture.state)
+        .env("SENV_CACHE_DIR", &fixture.cache)
+        .env_remove("VIRTUAL_ENV")
+        .output()
+        .expect("senv runs");
+    assert!(out.status.success(), "{}", combined(&out));
+
+    assert!(
+        !member.join("uv.lock").exists(),
+        "senv wrote a lockfile into a workspace member"
+    );
+    assert!(
+        fixture.root.join("uv.lock").is_file(),
+        "the workspace lockfile belongs at the root"
+    );
+}
+
 /// A package must not reach the environment by swapping the build backend.
 ///
 /// The run phase can write `pyproject.toml`, and the install phase grants the

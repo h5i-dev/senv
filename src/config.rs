@@ -380,30 +380,40 @@ pub fn validate_host_pattern(entry: &str) -> std::result::Result<(), String> {
     if entry.is_empty() {
         return Err("an empty host entry allowlists nothing and reads as though it did".into());
     }
-    let (host, port) = match entry.rsplit_once(':') {
-        Some((h, p)) => (h, Some(p)),
-        None => (entry, None),
+    // `rsplit_once(':')` alone read `[::1]` as host `[:` port `1]`. A
+    // bracketed IPv6 literal keeps its colons; only a colon *after* the
+    // closing bracket is a port.
+    let (host, port) = match entry.strip_prefix('[') {
+        Some(rest) => match rest.split_once(']') {
+            Some((addr, after)) => (addr, after.strip_prefix(':')),
+            None => return Err(format!("'{entry}' opens a bracket it never closes")),
+        },
+        None => match entry.rsplit_once(':') {
+            Some((h, p)) => (h, Some(p)),
+            None => (entry, None),
+        },
     };
+    let is_ipv6 = entry.starts_with('[');
     if let Some(p) = port
         && p.parse::<u16>().is_err()
     {
         return Err(format!("'{entry}': '{p}' is not a port number"));
     }
     let bare = host.trim_start_matches("*.").trim_start_matches('.');
-    if bare.is_empty() {
+    if bare.is_empty() || (is_ipv6 && !bare.contains(':')) {
         return Err(format!("'{entry}' names no host"));
     }
     let wildcarded = host.starts_with('.') || host.starts_with("*.");
-    if wildcarded && !bare.contains('.') {
+    if wildcarded && !bare.contains('.') && !is_ipv6 {
         return Err(format!(
             "'{entry}' would allowlist an entire top-level domain — use a wildcard with at \
              least two labels, e.g. '*.{bare}.example'"
         ));
     }
-    if !bare
-        .bytes()
-        .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-' || b == b'_')
-    {
+    let allowed = |b: u8| {
+        b.is_ascii_alphanumeric() || b == b'.' || b == b'-' || b == b'_' || (is_ipv6 && b == b':')
+    };
+    if !bare.bytes().all(allowed) {
         return Err(format!("'{entry}' is not a hostname"));
     }
     Ok(())

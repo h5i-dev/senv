@@ -56,7 +56,6 @@ pub fn run_captured(
 ) -> Result<Execution> {
     let brokered = broker(project, plan)?;
     let env = merged_env(plan, brokered.as_ref());
-    let start = std::time::Instant::now();
 
     let outcome = {
         let _progress = progress_label.map(util::Progress::start);
@@ -93,7 +92,6 @@ pub fn run_captured(
         },
     )?;
 
-    let _ = start;
     Ok(Execution {
         exit_code: exit_code_of(outcome.exit_code, outcome.timed_out),
         timed_out: outcome.timed_out,
@@ -186,6 +184,8 @@ struct StderrTee {
     /// The real stderr, kept so the reader thread can write through to it.
     saved: libc::c_int,
     reader: std::thread::JoinHandle<String>,
+    /// Tells the reader to stop even if the pipe still has writers.
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Cap on mirrored stderr. A command that prints megabytes must not be able to
@@ -228,10 +228,34 @@ impl StderrTee {
         // fd 2 now refers to the pipe, so this copy is redundant.
         unsafe { libc::close(write_fd) };
 
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let reader_stop = std::sync::Arc::clone(&stop);
         let reader = std::thread::spawn(move || {
             let mut collected = Vec::new();
             let mut buf = [0u8; 8192];
             loop {
+                // Poll rather than block, so EOF is not the only way out. On
+                // Linux the child is pid 1 of a namespace and its tree dies
+                // with it, but macOS has no such namespace: a daemonized
+                // grandchild holding fd 2 would keep the pipe open and senv
+                // would wait in `join()` forever, after the command it ran had
+                // already finished and printed.
+                let mut fd = libc::pollfd {
+                    fd: read_fd,
+                    events: libc::POLLIN,
+                    revents: 0,
+                };
+                // SAFETY: a single valid pollfd, with a millisecond timeout.
+                let ready = unsafe { libc::poll(&mut fd, 1, 100) };
+                if ready == 0 {
+                    if reader_stop.load(std::sync::atomic::Ordering::Relaxed) {
+                        break;
+                    }
+                    continue;
+                }
+                if ready < 0 {
+                    break;
+                }
                 // SAFETY: reading into a stack buffer of known length.
                 let n = unsafe {
                     libc::read(read_fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len())
@@ -270,18 +294,24 @@ impl StderrTee {
             unsafe { libc::close(read_fd) };
             String::from_utf8_lossy(&collected).into_owned()
         });
-        Some(StderrTee { saved, reader })
+        Some(StderrTee {
+            saved,
+            reader,
+            stop,
+        })
     }
 
     /// Restore the real stderr and collect what went past.
     fn finish(self) -> String {
         let _ = std::io::stderr().flush();
-        // Restoring fd 2 drops the last reference to the pipe's write end, so
-        // the reader thread sees EOF and returns.
+        // Restoring fd 2 drops senv's reference to the pipe's write end. If the
+        // child left no other holder the reader sees EOF immediately; the stop
+        // flag covers the case where something outlived it.
         unsafe {
             libc::dup2(self.saved, libc::STDERR_FILENO);
             libc::close(self.saved);
         }
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
         self.reader.join().unwrap_or_default()
     }
 }

@@ -150,6 +150,25 @@ impl Ctx {
         };
         let project = Project::discover(&start)?;
         project.ensure_dirs()?;
+        if !self.json && self.project_dir.is_none() && !start.starts_with(&project.root) {
+            eprintln!(
+                "note: using {} — this directory belongs to that uv workspace.",
+                project.root.display()
+            );
+        } else if !self.json && self.project_dir.is_none() && start != project.root {
+            // Standing in a subdirectory is ordinary; standing in a *member* of
+            // a workspace is worth one line, because the environment and the
+            // lockfile belong to the root.
+            if project.root.join("pyproject.toml").is_file()
+                && start.join("pyproject.toml").is_file()
+            {
+                eprintln!(
+                    "note: using the workspace at {} — its lockfile and environment cover \
+                     every member.",
+                    project.root.display()
+                );
+            }
+        }
         if !self.json
             && self.project_dir.is_none()
             && let Some(outer) = project.enclosing_project()

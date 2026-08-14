@@ -333,10 +333,15 @@ pub fn apply_stage(
 ) -> Result<StageResult> {
     let mut result = StageResult::default();
 
+    // Everything is read and validated before anything is written. Writing the
+    // manifest and then failing on the lockfile left the project inconsistent —
+    // dependencies added to pyproject.toml, no lockfile entry, and an error
+    // that mentioned neither.
     let staged_pyproject = stage.dir.join("pyproject.toml");
     let after = staged_digest(&staged_pyproject)?;
     let manifest_changed = after != stage.pyproject_before && after.is_some();
 
+    let mut manifest_write: Option<String> = None;
     if manifest_changed {
         if !expect_manifest_change {
             result.warnings.push(format!(
@@ -361,12 +366,12 @@ pub fn apply_stage(
                     format!("staged manifest is invalid: {e}"),
                 )
             })?;
-            fs::write_no_follow(&project.pyproject_path(), now.as_bytes())?;
-            result.changed.push("pyproject.toml".to_string());
+            manifest_write = Some(now);
         }
     }
 
     let staged_lock = stage.dir.join("uv.lock");
+    let mut lock_write: Option<String> = None;
     if staged_lock.exists() {
         let after = staged_digest(&staged_lock)?;
         if after != stage.lock_before {
@@ -374,9 +379,19 @@ pub fn apply_stage(
             toml::from_str::<toml::Value>(&text).map_err(|e| {
                 SenvError::config(&staged_lock, format!("staged lockfile is invalid: {e}"))
             })?;
-            fs::write_no_follow(&project.lock_path(), text.as_bytes())?;
-            result.changed.push("uv.lock".to_string());
+            lock_write = Some(text);
         }
+    }
+
+    // Both destinations are checked for symlinks before either is written, so
+    // a planted link cannot make the pair land half-applied.
+    if let Some(text) = &manifest_write {
+        fs::write_no_follow(&project.pyproject_path(), text.as_bytes())?;
+        result.changed.push("pyproject.toml".to_string());
+    }
+    if let Some(text) = &lock_write {
+        fs::write_no_follow(&project.lock_path(), text.as_bytes())?;
+        result.changed.push("uv.lock".to_string());
     }
 
     Ok(result)
