@@ -229,6 +229,9 @@ pub fn plan(project: &Project, phase: Phase, opts: &PlanOptions) -> Result<Plan>
     // h5i's own lints run before anything is spawned; a policy senv builds
     // wrongly must fail here, not halfway through an install.
     sandbox::validate_profile(&profile)?;
+    // …but h5i's `fs.deny` lint only sees the paths a profile *names*, and the
+    // widest grant senv issues is not one of them. See `refuse_work_over_denied`.
+    refuse_work_over_denied(&work, &profile.fs_deny)?;
     let caps = sandbox::probe_host_for(tier);
     let policy =
         sandbox::resolve(&profile, &caps).map_err(|e| explain_tier_failure(e, tier, phase))?;
@@ -360,7 +363,7 @@ fn install_profile(
     grant_read(&mut p, opts.uv.as_deref());
     p.fs_read.push(python_dir.display().to_string());
     for extra in &cfg.install.read {
-        p.fs_read.push(util::expand_tilde(extra));
+        p.fs_read.push(user_grant(project, extra)?);
     }
     grant_write(&mut p, &[&venv, &cache, &tmp]);
 
@@ -451,11 +454,11 @@ fn run_profile(
     p.fs_read.push(venv.display().to_string());
     p.fs_read.push(python_dir.display().to_string());
     for extra in &cfg.run.fs.read {
-        p.fs_read.push(util::expand_tilde(extra));
+        p.fs_read.push(user_grant(project, extra)?);
     }
     grant_write(&mut p, &[&scratch, &tmp]);
     for extra in &cfg.run.fs.write {
-        p.fs_write.push(util::expand_tilde(extra));
+        p.fs_write.push(user_grant(project, extra)?);
     }
 
     let mut hosts: Vec<String> = cfg.run.net.hosts().to_vec();
@@ -766,6 +769,123 @@ fn explain_tier_failure(e: h5i_error::H5iError, tier: IsolationClaim, phase: Pha
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
+
+/// Expand a grant the user declared, refusing one that names senv's own state.
+///
+/// `senv.toml` can list extra paths for a phase to read or write. Nothing
+/// stopped it listing senv's state directory — and a `[run.fs] write` grant
+/// over that directory hands the run phase `receipt.jsonl` and `state.json`.
+/// Verified: both became writable from inside `senv run`. Receipts are only
+/// evidence because nothing running under a senv policy can write them, and a
+/// writable `state.json` means forging the `trusted` baseline, which is the
+/// whole escalation chain [`crate::trust`] exists to stop.
+///
+/// The trust gate is not enough here. It reports the grant, but as an opaque
+/// path — `+ [run.fs] write: added …/state/projects/proj-93b258f11da0` — that
+/// reads like senv's own bookkeeping precisely because it *is*, and the one
+/// command every denial message recommends is `senv trust`. So this is refused
+/// outright, trusted or not, on the same principle DESIGN.md already states for
+/// `[env] uv`: a path the sandbox can rewrite between two commands must never
+/// be senv's own.
+///
+/// Read grants are refused too. Nothing in there is a secret, but no policy has
+/// a legitimate reason to name senv's private bookkeeping — senv already grants
+/// each phase exactly the parts it needs — so allowing half of it would only
+/// make the rule harder to state and to check.
+fn user_grant(project: &Project, raw: &str) -> Result<String> {
+    let expanded = util::expand_tilde(raw);
+    let resolved =
+        std::fs::canonicalize(&expanded).unwrap_or_else(|_| PathBuf::from(expanded.clone()));
+    for (label, own, holds) in [
+        (
+            "state directory",
+            &project.state_dir,
+            "this project's environment, its receipts, and the policy baseline senv compares \
+             against",
+        ),
+        (
+            "cache",
+            &project.cache_root(),
+            "the interpreters senv runs and the wheels it installs from",
+        ),
+    ] {
+        let own = std::fs::canonicalize(own).unwrap_or_else(|_| own.clone());
+        if resolved.starts_with(&own) || own.starts_with(&resolved) {
+            return Err(SenvError::refused(
+                format!("a grant in senv.toml names senv's own {label} ({raw})"),
+                format!(
+                    "{} holds {holds}. Granting it to a phase would let the code the boundary \
+                     contains rewrite what the next command trusts, so senv refuses this \
+                     whether or not the configuration itself is trusted.",
+                    own.display()
+                ),
+                "remove that entry — senv already grants each phase the parts of its state that \
+                 phase needs",
+            ));
+        }
+    }
+    Ok(expanded)
+}
+
+/// Refuse to run when the working directory contains a denied path.
+///
+/// h5i lints every grant a profile *names* against `fs.deny`, because Landlock
+/// is allowlist-only and cannot subtract a child from a granted parent. But the
+/// widest grant senv issues is not named: `$WORK` is granted read-write
+/// implicitly, and it is senv — not h5i — that decides what `$WORK` is. So the
+/// one grant nothing checked was the project directory itself.
+///
+/// That matters when the project root *is* a directory holding credentials.
+/// `~/pyproject.toml` is unusual but not absurd, and it makes `$HOME` the
+/// working directory: on Linux the run phase would then hold `~/.ssh` and
+/// `~/.aws` read-write, with `senv status` reporting nothing amiss, while the
+/// same policy written as `[run.fs] read = ["~"]` is refused outright by the
+/// lint. Two spellings of one grant, one of them checked.
+///
+/// macOS happens to survive it — Seatbelt applies `fs.deny` as a real
+/// subtraction, so the read is refused at enforcement time (verified). Linux
+/// does not: there `fs.deny` is a lint and nothing else, which is exactly why
+/// the lint has to be complete.
+///
+/// Resolved on both sides, like h5i's own lint: a `~` that expands into the
+/// working directory, or a symlinked project path, must not read as disjoint.
+fn refuse_work_over_denied(work: &Path, deny: &[String]) -> Result<()> {
+    let resolve = |s: &str| -> PathBuf {
+        let expanded = util::expand_tilde(s);
+        std::fs::canonicalize(&expanded).unwrap_or_else(|_| PathBuf::from(expanded))
+    };
+    let work_real = resolve(&work.display().to_string());
+    // A deny entry that is not there yet still counts — the run phase could
+    // create it, and the grant would cover it — but one that exists is the
+    // better thing to name, so the message points at a directory the reader can
+    // actually go and look at.
+    let mut inside: Vec<(&String, PathBuf)> = deny
+        .iter()
+        .map(|entry| (entry, resolve(entry)))
+        .filter(|(_, denied)| denied.starts_with(&work_real))
+        .collect();
+    inside.sort_by_key(|(_, denied)| !denied.exists());
+    if let Some((entry, denied)) = inside.first() {
+        {
+            return Err(SenvError::refused(
+                format!(
+                    "the working directory ({}) contains {entry}{}",
+                    work_real.display(),
+                    if denied.exists() { "" } else { " (or could)" }
+                ),
+                "senv grants the working directory read-write while your code runs — that is \
+                 what makes `senv run` useful — so running from a directory that holds your \
+                 credentials would hand them to the code the boundary exists to contain. \
+                 Landlock cannot subtract a child from a granted parent, so there is no \
+                 narrower version of this grant."
+                    .to_string(),
+                "run senv from the project itself rather than from a directory above it — a \
+                 pyproject.toml in your home directory is the usual cause",
+            ));
+        }
+    }
+    Ok(())
+}
 
 /// Restrict egress to `hosts`, and to nothing else.
 ///
@@ -1146,6 +1266,67 @@ mod tests {
             cache.is_dir(),
             "and it must exist before the policy is built"
         );
+    }
+
+    #[test]
+    fn a_grant_over_senvs_own_state_is_refused_even_when_trusted() {
+        // Verified before this check: `[run.fs] write = ["<state dir>"]` made
+        // receipt.jsonl and state.json writable from inside `senv run`, which
+        // is the whole escalation chain — forge the `trusted` baseline, then
+        // run whatever you like. The trust gate reports the grant, but as an
+        // opaque state path that reads like senv's own bookkeeping, and `senv
+        // trust` is the command every denial message recommends. So it is
+        // refused outright, on the principle DESIGN.md already states for
+        // `[env] uv`.
+        let (_t, project) = fixture("");
+        let state = project.state_dir.display().to_string();
+        let cache = project.cache_root().display().to_string();
+
+        for (label, path) in [("state", &state), ("cache", &cache)] {
+            let err = user_grant(&project, path).expect_err("{label} must be refused");
+            assert!(err.to_string().contains("senv's own"), "{label}: {err}");
+        }
+        // A subdirectory of it counts, and so does a parent that contains it.
+        assert!(user_grant(&project, &format!("{state}/venv")).is_err());
+        assert!(
+            user_grant(
+                &project,
+                &project.state_dir.parent().unwrap().display().to_string()
+            )
+            .is_err()
+        );
+        // Anywhere else is ordinary and still allowed.
+        assert!(user_grant(&project, "/usr/share/data").is_ok());
+    }
+
+    #[test]
+    fn a_working_directory_that_contains_a_denied_path_is_refused() {
+        // `$WORK` is granted read-write implicitly and never appears in the
+        // profile's grant lists, so h5i's `fs.deny` lint — which reads only the
+        // paths a profile names — could not see it. `[run.fs] read = ["~"]` was
+        // refused while *standing in* `~` was not, and on Linux `fs.deny` is a
+        // lint and nothing more.
+        let tmp = tempfile::tempdir().unwrap();
+        let work = tmp.path().join("proj");
+        std::fs::create_dir_all(work.join(".ssh")).unwrap();
+
+        let inside = vec![work.join(".ssh").display().to_string()];
+        let err = refuse_work_over_denied(&work, &inside).expect_err("must refuse");
+        assert!(err.to_string().contains(".ssh"), "{err}");
+
+        // Disjoint paths are fine, and so is a sibling that merely shares a
+        // name prefix — the comparison is component-wise, not textual.
+        for ok in ["elsewhere", "proj-notmine"] {
+            let outside = vec![tmp.path().join(ok).display().to_string()];
+            assert!(
+                refuse_work_over_denied(&work, &outside).is_ok(),
+                "{ok} is not inside the working directory"
+            );
+        }
+
+        // An ordinary project carries senv's real deny set without complaint.
+        let deny: Vec<String> = EXTRA_DENY.iter().map(|s| s.to_string()).collect();
+        assert!(refuse_work_over_denied(&work, &deny).is_ok());
     }
 
     #[test]

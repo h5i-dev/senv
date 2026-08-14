@@ -831,8 +831,15 @@ pub struct TrustOutput {
 /// Accept the configuration on disk as the baseline.
 pub fn trust(ctx: &Ctx) -> Result<i32> {
     let project = ctx.project_unchecked()?;
-    let accepted = project.trust_verdict().widenings().to_vec();
-    project.record_trust()?;
+    // One snapshot: the widenings printed for the user to accept and the
+    // baseline written down have to be the same bytes. Computing the list from
+    // one read of `pyproject.toml` and then recording a second read let a
+    // concurrent writer show an innocuous list and store a hostile baseline —
+    // in the one command whose entire contract is "what I show you is what I
+    // accept". Same window as the trust gate's; see `Project::record_snapshot`.
+    let current = project.policy_snapshot();
+    let accepted = project.verdict_against(&current).widenings().to_vec();
+    project.record_snapshot(&current)?;
     let out = TrustOutput {
         config: project.config_path.display().to_string(),
         accepted,

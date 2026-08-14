@@ -5,6 +5,8 @@
 //! (registries only, no secrets, your source read-only) and for running (no
 //! network, environment read-only, credentials unreachable).
 
+#[cfg(test)]
+mod adversarial;
 mod cli;
 mod cmd;
 mod config;

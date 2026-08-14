@@ -213,6 +213,13 @@ impl Project {
         }
     }
 
+    /// Root of the shared caches — the interpreters and, when `[install] cache`
+    /// is shared, the wheel cache. Exposed so [`crate::policy`] can refuse a
+    /// user-declared grant that names senv's own storage.
+    pub fn cache_root(&self) -> PathBuf {
+        self.cache_root.clone()
+    }
+
     /// Interpreters installed by uv. Shared across projects — they are large,
     /// and they are written only by the provisioning phase, which runs no
     /// third-party code. Every other phase gets them read-only.
@@ -391,10 +398,10 @@ impl Project {
         }
     }
 
-    /// Record the configuration on disk as the trusted baseline.
-    pub fn record_trust(&self) -> Result<()> {
-        self.record_snapshot(&self.policy_snapshot())
-    }
+    // NOTE: there is deliberately no `record_trust()` that takes its own
+    // snapshot. Judging one read of the policy and recording a second is the
+    // laundering window described on `record_snapshot`; a caller must pass the
+    // snapshot it actually checked.
 
     /// Record a snapshot the caller already took as the trusted baseline.
     ///
