@@ -607,8 +607,7 @@ dependencies = ["requests"]
         .unwrap();
         std::fs::write(root.join("README.md"), "# x\n").unwrap();
         std::fs::write(root.join("src/secret_business_logic.py"), "TOKEN=1\n").unwrap();
-        unsafe { std::env::set_var("SENV_STATE_DIR", tmp.path().join("state")) };
-        unsafe { std::env::set_var("SENV_CACHE_DIR", tmp.path().join("cache")) };
+        let _roots = crate::project::testing::redirect_roots(tmp.path());
 
         let project = Project::at(&root).unwrap();
         project.ensure_dirs().unwrap();
@@ -632,8 +631,7 @@ dependencies = ["requests"]
         std::fs::create_dir_all(&root).unwrap();
         let original = "[project]\nname='x'\nversion='0'\n";
         std::fs::write(root.join("pyproject.toml"), original).unwrap();
-        unsafe { std::env::set_var("SENV_STATE_DIR", tmp.path().join("state2")) };
-        unsafe { std::env::set_var("SENV_CACHE_DIR", tmp.path().join("cache2")) };
+        let _roots = crate::project::testing::redirect_roots(tmp.path());
 
         let project = Project::at(&root).unwrap();
         project.ensure_dirs().unwrap();

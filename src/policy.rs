@@ -48,13 +48,24 @@ pub const PYTHON_DOWNLOAD_HOSTS: [&str; 5] = [
 /// toolchain would plausibly be pointed at. They are a *lint*: Landlock cannot
 /// subtract a child from a granted parent, so a policy that would expose one is
 /// refused outright.
-const EXTRA_DENY: [&str; 6] = [
+const EXTRA_DENY: [&str; 7] = [
     "~/.netrc",
     "~/.pypirc",
     "~/.git-credentials",
     "~/.docker/config.json",
     "~/.config/gcloud",
     "~/.kube/config",
+    // Not a credential — a code-execution path, and the only one of these that
+    // is. Apple's system Python is built with `sys.pycache_prefix` preset to
+    // this directory, so it caches every module's bytecode *there* instead of in
+    // `__pycache__` beside the source. The run phase's read-only environment
+    // assumes the opposite (see the note in `run_profile`): make this directory
+    // writable and a package gets an authoritative, writable copy of every
+    // module in a read-only environment, which is exactly the persistence hole
+    // that dropping `PYTHONPYCACHEPREFIX` closed. It is ungranted today, so this
+    // is not a live bug — it is a `~/Library/Caches` grant away from being one,
+    // and that is an ordinary thing for a macOS user to want.
+    "~/Library/Caches/com.apple.python",
 ];
 
 /// A finite stand-in for `wall = "none"`.
@@ -259,16 +270,27 @@ pub fn plan(project: &Project, phase: Phase, opts: &PlanOptions) -> Result<Plan>
 fn provision_profile(project: &Project, opts: &PlanOptions) -> Result<PhaseParts> {
     let work = project.tmp("provision");
     crate::error::fs::create_dir_all(&work)?;
+    // uv opens its cache before it does anything else, including
+    // `python install`. Left unset it defaults to `~/.cache/uv`, which this
+    // phase does not grant and must not — so provisioning died on
+    // "failed to create directory `~/.cache/uv`" before a single byte was
+    // downloaded. Every phase senv runs already redirects the cache; this one
+    // was simply missed, and nothing noticed because provisioning only runs
+    // when the host is short an interpreter.
+    let cache = work.join("cache");
+    crate::error::fs::create_dir_all(&cache)?;
     let python_dir = project.python_dir();
 
     let mut p = Profile::builtin("senv-provision", IsolationClaim::Supervised);
     grant_read(&mut p, opts.uv.as_deref());
     grant_write(&mut p, &[&python_dir, &work]);
-    p.net_mode = NetMode::Host;
-    p.net_egress = PYTHON_DOWNLOAD_HOSTS
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    allowlist(
+        &mut p,
+        PYTHON_DOWNLOAD_HOSTS
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+    );
     p.mem_bytes = Some(2 * 1024 * 1024 * 1024);
     p.wall_secs = 30 * 60;
     p.tools = vec!["uv".to_string()];
@@ -279,6 +301,19 @@ fn provision_profile(project: &Project, opts: &PlanOptions) -> Result<PhaseParts
             python_dir.display().to_string(),
         ),
         ("UV_PYTHON_DOWNLOADS".to_string(), "manual".to_string()),
+        // uv also drops `python3.13` shims into `~/.local/bin` by default. senv
+        // does not grant that directory and should not: it is on the user's
+        // PATH, so a phase that can write there can put a binary in front of
+        // every command they run. The boundary refused it correctly and uv
+        // reported it as a failure, so a provisioning run that had worked
+        // perfectly ended in two warnings and a "Failed to install executable".
+        // Turning the shim off means there is nothing to refuse.
+        ("UV_PYTHON_INSTALL_BIN".to_string(), "0".to_string()),
+        // Inside the phase's own scratch rather than the project's wheel cache:
+        // an interpreter download shares nothing with a wheel resolution, and
+        // keeping it here leaves the narrowest phase senv has with exactly one
+        // writable tree besides the interpreter directory it is filling.
+        ("UV_CACHE_DIR".to_string(), cache.display().to_string()),
         ("TMPDIR".to_string(), work.display().to_string()),
         ("PATH".to_string(), system_path()),
     ];
@@ -331,10 +366,9 @@ fn install_profile(
 
     match cfg.install.net {
         InstallNet::Registries => {
-            p.net_mode = NetMode::Host;
-            p.net_egress = PYPI_HOSTS.iter().map(|s| s.to_string()).collect();
-            p.net_egress
-                .extend(cfg.install.extra_indexes.iter().cloned());
+            let mut hosts: Vec<String> = PYPI_HOSTS.iter().map(|s| s.to_string()).collect();
+            hosts.extend(cfg.install.extra_indexes.iter().cloned());
+            allowlist(&mut p, hosts);
         }
         InstallNet::Host => {
             p.net_mode = NetMode::Host;
@@ -436,8 +470,7 @@ fn run_profile(
         p.net_mode = NetMode::Deny;
         p.net_egress.clear();
     } else {
-        p.net_mode = NetMode::Host;
-        p.net_egress = hosts;
+        allowlist(&mut p, hosts);
         if !opts.extra_hosts.is_empty() {
             notes.push(Note::info(format!(
                 "--allow-net widened this run to {} (not saved; use `senv allow` to keep it)",
@@ -595,13 +628,15 @@ fn no_allowlist_tier_error(phase: Phase, cfg: &Config) -> SenvError {
     } else {
         format!("\n   the supervised tier needs:\n     - {missing}")
     };
+    let remedy = supervisor_remedy();
     let fix = if phase == Phase::Install && cfg.install.net == InstallNet::Registries {
-        "install the missing pieces (on Debian/Ubuntu: sudo apt install slirp4netns nftables), \
-         or set [install] net = \"host\" in senv.toml to install with unrestricted network \
-         access — a warned, recorded downgrade. Run `senv doctor` for the full picture."
+        format!(
+            "{remedy} Or set [install] net = \"host\" in senv.toml to install with unrestricted \
+             network access — a warned, recorded downgrade. Run `senv doctor` for the full \
+             picture."
+        )
     } else {
-        "install the missing pieces (on Debian/Ubuntu: sudo apt install slirp4netns nftables), \
-         or drop the network allowlist. Run `senv doctor` for the full picture."
+        format!("{remedy} Or drop the network allowlist. Run `senv doctor` for the full picture.")
     };
     SenvError::refused(
         format!(
@@ -611,6 +646,26 @@ fn no_allowlist_tier_error(phase: Phase, cfg: &Config) -> SenvError {
         format!("senv will not pretend to restrict egress it cannot restrict.{missing}"),
         fix,
     )
+}
+
+/// What to actually *do* about a missing supervised tier, on this platform.
+///
+/// The advice used to be "sudo apt install slirp4netns nftables" unconditionally
+/// — printed by `senv doctor` and by every allowlist refusal. On macOS that is
+/// not merely unhelpful, it is misdirection: there is no slirp4netns to install
+/// and no nftables to configure. The Darwin stack is Seatbelt plus a loopback
+/// listener, both of which come with the OS, so an unusable tier there means
+/// something is actively blocking `sandbox-exec` or loopback — a different
+/// afternoon, and one no package manager fixes.
+pub fn supervisor_remedy() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "On macOS the supervised tier needs only macOS's own Seatbelt (`sandbox-exec`) and the \
+         ability to bind loopback — nothing to install. An unusable tier here means something \
+         on this machine is blocking one of them (an MDM profile, or a security agent); the \
+         component list above names which."
+    } else {
+        "Install the missing pieces (on Debian/Ubuntu: sudo apt install slirp4netns nftables)."
+    }
 }
 
 /// Serialize h5i's host probes across senv processes.
@@ -712,6 +767,49 @@ fn explain_tier_failure(e: h5i_error::H5iError, tier: IsolationClaim, phase: Pha
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
+/// Restrict egress to `hosts`, and to nothing else.
+///
+/// The `net_mode` here is **`Deny`, not `Host`**, and that one word is the
+/// difference between an enforced allowlist and no allowlist at all on macOS.
+///
+/// h5i's image-backed tiers read a non-empty `net_egress` as the allowlist and
+/// only consult `net_mode` when it is empty, and the Linux supervised tier is
+/// the same: it builds the netns and the nftables ruleset from `net_egress`
+/// alone. So `net_mode = Host` alongside a list looked harmless and read as
+/// "the box has a network, restricted to these hosts".
+///
+/// Darwin's Seatbelt backend branches the other way round — it matches
+/// `net_mode` first, and `Host` emits a bare `(allow network-outbound)`. The
+/// allowlist proxy was still started and `HTTPS_PROXY` still pointed at it, but
+/// nothing kept traffic on that route: a plain `socket.connect` reached any host
+/// it liked. Verified before this change, with `senv run --allow-net
+/// example.com` opening a socket to `api.stripe.com` — an install phase that
+/// documented "PyPI and nothing else" was enforcing nothing on every Mac.
+///
+/// `Deny` means the same thing everywhere: no route out except the one this
+/// policy names. On Linux the netns and nftables rules are unchanged (both are
+/// keyed off `net_egress`); on macOS Seatbelt now permits exactly the proxy's
+/// loopback port and denies name resolution, so a client that ignores the proxy
+/// variables gets nothing rather than everything.
+fn allowlist(p: &mut Profile, hosts: Vec<String>) {
+    p.net_mode = NetMode::Deny;
+    p.net_egress = hosts;
+}
+
+/// Does this profile restrict egress to named hosts?
+///
+/// Read the host list, never `net_mode`: an allowlist is expressed as
+/// `Deny` + a non-empty list (see [`allowlist`]), so a check that asked
+/// `net_mode == Deny` first would report an allowlisted phase as "no network".
+pub fn has_allowlist(p: &Profile) -> bool {
+    !p.net_egress.is_empty()
+}
+
+/// Is this profile's network unrestricted?
+pub fn is_unrestricted(p: &Profile) -> bool {
+    p.net_mode == NetMode::Host && p.net_egress.is_empty()
+}
+
 fn grant_read(p: &mut Profile, uv: Option<&Path>) {
     if let Some(uv) = uv {
         p.fs_read.push(uv.display().to_string());
@@ -756,8 +854,28 @@ fn parse_wall_or(r: &crate::config::ResourceSection, default: u64) -> Result<u64
 /// The host's `PATH` is not reused: it routinely points at directories the
 /// policy does not grant (and, on WSL, at the whole Windows filesystem), which
 /// turns every `command not found` into a puzzle.
+///
+/// Every entry must be inside the read grants h5i's built-in profile issues, or
+/// the entry is a lie — the child would find the binary and be refused the
+/// exec. `/opt/homebrew` qualifies through the builtin `/opt` grant, and it has
+/// to be here: on Apple Silicon that is where Homebrew puts everything, so
+/// without it `senv run node` (and `make`, `git`, `ruff`, anything not shipped
+/// by Apple) was refused on a machine that plainly had it. The Intel-Mac
+/// location is `/usr/local`, which is already listed.
 pub fn system_path() -> String {
-    "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string()
+    let mut dirs = Vec::new();
+    if cfg!(target_os = "macos") {
+        dirs.extend(["/opt/homebrew/bin", "/opt/homebrew/sbin"]);
+    }
+    dirs.extend([
+        "/usr/local/sbin",
+        "/usr/local/bin",
+        "/usr/sbin",
+        "/usr/bin",
+        "/sbin",
+        "/bin",
+    ]);
+    dirs.join(":")
 }
 
 /// Secret grants that apply to `phase`. A grant with no `phases` list applies
@@ -788,8 +906,19 @@ mod tests {
     use super::*;
     use crate::config::CacheScope;
 
+    /// The temp directory plus the redirect that points senv's roots at it.
+    ///
+    /// Both have to outlive the test, and the guard is the reason: it holds the
+    /// lock that stops a neighbouring test from reassigning `SENV_STATE_DIR`
+    /// mid-fixture. Returning only the `TempDir` dropped the guard at the end of
+    /// `fixture`, which is the same as not taking it.
+    struct Fixture {
+        _tmp: tempfile::TempDir,
+        _roots: crate::project::testing::RootsGuard,
+    }
+
     /// A project in a temp dir, with senv's state redirected there too.
-    fn fixture(config_text: &str) -> (tempfile::TempDir, Project) {
+    fn fixture(config_text: &str) -> (Fixture, Project) {
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path().join("proj");
         std::fs::create_dir_all(&root).unwrap();
@@ -801,11 +930,16 @@ mod tests {
         if !config_text.is_empty() {
             std::fs::write(root.join("senv.toml"), config_text).unwrap();
         }
-        unsafe { std::env::set_var("SENV_STATE_DIR", tmp.path().join("state")) };
-        unsafe { std::env::set_var("SENV_CACHE_DIR", tmp.path().join("cache")) };
+        let roots = crate::project::testing::redirect_roots(tmp.path());
         let project = Project::at(&root).expect("project");
         project.ensure_dirs().expect("dirs");
-        (tmp, project)
+        (
+            Fixture {
+                _tmp: tmp,
+                _roots: roots,
+            },
+            project,
+        )
     }
 
     fn profile_for(project: &Project, phase: Phase) -> Profile {
@@ -938,6 +1072,104 @@ mod tests {
             return;
         };
         assert!(!plan.policy.work_readonly, "your code edits your files");
+    }
+
+    #[test]
+    fn an_allowlist_never_leaves_an_unrestricted_route_beside_it() {
+        // The bug: senv paired its host list with `net_mode = host`. Linux and
+        // the image-backed tiers read the list and ignored the mode, so it
+        // looked correct everywhere it was tested — but Seatbelt reads the mode
+        // first, and `host` there is a bare `(allow network-outbound)`. Every
+        // Mac ran installs and allowlisted runs with the whole internet open
+        // while `senv status` printed the allowlist.
+        //
+        // Asserted on the mode itself rather than on behaviour, because the
+        // behaviour is a property of a backend senv does not own.
+        let (_t, project) = fixture("[run]\nnet = [\"api.example.com\"]\n");
+        for phase in [Phase::Provision, Phase::Install, Phase::Run] {
+            let p = profile_for(&project, phase);
+            assert!(!p.net_egress.is_empty(), "{phase:?} should have a list");
+            assert_eq!(
+                p.net_mode,
+                NetMode::Deny,
+                "{phase:?} pairs an allowlist with an unrestricted route: {:?}",
+                p.net_egress
+            );
+            assert!(has_allowlist(&p), "{phase:?}");
+            assert!(!is_unrestricted(&p), "{phase:?}");
+        }
+    }
+
+    #[test]
+    fn asking_for_an_unrestricted_network_is_still_distinguishable_from_a_deny() {
+        // The three states must stay tellable apart, or `status`, the receipt
+        // and `report` all mislabel what ran. `deny` and `host` are both an
+        // empty host list; only the mode separates them.
+        let (_t, denied) = fixture("");
+        let p = profile_for(&denied, Phase::Run);
+        assert!(!has_allowlist(&p) && !is_unrestricted(&p), "denied");
+
+        let (_t2, open) = fixture("[run]\nnet = \"host\"\n");
+        let p = profile_for(&open, Phase::Run);
+        assert!(is_unrestricted(&p), "host means unrestricted");
+        assert!(!has_allowlist(&p));
+
+        let (_t3, listed) = fixture("[run]\nnet = [\"api.example.com\"]\n");
+        let p = profile_for(&listed, Phase::Run);
+        assert!(has_allowlist(&p) && !is_unrestricted(&p), "allowlist");
+    }
+
+    #[test]
+    fn provisioning_writes_its_cache_somewhere_it_is_allowed_to() {
+        // uv opens its cache before it does anything else, so an unset
+        // `UV_CACHE_DIR` meant `uv python install` died on `~/.cache/uv` —
+        // correctly refused by this phase's own grants — before downloading a
+        // byte. Every path uv is pointed at must be inside the write set.
+        let (_t, project) = fixture("");
+        let opts = PlanOptions {
+            uv: Some(PathBuf::from("/usr/bin/true")),
+            ..Default::default()
+        };
+        let (p, work, env) = provision_profile(&project, &opts).unwrap();
+        let cache = env
+            .iter()
+            .find(|(k, _)| k == "UV_CACHE_DIR")
+            .map(|(_, v)| PathBuf::from(v))
+            .expect("provisioning must redirect uv's cache");
+        assert!(
+            cache.starts_with(&work) || p.fs_write.iter().any(|w| cache.starts_with(w)),
+            "the cache at {} is outside every write grant: {:?}",
+            cache.display(),
+            p.fs_write
+        );
+        assert!(
+            cache.is_dir(),
+            "and it must exist before the policy is built"
+        );
+    }
+
+    #[test]
+    fn the_macos_bytecode_cache_can_never_be_granted() {
+        // Apple's system Python caches every module's bytecode there rather
+        // than in `__pycache__`, so a writable grant would hand a package an
+        // authoritative, writable copy of a read-only environment's code — the
+        // persistence hole that dropping PYTHONPYCACHEPREFIX closed.
+        let (_t, project) = fixture("");
+        let p = profile_for(&project, Phase::Run);
+        assert!(
+            p.fs_deny
+                .iter()
+                .any(|d| d == "~/Library/Caches/com.apple.python"),
+            "{:?}",
+            p.fs_deny
+        );
+
+        let (_t2, wide) = fixture("[run.fs]\nwrite = [\"~/Library/Caches\"]\n");
+        let p = profile_for(&wide, Phase::Run);
+        assert!(
+            sandbox::validate_profile(&p).is_err(),
+            "granting the parent of the bytecode cache must be refused"
+        );
     }
 
     #[test]

@@ -32,6 +32,13 @@ pub struct InstallOutput {
     pub warnings: Vec<String>,
     pub notes: Vec<String>,
     pub blocked: Vec<String>,
+    /// uv refused for want of an interpreter senv can install.
+    ///
+    /// Not serialized: it is a signal between the steps of one command, not a
+    /// fact about the run. See [`sync_inner`], which reads it to decide whether
+    /// a failed resolution is worth retrying after provisioning.
+    #[serde(skip)]
+    pub needs_interpreter: bool,
 }
 
 // ── init ────────────────────────────────────────────────────────────────────
@@ -229,10 +236,12 @@ fn sync_inner(ctx: &Ctx, project: &Project, args: &crate::cli::SyncArgs) -> Resu
         if !ctx.json {
             eprintln!("no uv.lock yet — resolving dependencies first");
         }
-        let locked = lock_inner(ctx, project, &uv_bin, false, false)?;
+        let mut locked = lock_inner(ctx, project, &uv_bin, false, false)?;
         changed.extend(locked.changed.iter().cloned());
         warnings.extend(locked.warnings.iter().cloned());
         if locked.exit_code != 0 {
+            locked.warnings = warnings;
+            locked.changed = changed;
             return Ok(locked);
         }
     }
@@ -585,7 +594,57 @@ fn mutate(
 }
 
 /// Run a uv command that writes manifests, in a staging copy when possible.
+///
+/// Wraps [`staged_run`] with the provisioning retry, because resolution needs an
+/// interpreter as much as installation does. That retry used to guard only the
+/// sync inside [`sync_inner`], which runs *after* this — so a project that asked
+/// for a Python the host does not have failed here first and never reached it.
+/// `senv init --python 3.13` on stock macOS (newest Python: 3.9) was a dead end
+/// whose error was uv repeating senv's own `UV_PYTHON_DOWNLOADS=never` back at
+/// the user. `senv lock` and `senv add` came through the same door.
 fn staged_operation(
+    ctx: &Ctx,
+    project: &Project,
+    uv_bin: &std::path::Path,
+    argv: Vec<String>,
+    force_in_place: bool,
+    expect_manifest_change: bool,
+) -> Result<InstallOutput> {
+    let first = staged_run(
+        ctx,
+        project,
+        uv_bin,
+        argv.clone(),
+        force_in_place,
+        expect_manifest_change,
+    )?;
+    if !first.needs_interpreter {
+        return Ok(first);
+    }
+    match provision(ctx, project, uv_bin) {
+        Ok(0) => staged_run(
+            ctx,
+            project,
+            uv_bin,
+            argv,
+            force_in_place,
+            expect_manifest_change,
+        ),
+        // Provisioning refused or failed: report the original resolution
+        // failure, which is the one the user set out to cause, with a line
+        // saying why senv could not clear it.
+        Ok(_) => Ok(first),
+        Err(e) => {
+            let mut first = first;
+            first
+                .warnings
+                .push(format!("could not install a Python interpreter: {e}"));
+            Ok(first)
+        }
+    }
+}
+
+fn staged_run(
     ctx: &Ctx,
     project: &Project,
     uv_bin: &std::path::Path,
@@ -788,6 +847,7 @@ fn finish(
             .filter(|d| d.verdict.is_suggestable())
             .map(|d| d.target.clone())
             .collect(),
+        needs_interpreter: !run.succeeded() && needs_interpreter(&run.output),
     })
 }
 
@@ -849,8 +909,7 @@ mod tests {
             "[project]\nname='x'\nversion='0'\n",
         )
         .unwrap();
-        unsafe { std::env::set_var("SENV_STATE_DIR", tmp.path().join("state")) };
-        unsafe { std::env::set_var("SENV_CACHE_DIR", tmp.path().join("cache")) };
+        let _roots = crate::project::testing::redirect_roots(tmp.path());
         let project = Project::at(&root).unwrap();
 
         std::fs::write(

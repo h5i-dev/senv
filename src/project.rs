@@ -374,6 +374,55 @@ impl Project {
         self.venv().join("pyvenv.cfg").is_file()
     }
 
+    /// Did the install phase leave compiled bytecode inside the environment?
+    ///
+    /// The run phase has no writable bytecode cache on purpose, and the thing
+    /// that makes that free rather than a startup tax is `UV_COMPILE_BYTECODE`
+    /// during the install — bytecode written into the environment, where the
+    /// run phase can read it and nothing can rewrite it.
+    ///
+    /// That silently does not happen on an interpreter whose `sys.pycache_prefix`
+    /// is preset, which is every stock macOS Python: Apple builds it to cache
+    /// into `~/Library/Caches/com.apple.python`, so uv reports "Bytecode
+    /// compiled 16 files" and the environment ends up with none. Nothing breaks
+    /// — CPython recompiles from source on every import, as it always has when
+    /// it cannot write — but senv promised the compilation and did not deliver
+    /// it, and only the environment on disk can say so.
+    pub fn venv_has_bytecode(&self) -> bool {
+        fn search(dir: &Path, budget: &mut u32) -> bool {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return false;
+            };
+            for entry in entries.flatten() {
+                if *budget == 0 {
+                    return false;
+                }
+                *budget -= 1;
+                let path = entry.path();
+                match entry.file_type() {
+                    // Symlinks are not followed: an environment is full of them
+                    // and a cycle would hang the command this feeds.
+                    Ok(t) if t.is_dir() => {
+                        if search(&path, budget) {
+                            return true;
+                        }
+                    }
+                    Ok(t) if t.is_file() && path.extension().is_some_and(|e| e == "pyc") => {
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+        // Bounded: this runs inside `senv status`, and an environment with tens
+        // of thousands of files must not turn a status line into a disk walk.
+        // Bytecode sits next to the first module compiled, so a real answer
+        // arrives long before the budget does.
+        let mut budget = 20_000;
+        search(&self.venv(), &mut budget)
+    }
+
     /// Is the recorded lock hash still the lockfile's hash? `None` when there
     /// is no lockfile or nothing recorded.
     pub fn lock_is_current(&self, state: &State) -> Option<bool> {
@@ -697,9 +746,70 @@ fn restrict_to_owner(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Test-only support for redirecting senv's roots.
+#[cfg(test)]
+pub mod testing {
+    use std::path::Path;
+    use std::sync::{Mutex, MutexGuard};
+
+    /// Serializes every test that redirects senv's roots.
+    ///
+    /// `SENV_STATE_DIR` and `SENV_CACHE_DIR` are process-global and cargo runs a
+    /// crate's tests as threads of one process, so two fixtures assigning them
+    /// at the same moment let one test build its `Project` against the *other*
+    /// test's temp directory — which is then deleted from under it when that
+    /// test ends. It surfaced as `create_dir_all … AlreadyExists` on a path no
+    /// test had created, in roughly one run in five, and it is the same hazard
+    /// `util::expand_tilde_in` exists to avoid for `HOME`.
+    static ROOTS: Mutex<()> = Mutex::new(());
+
+    thread_local! {
+        /// How many redirects this thread is holding.
+        ///
+        /// Several tests build a second fixture while the first is still alive
+        /// — comparing a default project against a configured one is the usual
+        /// reason — and a plain `Mutex` is not reentrant, so the second call
+        /// would deadlock against its own test. Re-entry is safe on its own
+        /// terms: a `Project` captures its roots at construction, so pointing
+        /// the variables at a second temp directory cannot move the first one.
+        static DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    }
+
+    /// Held for the lifetime of the test that redirected the roots.
+    pub struct RootsGuard(#[allow(dead_code)] Option<MutexGuard<'static, ()>>);
+
+    impl Drop for RootsGuard {
+        fn drop(&mut self) {
+            DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+        }
+    }
+
+    /// Point senv's state and cache roots inside `dir` until the returned guard
+    /// is dropped.
+    pub fn redirect_roots(dir: &Path) -> RootsGuard {
+        let already_held = DEPTH.with(|d| {
+            let n = d.get();
+            d.set(n + 1);
+            n > 0
+        });
+        // Poisoning is not interesting: this guards two environment variables,
+        // and a test that panicked while holding the lock left them no more
+        // wrong than one that returned normally.
+        let guard = (!already_held).then(|| ROOTS.lock().unwrap_or_else(|e| e.into_inner()));
+        // SAFETY: the lock makes this thread the only one touching these
+        // variables, and it is held until the caller's test finishes.
+        unsafe {
+            std::env::set_var("SENV_STATE_DIR", dir.join("state"));
+            std::env::set_var("SENV_CACHE_DIR", dir.join("cache"));
+        }
+        RootsGuard(guard)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::project::testing::redirect_roots;
 
     #[test]
     fn the_key_separates_projects_that_share_a_directory_name() {
@@ -753,7 +863,7 @@ mod tests {
         let root = tmp.path().join("proj");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("pyproject.toml"), "[project]\nname='x'\n").unwrap();
-        unsafe { std::env::set_var("SENV_STATE_DIR", tmp.path().join("state")) };
+        let _roots = redirect_roots(tmp.path());
 
         let project = Project::at(&root).expect("project");
         project.ensure_dirs().expect("dirs");
@@ -777,7 +887,7 @@ mod tests {
         let root = tmp.path().join("proj");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("pyproject.toml"), "[project]\nname='x'\n").unwrap();
-        unsafe { std::env::set_var("SENV_STATE_DIR", tmp.path().join("state2")) };
+        let _roots = redirect_roots(tmp.path());
         let project = Project::at(&root).expect("project");
 
         assert_eq!(project.venv_link_status(), VenvLink::Absent);

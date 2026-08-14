@@ -10,15 +10,23 @@ env:
 
 jobs:
   check:
-    name: fmt + clippy
-    runs-on: ubuntu-latest
+    name: fmt + clippy (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both platforms, because a good deal of this code is behind
+        # `cfg(target_os)` and a lint that only ever runs on Linux cannot see
+        # the macOS half of it at all.
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --check
+      - if: runner.os == 'Linux'
+        run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
 
   test:
@@ -67,11 +75,18 @@ jobs:
 
       # Integration tests skip themselves on a host that cannot confine, so a
       # green suite could mean "nothing ran". Fail loudly instead: this repo's
-      # whole claim is that the boundary is real, and CI has to prove it on at
-      # least one platform. This guard has already earned its place once, by
-      # catching a run in which all 102 boundary assertions were skipped.
+      # whole claim is that the boundary is real, and CI has to prove it.
+      # This guard has already earned its place once, by catching a run in
+      # which all 102 boundary assertions were skipped.
+      #
+      # It runs on both platforms now. Restricting it to Linux left macOS with
+      # the exact hole it exists to close, and macOS is where the holes were:
+      # the egress allowlist was enforcing nothing there, and a suite that had
+      # silently skipped itself would have reported that as green. There is
+      # nothing to install for it either — Seatbelt ships with the OS, so a
+      # macOS runner that cannot enforce the boundary is a real regression and
+      # deserves a red build rather than a skip.
       - name: The boundary was actually exercised
-        if: runner.os == 'Linux'
         run: |
           out="$(cargo test --locked --test cli -- --nocapture 2>&1)"
           echo "$out"

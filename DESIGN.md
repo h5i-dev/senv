@@ -555,14 +555,26 @@ tier cannot enforce a domain allowlist** — its network modes are all-or-nothin
 - `senv sync` needs `supervised` (requires `slirp4netns`, `nft`, cgroup-v2
   delegation) or `container` (Podman). On macOS, Seatbelt covers it at the base
   tier, so installs work out of the box.
-- **An allowlist means something weaker on macOS.** Linux pins nftables rules
-  to resolved addresses, so a program that ignores proxy variables still cannot
-  get out. macOS has no equivalent — h5i enforces an allowlist with a host
-  proxy, which constrains clients that honour it and nothing else. CI caught
-  senv claiming otherwise: a raw socket reached a host the allowlist excluded.
-  `senv status` now says so wherever it prints an allowlist, and the
-  integration test asserts what each platform actually delivers rather than the
-  stronger guarantee. `net = "deny"` is a real deny on both.
+- **An allowlist takes a different route on macOS, and the route is the whole
+  story.** Linux pins nftables rules to resolved addresses inside the box's own
+  network namespace. macOS has no namespace, so the box stays on the host's
+  stack and Seatbelt leaves it exactly one destination: the loopback port of
+  h5i's DNS-pinned allowlist proxy. Name resolution is denied outright — the
+  proxy resolves. The allowlist therefore holds against *any* client, including
+  one using a raw socket; what differs is that a client ignoring `HTTPS_PROXY`
+  reaches nothing at all instead of reaching its host directly.
+
+  This is worth spelling out because senv got it wrong for a while, and wrong
+  in the direction that matters. senv paired its host list with `net_mode =
+  host`. Linux and the image-backed tiers read the list and ignore the mode, so
+  it looked correct everywhere it was tested; Seatbelt reads the mode first,
+  and `host` there compiles to a bare `(allow network-outbound)`. Every macOS
+  install and every `--allow-net` run had unrestricted egress while `senv
+  status` printed an allowlist — the one failure mode this tool cannot have.
+  The fix is that an allowlist is now expressed as `deny` **plus** a host list,
+  which means the same thing on every backend, and the integration test asserts
+  the reachable/unreachable pair on both platforms rather than skipping the
+  question on one. `net = "deny"` is a real deny on both.
 - On hosts with neither (bare CI runners, some WSL2 setups), `senv sync` is
   **refused** with the `senv doctor` explanation. The user may explicitly
   configure `install.net = "host"` — accepted with a prominent warning in
@@ -573,8 +585,25 @@ tier cannot enforce a domain allowlist** — its network modes are all-or-nothin
 host can enforce, before anything fails mid-workflow.
 
 Platform support follows h5i: Linux and macOS at launch. Windows only via
-WSL2. macOS caveats surfaced by `status`: no seccomp equivalent, memory caps
-not enforceable under Seatbelt.
+WSL2. The macOS caveats, each surfaced where it bites rather than only in a
+document:
+
+- **No syscall filter.** Darwin has no seccomp; containment there is Seatbelt's
+  filesystem and network policy. `senv doctor` reports it.
+- **No memory or process ceiling.** No cgroups, `RLIMIT_AS` does not bind the
+  mmap'd heap CPython uses, and `RLIMIT_NPROC` is scoped to the uid rather than
+  to one command — so h5i applies neither, and `senv status` marks the
+  configured numbers `NOT enforced on this host` rather than printing them as
+  ceilings. CPU time, file size and the install wall clock do apply.
+- **The interpreter decides whether install-time bytecode is worth anything.**
+  The run phase has no writable bytecode cache by design, which is free only
+  because the install compiled into the environment. Apple's system Python is
+  built with `sys.pycache_prefix` preset to `~/Library/Caches/com.apple.python`,
+  so it caches outside the environment and the run phase finds nothing to use.
+  senv reports it in `status` and denies that directory outright — a writable
+  grant on it would hand a package an authoritative, writable copy of every
+  module in a read-only environment, which is the persistence hole dropping
+  `PYTHONPYCACHEPREFIX` closed in the first place.
 
 ---
 

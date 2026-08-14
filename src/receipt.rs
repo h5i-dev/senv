@@ -177,12 +177,15 @@ impl Receipts {
         let ts_ms = util::now_ms();
 
         let profile = &plan.policy.profile;
-        let mode = if profile.net_mode == h5i_sandbox::sandbox_policy::NetMode::Deny {
-            "deny"
-        } else if profile.net_egress.is_empty() {
+        // Host list first: an allowlist is `net_mode = deny` plus a non-empty
+        // list (see `policy::allowlist`), so reading the mode first would record
+        // every registry-scoped install as `"deny"`.
+        let mode = if crate::policy::has_allowlist(profile) {
+            "allowlist"
+        } else if crate::policy::is_unrestricted(profile) {
             "host"
         } else {
-            "allowlist"
+            "deny"
         };
 
         let record = Record {
@@ -279,6 +282,32 @@ impl Receipts {
                     &mut found,
                     Denial {
                         kind: DenialKind::Filesystem,
+                        target: util::sanitize(&collapse_volatile(&target)),
+                        verdict,
+                        evidence: util::sanitize(&util::tail(line, 200)),
+                    },
+                );
+            } else if is_permission_refusal(line) && in_socket_context(&lines, i) {
+                // A refusal that names no path, in a traceback that is plainly
+                // about a socket. This is what a blocked connection looks like
+                // on macOS: Seatbelt returns EPERM from `connect`, so the whole
+                // event reads `PermissionError: [Errno 1] Operation not
+                // permitted` — no host, no path, and none of the "Network is
+                // unreachable" wording Linux produces. It matched no rule above,
+                // so senv said nothing at all about the one denial it exists to
+                // explain. The socket context is what separates it from an
+                // ordinary chmod failure.
+                let target =
+                    host_from_context(&lines, i).unwrap_or_else(|| UNNAMED_HOST.to_string());
+                let verdict = if target == UNNAMED_HOST {
+                    Verdict::Unnamed
+                } else {
+                    Verdict::Suggestable
+                };
+                push_unique(
+                    &mut found,
+                    Denial {
+                        kind: DenialKind::Network,
                         target: util::sanitize(&target),
                         verdict,
                         evidence: util::sanitize(&util::tail(line, 200)),
@@ -326,8 +355,50 @@ impl Receipts {
                  needs one, pass it as a declared secret instead.",
             );
         }
+        if is_xcrun_cache(p) {
+            return Verdict::by_design(
+                "macOS noise, not a boundary problem: the /usr/bin tool shims (git, clang, \
+                 python3) cache their toolchain lookup in the host's shared temp directory, \
+                 which they locate through the kernel rather than TMPDIR — so senv cannot \
+                 redirect it and will not grant it, because a directory host processes read is \
+                 a drop point every sandboxed command would share. The command itself succeeded.",
+            );
+        }
         Verdict::Suggestable
     }
+}
+
+/// Is this one of the per-invocation cache files Apple's `/usr/bin` shims try
+/// to write?
+///
+/// The name carries a fresh random suffix every time, so treating these as
+/// suggestable produced advice that could never be followed — "add
+/// `/var/folders/…/T/xcrun_db-wQ0xJpcS` to [run.fs] read", for a file that will
+/// not exist next time, offered as a *read* grant for a *write* the shim will
+/// retry regardless. Two of them appear on every `senv run git`, so
+/// `senv report --suggest` was accumulating a policy stanza of dead paths.
+fn is_xcrun_cache(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.starts_with("xcrun_db-"))
+}
+
+/// Replace a per-invocation random name with the shape it always has.
+///
+/// Denials are deduplicated by target, so a name that is never the same twice
+/// defeats that: `senv run git` alone contributes two, and the receipt then
+/// carries a fresh pair for every command anyone ever runs. The evidence line
+/// still holds the real path — this only changes what the denial is *keyed*
+/// on, so `senv report` shows one durable entry instead of a growing list of
+/// the same fact.
+fn collapse_volatile(path: &str) -> String {
+    let p = Path::new(path);
+    if is_xcrun_cache(p)
+        && let Some(parent) = p.parent()
+    {
+        return format!("{}/xcrun_db-*", parent.display());
+    }
+    path.to_string()
 }
 
 fn push_unique(list: &mut Vec<Denial>, d: Denial) {
@@ -494,16 +565,59 @@ fn url_host(line: &str) -> Option<String> {
     None
 }
 
+/// Wordings a kernel uses to refuse an operation without saying which kind.
+///
+/// Landlock refuses with EACCES and Seatbelt with EPERM, and neither errno
+/// distinguishes a file from a socket — `connect` and `open` come back the same
+/// way. So these are the *ambiguous* markers: a path on the line settles it as
+/// filesystem, and [`in_socket_context`] settles the rest.
+const PERMISSION_MARKERS: [&str; 5] = [
+    "Permission denied",
+    "Read-only file system",
+    "Operation not permitted",
+    "EACCES",
+    "EPERM",
+];
+
+fn is_permission_refusal(line: &str) -> bool {
+    PERMISSION_MARKERS.iter().any(|m| line.contains(m))
+}
+
+/// Do the lines around `index` describe a socket operation?
+///
+/// Deliberately narrow: the markers are socket *calls* and the stdlib modules
+/// that make them, not the word "http" wherever it appears. A false positive
+/// here turns a refused `os.chmod` into "senv blocked a network connection",
+/// which is worse than the silence this replaces — the point of the receipt is
+/// that a user can act on it.
+fn in_socket_context(lines: &[&str], index: usize) -> bool {
+    const MARKERS: [&str; 14] = [
+        "create_connection",
+        "getaddrinfo",
+        "socket.py",
+        "_socket",
+        ".connect(",
+        "connect_ex",
+        "sock.connect",
+        "urlopen",
+        "urllib",
+        "httplib",
+        "http/client",
+        "httpx",
+        "aiohttp",
+        "ssl.py",
+    ];
+    const WINDOW: usize = 10;
+    let start = index.saturating_sub(WINDOW);
+    lines[start..=index]
+        .iter()
+        .any(|l| MARKERS.iter().any(|m| l.contains(m)))
+}
+
 /// Absolute path a line was refused, if it reads like a blocked file
 /// operation.
 fn filesystem_denial(line: &str) -> Option<String> {
-    const MARKERS: [&str; 4] = [
-        "Permission denied",
-        "Read-only file system",
-        "Operation not permitted",
-        "EACCES",
-    ];
-    if !MARKERS.iter().any(|m| line.contains(m)) {
+    if !is_permission_refusal(line) {
         return None;
     }
     // The longest absolute path on the line is nearly always the subject.
@@ -572,6 +686,48 @@ mod tests {
     }
 
     #[test]
+    fn the_macos_toolchain_shims_are_explained_rather_than_suggested() {
+        // `senv run git --version` succeeds and prints these twice, with a
+        // fresh random suffix each time. Suggesting them produced a fix nobody
+        // could apply and a `report --suggest` stanza that grew a dead path per
+        // invocation.
+        let r = receipts();
+        let d = r.analyze(
+            "git: error: couldn't create cache file \
+             '/var/folders/gr/ll9jyn691yb11l0m8x7lsf_00000gn/T/xcrun_db-wQ0xJpcS' \
+             (errno=Operation not permitted)",
+        );
+        assert_eq!(d.len(), 1, "{d:?}");
+        assert!(!d[0].verdict.is_suggestable(), "{:?}", d[0].verdict);
+        let reason = d[0].verdict.reason().expect("a by-design verdict");
+        assert!(reason.contains("succeeded"), "{reason}");
+
+        // Two of these appear per command, with a different random suffix each
+        // time. They must collapse to one durable entry, or the receipt grows a
+        // pair of dead paths for every command ever run.
+        let two = "git: error: couldn't create cache file '/var/f/T/xcrun_db-aaaaaaaa' \
+                   (errno=Operation not permitted)\n\
+                   git: error: couldn't create cache file '/var/f/T/xcrun_db-bbbbbbbb' \
+                   (errno=Operation not permitted)";
+        let d = r.analyze(two);
+        assert_eq!(d.len(), 1, "the random suffix must not defeat dedup: {d:?}");
+        assert_eq!(d[0].target, "/var/f/T/xcrun_db-*");
+        assert!(
+            d[0].evidence.contains("xcrun_db-aaaaaaaa"),
+            "the real path must survive as evidence: {:?}",
+            d[0].evidence
+        );
+
+        // And an ordinary file in the same directory is still suggestable —
+        // the rule is the shim's cache, not "anything under /var/folders".
+        let d = r.analyze(
+            "PermissionError: [Errno 1] Operation not permitted: \
+             '/var/folders/gr/ll9jyn691yb11l0m8x7lsf_00000gn/T/my-data.csv'",
+        );
+        assert!(d[0].verdict.is_suggestable(), "{:?}", d[0].verdict);
+    }
+
+    #[test]
     fn credential_paths_are_never_suggested_either() {
         let r = receipts();
         let d = r.analyze("cat: /home/u/.ssh/id_ed25519: Permission denied");
@@ -591,6 +747,75 @@ mod tests {
                          File \"/usr/lib/python3.12/socket.py\", line 828, in create_connection\n    \
                          for res in getaddrinfo(host, port, 0, SOCK_STREAM):\n\
                          socket.gaierror: [Errno -3] Temporary failure in name resolution";
+        let d = r.analyze(traceback);
+        assert_eq!(d.len(), 1, "{d:?}");
+        assert_eq!(d[0].target, "api.example.com");
+        assert!(d[0].verdict.is_suggestable());
+    }
+
+    #[test]
+    fn a_connection_refused_with_only_an_errno_is_still_reported() {
+        // What a blocked connection looks like on macOS. Seatbelt returns EPERM
+        // from `connect`, so there is no "Network is unreachable", no host and
+        // no path — and senv matched none of its rules and said nothing at all
+        // about the one denial it exists to explain. Reproduced against the
+        // real boundary with `socket.create_connection(('1.1.1.1', 443))`.
+        let r = receipts();
+        let traceback = "Traceback (most recent call last):\n  \
+                         File \"/proj/probe.py\", line 2, in <module>\n    \
+                         socket.create_connection(('1.1.1.1', 443), 5)\n  \
+                         File \"/usr/lib/python3.9/socket.py\", line 831, in create_connection\n    \
+                         sock.connect(sa)\n\
+                         PermissionError: [Errno 1] Operation not permitted";
+        let d = r.analyze(traceback);
+        assert_eq!(d.len(), 1, "{d:?}");
+        assert_eq!(
+            d[0].kind,
+            DenialKind::Network,
+            "an EPERM from connect() is not a file: {:?}",
+            d[0]
+        );
+    }
+
+    #[test]
+    fn the_same_errno_over_a_file_is_still_a_file() {
+        // The other half: EPERM is what Seatbelt returns for *both*, so the
+        // path on the line has to keep winning. Getting this backwards would
+        // tell a user to `senv allow` their own venv.
+        let r = receipts();
+        let d =
+            r.analyze("PermissionError: [Errno 1] Operation not permitted: '/state/venv/lib/x.py'");
+        assert_eq!(d.len(), 1, "{d:?}");
+        assert_eq!(d[0].kind, DenialKind::Filesystem);
+        assert!(!d[0].verdict.is_suggestable(), "{:?}", d[0].verdict);
+    }
+
+    #[test]
+    fn a_permission_error_with_no_socket_in_sight_is_not_called_a_connection() {
+        // The guard on the rule above. A refused `os.chmod` names no path on
+        // the error line either, and reporting it as "senv blocked a network
+        // connection" would be worse than the silence it replaces.
+        let r = receipts();
+        let traceback = "Traceback (most recent call last):\n  \
+                         File \"/proj/build.py\", line 9, in <module>\n    \
+                         os.chmod(target, 0o755)\n\
+                         PermissionError: [Errno 1] Operation not permitted";
+        assert!(
+            r.analyze(traceback).is_empty(),
+            "{:?}",
+            r.analyze(traceback)
+        );
+    }
+
+    #[test]
+    fn an_errno_only_refusal_still_picks_up_a_host_named_in_the_traceback() {
+        let r = receipts();
+        let traceback = "Traceback (most recent call last):\n  \
+                         File \"/proj/probe.py\", line 2, in <module>\n    \
+                         socket.create_connection(('api.example.com', 443), 5)\n  \
+                         File \"/usr/lib/python3.9/socket.py\", line 831, in create_connection\n    \
+                         sock.connect(sa)\n\
+                         PermissionError: [Errno 1] Operation not permitted";
         let d = r.analyze(traceback);
         assert_eq!(d.len(), 1, "{d:?}");
         assert_eq!(d[0].target, "api.example.com");

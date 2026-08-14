@@ -39,7 +39,7 @@ policies.
 | **Your source** | read-only — a build backend cannot edit it | read-write, it's your code |
 | **The environment** | writable (this is what installs it) | **read-only** |
 | **Credentials** | none; secrets can never be scoped here | only what you declare |
-| **Limits** | memory, processes, CPU, file size, wall clock | same, minus the wall clock (see below) |
+| **Limits** | CPU, file size, wall clock; memory and processes on Linux | same, minus the wall clock (see below) |
 
 Two of those deserve a note.
 
@@ -67,9 +67,10 @@ Or download a binary from [Releases](https://github.com/h5i-dev/senv/releases).
 
 senv needs [uv](https://docs.astral.sh/uv/) on `PATH`. On Linux, enforcing the
 install boundary's registry allowlist also needs `slirp4netns` and `nftables`
-(`sudo apt install slirp4netns nftables` on Debian/Ubuntu). Run `senv doctor` —
-it reports exactly what this machine can enforce and what to install if
-something is missing.
+(`sudo apt install slirp4netns nftables` on Debian/Ubuntu). On macOS there is
+nothing to install: the boundary is Seatbelt, which ships with the OS. Run
+`senv doctor` — it reports exactly what this machine can enforce and what to
+install if something is missing.
 
 ## Use it
 
@@ -225,10 +226,14 @@ supplies the Python-shaped policy on top of it.
   namespace with nftables rules pinned to resolved addresses — enforced by
   address, so a program that ignores `HTTPS_PROXY` still cannot get out.
 - **macOS**: Seatbelt, with the differences reported honestly by `senv doctor`
-  and `senv status`: no syscall filter, no enforceable memory cap, and an
-  egress allowlist enforced by a proxy rather than by address — so a program
-  using a raw socket can reach a host the allowlist excludes. `net = "deny"` is
-  a real deny on both platforms; an *allowlist* is weaker on macOS.
+  and `senv status`. There is no syscall filter (Darwin has no seccomp) and no
+  enforceable memory or process cap (no cgroups, and `RLIMIT_AS` does not bind
+  the mmap'd heap CPython uses). Egress allowlists take a different route:
+  Seatbelt leaves the box exactly one destination, the loopback port of senv's
+  DNS-pinned allowlist proxy, and denies name resolution outright. So the
+  allowlist holds against any client — but a client that ignores `HTTPS_PROXY`
+  reaches *nothing* rather than reaching its host directly. `net = "deny"` is a
+  real deny on both platforms.
 - Stronger tiers (rootless Podman containers, microVMs with their own kernel)
   are available by setting `[env] isolation`.
 
@@ -252,9 +257,17 @@ have:
   is for.
 - The wall-clock limit applies to installs but **not** to `senv run` / `senv
   shell`: the interactive path hands the terminal to the child and waits
-  without a deadline. Memory, process count, CPU time and file size are kernel
-  limits and do apply everywhere — use `[run.resources] cpu` to bound a runaway
-  command. `senv status` says which is which.
+  without a deadline. CPU time and file size are rlimits and apply everywhere.
+  Memory and process count are a per-run cgroup, so they apply on Linux and
+  **not on macOS**, which has none. `senv status` marks every limit this host
+  does not actually enforce, and `senv doctor` answers it for the machine.
+- On macOS, `senv run` startup depends on which interpreter built the
+  environment. senv compiles bytecode during the install so the run phase needs
+  no writable cache; Apple's system Python ships with `sys.pycache_prefix`
+  preset to `~/Library/Caches/com.apple.python` and caches outside the
+  environment instead, so imports recompile every run. `senv status` says so
+  when it happens — `senv init --python 3.13` builds on a managed interpreter
+  that does not.
 - senv detects a policy widened behind your back; it cannot prevent the write.
   "Policy" includes `pyproject.toml`'s `[build-system]` and `[tool.uv]` tables,
   which decide what code an install runs — changing either needs `senv trust`.

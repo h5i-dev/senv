@@ -268,33 +268,58 @@ fn the_network_is_denied_by_default_and_openable_on_purpose() {
         "`senv allow` must record the decision in the project's config"
     );
 
-    let (_, text) = fixture.run_python(probe);
-    assert!(
-        text.contains("CONNECTED"),
-        "the allowed host was still blocked: {text}"
-    );
-
-    // And nothing else came with it — on a platform that can enforce that.
+    // The allowed host is now reachable, and nothing else is. The *route* to it
+    // differs by platform, so the client does:
     //
-    // Linux pins nftables rules to resolved addresses, so a raw socket to an
-    // off-list host fails. macOS has no equivalent: h5i enforces the allowlist
-    // with a host proxy, which constrains clients that honour proxy variables
-    // and nothing else. Asserting Linux's guarantee everywhere would make this
-    // test claim a containment macOS does not provide, so it asserts what each
-    // platform actually delivers and `senv status` says which one you have.
-    let (_, text) = fixture.run_python(
-        "import socket\n\
-         try:\n    socket.create_connection(('pypi.org', 443), 8); print('CONNECTED')\n\
-         except OSError as e: print('blocked')",
-    );
+    // - Linux puts the box in its own netns with nftables rules pinned to the
+    //   resolved addresses, so a plain socket reaches the allowed host and no
+    //   other.
+    // - macOS has no netns. The box keeps the host's stack and Seatbelt leaves
+    //   it one destination: the loopback port of senv's DNS-pinned allowlist
+    //   proxy. So a plain socket reaches nothing at all — it has no DNS either —
+    //   and a client that honours `HTTPS_PROXY` reaches exactly the allowed
+    //   host.
+    //
+    // Both are the same guarantee (only the allowlist gets out) with different
+    // residue for non-proxy-aware clients, and both are asserted. What must
+    // never come back is the behaviour this replaced: on macOS `net_mode` said
+    // `host`, Seatbelt emitted a bare `(allow network-outbound)`, and every
+    // off-list host was directly reachable while `senv status` printed an
+    // allowlist.
+    let off_list = "import socket\n\
+                    try:\n    socket.create_connection(('pypi.org', 443), 8); print('CONNECTED')\n\
+                    except OSError as e: print('blocked')";
     if cfg!(target_os = "macos") {
-        let out = fixture.senv(&["status"]);
+        let (_, text) = fixture.run_python(probe);
         assert!(
-            combined(&out).contains("raw socket"),
-            "macOS cannot contain a raw socket, so status must say so: {}",
-            combined(&out)
+            text.contains("blocked"),
+            "macOS routes egress through the proxy, so a raw socket must reach \
+             nothing — not even an allowed host: {text}"
+        );
+        let proxied = |host: &str| {
+            format!(
+                "import urllib.request\n\
+                 try:\n    urllib.request.urlopen('https://{host}/', timeout=15); print('CONNECTED')\n\
+                 except Exception as e: print('blocked', e)"
+            )
+        };
+        let (_, text) = fixture.run_python(&proxied("example.com"));
+        assert!(
+            text.contains("CONNECTED"),
+            "the allowed host must be reachable through the proxy: {text}"
+        );
+        let (_, text) = fixture.run_python(&proxied("pypi.org"));
+        assert!(
+            text.contains("blocked"),
+            "the allowlist leaked to an off-list host through the proxy: {text}"
         );
     } else {
+        let (_, text) = fixture.run_python(probe);
+        assert!(
+            text.contains("CONNECTED"),
+            "the allowed host was still blocked: {text}"
+        );
+        let (_, text) = fixture.run_python(off_list);
         assert!(
             text.contains("blocked"),
             "the allowlist leaked to other hosts: {text}"
@@ -1006,6 +1031,29 @@ fn status_does_not_claim_a_wall_clock_it_cannot_enforce() {
         !install_wall.contains("not enforced"),
         "installs do have a deadline: {install_wall}"
     );
+
+    // The same rule for the memory and process ceilings, which are a per-run
+    // cgroup on Linux and nothing at all on Darwin: it has no cgroups, does not
+    // enforce RLIMIT_AS against the mmap'd heap CPython uses, and scopes
+    // RLIMIT_NPROC to the whole uid rather than to one command. h5i therefore
+    // applies neither there and says so; senv printed the configured numbers
+    // unqualified, which read as a ceiling on every Mac.
+    let enforced = h5i_sandbox::sandbox::limit_support(
+        h5i_sandbox::sandbox_policy::IsolationClaim::Supervised,
+    );
+    for (key, is_enforced) in [("mem", enforced.mem), ("procs", enforced.procs)] {
+        let value = phase("run")["resources"][key]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        assert!(!value.is_empty(), "status must report {key}");
+        assert_eq!(
+            value.contains("NOT enforced"),
+            !is_enforced,
+            "status disagrees with the engine about whether {key} is a real \
+             ceiling on this host: {value}"
+        );
+    }
 }
 
 /// The CPU-time rlimit is the kernel-enforced backstop that the wall clock is
@@ -1237,9 +1285,23 @@ fn the_environment_ships_precompiled_bytecode() {
             }
         }
     }
+    // Not every interpreter can deliver this, and the ones that cannot are not
+    // exotic: Apple builds the stock macOS Python with `sys.pycache_prefix`
+    // preset to `~/Library/Caches/com.apple.python`, so `UV_COMPILE_BYTECODE`
+    // reports success and writes the bytecode somewhere the environment will
+    // never see. Nothing is broken — imports recompile from source, as they
+    // always have when the cache is unwritable — but senv made a promise it did
+    // not keep, so the requirement here is that it says so rather than that it
+    // always succeeds. Silence is the failure this test exists to catch.
+    if found {
+        return;
+    }
+    let out = fixture.senv(&["status"]);
+    let text = combined(&out);
     assert!(
-        found,
-        "the install phase should have compiled bytecode into the environment"
+        text.contains("no compiled bytecode"),
+        "the install phase compiled no bytecode into the environment, and `senv status` \
+         did not mention it: {text}"
     );
 }
 
