@@ -59,8 +59,28 @@ two moments that carry different risks:
 ## Install
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/h5i-dev/senv/main/install.sh | sh
+```
+
+The script picks the build for your platform, checks it against the SHA-256
+published beside it, and installs to `/usr/local/bin`. Set `SENV_INSTALL_DIR`
+to install elsewhere, or `SENV_VERSION=vX.Y.Z` to pin a version.
+
+Or install it the way you install your other tools:
+
+```bash
+uv tool install h5i-senv     # also: pipx install h5i-senv, pip install h5i-senv
 cargo install --git https://github.com/h5i-dev/senv
 ```
+
+Every one of these gives you the same Rust binary. There is no Python in senv;
+the PyPI package is a delivery mechanism, and it is worth installing as a
+*tool* rather than into a project's environment — an environment that can
+rewrite the binary confining it is not confined by it.
+
+Building from source needs a C toolchain and OpenSSL headers (`libssl-dev` on
+Debian/Ubuntu). Add `--features vendored-openssl` to build OpenSSL from source
+instead, which is what the published binaries do.
 
 senv requires [`uv`](https://docs.astral.sh/uv/) on `PATH`.
 

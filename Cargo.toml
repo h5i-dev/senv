@@ -29,5 +29,20 @@ sha2 = "0.10"
 thiserror = "2.0"
 libc = "0.2"
 
+# senv never calls OpenSSL. It is here only to reach the `vendored` feature of
+# the openssl-sys that h5i-sandbox drags in through git2 → libgit2-sys →
+# libssh2-sys, because Cargo unifies that feature across the whole graph.
+#
+# Off by default, so `cargo install --git` links the system libssl like any
+# other build. The release workflow turns it on for every published artifact:
+# a downloaded binary has to run on a machine that never agreed to install
+# libssl-dev, and a wheel or tarball built against the runner's OpenSSL would
+# instead fail at exec time with a missing .so — or, on macOS, with a path
+# under /opt/homebrew that only the runner had.
+openssl = { version = "0.10", features = ["vendored"], optional = true }
+
+[features]
+vendored-openssl = ["dep:openssl"]
+
 [dev-dependencies]
 tempfile = "3.8"
