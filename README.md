@@ -290,10 +290,8 @@ and cannot enforce Linux cgroup memory or process limits.
 - **The default tiers share the host kernel.** Landlock, seccomp, and Seatbelt
   provide OS-level isolation, not a hypervisor boundary. Use
   `isolation = "microvm"` when a separate kernel is required.
-- **senv limits impact; it does not identify malicious packages.** Lockfile
+- **It does not identify malicious packages.** Lockfile
   hashes and dependency review remain important.
-- **Allowed actions remain allowed.** Code can modify files in the writable
-  project and contact destinations you explicitly permit.
 - **Run the environment through senv.** `source .venv/bin/activate`, an editor
   invoking `.venv/bin/python`, or any other host-side execution bypasses the
   runtime boundary. Use `senv run` or `senv shell`.
