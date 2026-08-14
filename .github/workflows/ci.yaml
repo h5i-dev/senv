@@ -13,7 +13,7 @@ jobs:
     name: fmt + clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -29,14 +29,18 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
       # The integration suite drives a real `uv`. Without it those tests skip,
       # which would quietly hide every end-to-end assertion.
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v6
+        with:
+          # senv is a Rust project that *drives* uv; there is no Python
+          # dependency file here for uv's cache key to hash.
+          enable-cache: false
 
       # The install boundary needs a tier that can enforce an egress
       # allowlist. On Linux that is the supervised tier, which needs these.
