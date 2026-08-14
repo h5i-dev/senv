@@ -10,6 +10,16 @@
 //! beside each parser. It exists so that a new branch in one of them is
 //! exercised against hostile shapes without anyone having to remember to.
 
+// Tests assert; see the note on the test modules in `src/`.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::arithmetic_side_effects
+)]
+
 /// Every parser here consumes bytes chosen by code the boundary contains.
 /// A panic is a denial of service on the security tool, and in the middle
 /// of a state update it is worse than that.

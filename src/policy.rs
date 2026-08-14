@@ -1023,6 +1023,18 @@ fn secret_grants(cfg: &Config, phase: Phase) -> Vec<SecretGrant> {
 
 #[cfg(test)]
 mod tests {
+    // Tests assert; an assertion failing *is* a panic, and a test that
+    // carefully propagated errors instead would report a pass on a broken
+    // invariant. The panic discipline in `Cargo.toml` is about `senv` the
+    // process, not about the suite that interrogates it.
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::string_slice,
+        clippy::arithmetic_side_effects
+    )]
     use super::*;
     use crate::config::CacheScope;
 

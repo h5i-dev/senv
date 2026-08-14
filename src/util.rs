@@ -56,14 +56,17 @@ pub fn sha256_file(path: &Path) -> Option<String> {
         if n == 0 {
             break;
         }
-        total += n as u64;
+        total = total.saturating_add(n as u64);
         // The metadata check above is a fast path, not the guarantee: the file
         // can grow between the stat and the read, and the whole point is that
         // its author is hostile.
         if total > crate::error::fs::MAX_PARSED_BYTES {
             return None;
         }
-        hasher.update(&buf[..n]);
+        // `Read` promises `n <= buf.len()`, so this is the whole of what was
+        // just read. Taken through `get` rather than a range so a `Read` impl
+        // that breaks its contract yields no hash instead of a panic.
+        hasher.update(buf.get(..n)?);
     }
     Some(format!("{:x}", hasher.finalize()))
 }
@@ -99,6 +102,23 @@ pub fn format_utc(ms: u64) -> String {
     )
 }
 
+/// Hinnant's `civil_from_days`, left in its published form.
+///
+/// The arithmetic is unchecked here, deliberately, and the bound is argued at
+/// the boundary rather than at each operator. The only caller is [`format_utc`],
+/// whose input is a `u64` of milliseconds: `ms / 1000` is at most ~1.8e16, which
+/// is why the `as i64` cannot go negative, and `days` is then at most ~2.1e14.
+/// `z + 719_468` and `era * 146_097` stay far inside `i64` for every value in
+/// that range, including `u64::MAX` — so this function is total on its whole
+/// input domain, and `format_utc` has no unreachable branch to test.
+///
+/// Rewriting these ten lines into checked operations would obscure a widely
+/// reviewed algorithm to guard against a case that cannot arise; a transcription
+/// slip in a date routine is the more likely bug, and a much quieter one.
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "total for every u64 millisecond value; see the bound argued above"
+)]
 fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
@@ -114,17 +134,21 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 
 /// Human-readable byte size, for `senv gc` and `senv status`.
 pub fn human_bytes(n: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
+    // Bytes are not in the list: the exact count is printed for that case, and
+    // leaving it out means the loop below promotes rather than indexes.
+    const UNITS: [&str; 4] = ["KiB", "MiB", "GiB", "TiB"];
     let mut v = n as f64;
-    let mut i = 0;
-    while v >= 1024.0 && i + 1 < UNITS.len() {
+    let mut unit = None;
+    for next in UNITS {
+        if v < 1024.0 {
+            break;
+        }
         v /= 1024.0;
-        i += 1;
+        unit = Some(next);
     }
-    if i == 0 {
-        format!("{n} B")
-    } else {
-        format!("{v:.1} {}", UNITS[i])
+    match unit {
+        Some(u) => format!("{v:.1} {u}"),
+        None => format!("{n} B"),
     }
 }
 
@@ -132,16 +156,16 @@ pub fn human_bytes(n: u64) -> String {
 /// unreadable entries contribute zero rather than failing the whole walk, since
 /// this only ever feeds a human-readable number.
 pub fn dir_size(path: &Path) -> u64 {
-    let mut total = 0;
+    let mut total = 0u64;
     let Ok(entries) = std::fs::read_dir(path) else {
         return 0;
     };
     for entry in entries.flatten() {
         let Ok(md) = entry.metadata() else { continue };
         if md.is_dir() {
-            total += dir_size(&entry.path());
+            total = total.saturating_add(dir_size(&entry.path()));
         } else if md.is_file() {
-            total += md.len();
+            total = total.saturating_add(md.len());
         }
     }
     total
@@ -176,15 +200,17 @@ impl Progress {
         let handle = std::thread::spawn(move || {
             const FRAMES: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
             let start = std::time::Instant::now();
-            let mut i = 0usize;
+            // A cycling iterator rather than a counter and a modulo: it cannot
+            // run off the end of the array, and it cannot overflow on a spinner
+            // left running for a very long install.
+            let mut frames = FRAMES.iter().cycle();
             while !flag.load(Ordering::Relaxed) {
                 eprint!(
                     "\r{} {label} ({:.0}s)\x1b[K",
-                    FRAMES[i % FRAMES.len()],
+                    frames.next().unwrap_or(&' '),
                     start.elapsed().as_secs_f32()
                 );
                 let _ = std::io::Write::flush(&mut std::io::stderr());
-                i += 1;
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
             eprint!("\r\x1b[K");
@@ -218,10 +244,13 @@ pub fn expand_tilde(path: &str) -> String {
 /// of one process, so a test that reassigns `HOME` reassigns it for every test
 /// running beside it, including ones resolving real paths under the real home.
 fn expand_tilde_in(path: &str, home: Option<&str>) -> String {
-    if (path == "~" || path.starts_with("~/"))
+    // `strip_prefix` hands back the remainder directly, so the `~` never has to
+    // be sliced off by byte offset.
+    if let Some(rest) = path.strip_prefix('~')
+        && (rest.is_empty() || rest.starts_with('/'))
         && let Some(home) = home.filter(|h| !h.is_empty())
     {
-        return format!("{home}{}", &path[1..]);
+        return format!("{home}{rest}");
     }
     path.to_string()
 }
@@ -302,15 +331,32 @@ pub fn tail(text: &str, n: usize) -> String {
     if text.len() <= n {
         return text.to_string();
     }
-    let mut start = text.len() - n;
-    while start < text.len() && !text.is_char_boundary(start) {
-        start += 1;
+    let mut start = text.len().saturating_sub(n);
+    // `is_char_boundary(text.len())` is always true, so this terminates, and
+    // `get` then always succeeds. It is written as a fallible lookup anyway:
+    // the alternative is a byte range that panics on the one input — text
+    // senv did not write — this function exists to handle.
+    while !text.is_char_boundary(start) {
+        start = start.saturating_add(1);
     }
-    format!("…{}", &text[start..])
+    text.get(start..)
+        .map_or_else(|| text.to_string(), |rest| format!("…{rest}"))
 }
 
 #[cfg(test)]
 mod tests {
+    // Tests assert; an assertion failing *is* a panic, and a test that
+    // carefully propagated errors instead would report a pass on a broken
+    // invariant. The panic discipline in `Cargo.toml` is about `senv` the
+    // process, not about the suite that interrogates it.
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::string_slice,
+        clippy::arithmetic_side_effects
+    )]
     use super::*;
 
     #[test]

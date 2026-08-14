@@ -9,6 +9,16 @@
 //! (`senv doctor` explains why on such a host), because a red suite on a
 //! Landlock-less CI runner teaches people to ignore the suite.
 
+// Tests assert; see the note on the test modules in `src/`.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::arithmetic_side_effects
+)]
+
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
@@ -1701,5 +1711,48 @@ fn writable_directories_exist_before_the_policy_is_enforced() {
             .join("venv")
             .join("pyvenv.cfg")
             .is_file()
+    );
+}
+
+/// A program that is not in the environment gets senv's explanation, naming the
+/// environment it looked in — not a bare `command not found` from the sandbox.
+///
+/// The resolution this covers reads the first element of the command line, which
+/// clap declares `required = true`. That declaration is the only thing standing
+/// between this path and an empty argument list, and nothing else exercises it.
+#[test]
+fn a_program_missing_from_the_environment_is_explained_by_senv() {
+    require!(have_uv(), "uv is not installed");
+    require_install!();
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    let out = fixture.senv(&["run", "definitely-not-a-real-program"]);
+    let text = combined(&out);
+    assert!(!out.status.success(), "{text}");
+    assert!(
+        text.contains("is not available in this environment"),
+        "senv should name the environment rather than letting the sandbox say \
+         `command not found`: {text}"
+    );
+    // The suggestion has to name the program the user actually typed.
+    assert!(
+        text.contains("senv add definitely-not-a-real-program"),
+        "{text}"
+    );
+}
+
+/// `senv run` with no command at all is refused by clap, before senv looks at
+/// the argument list. This pins the `required = true` that the resolution above
+/// depends on: without it an empty `argv` would reach that code.
+#[test]
+fn senv_run_requires_a_command() {
+    let fixture = Fixture::new(Some(DEMO));
+    let out = fixture.senv(&["run"]);
+    assert!(!out.status.success());
+    let text = combined(&out);
+    assert!(
+        text.contains("required") || text.contains("Usage"),
+        "an empty `senv run` should be rejected as a usage error: {text}"
     );
 }

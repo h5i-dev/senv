@@ -470,8 +470,11 @@ fn host_from_line(line: &str) -> Option<String> {
         "hostname",
         "connect to",
     ] {
-        if let Some(idx) = line.find(marker) {
-            let rest = line[idx + marker.len()..].trim_start_matches([':', ' ', '\'', '"']);
+        // `split_once` hands back the text after the marker directly, so the
+        // offset arithmetic that used to compute it — on a line printed by the
+        // contained program — is gone.
+        if let Some((_, rest)) = line.split_once(marker) {
+            let rest = rest.trim_start_matches([':', ' ', '\'', '"']);
             let token: String = rest
                 .chars()
                 .take_while(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-')
@@ -535,7 +538,11 @@ fn looks_like_host(token: &str) -> bool {
 fn host_from_context(lines: &[&str], error_index: usize) -> Option<String> {
     const WINDOW: usize = 10;
     let start = error_index.saturating_sub(WINDOW);
-    lines[start..error_index]
+    // Callers pass an index they enumerated out of `lines`, so the window is in
+    // range. Taken through `get` so that stays true by construction rather than
+    // by every future caller remembering it.
+    lines
+        .get(start..error_index)?
         .iter()
         .rev()
         .find_map(|line| url_host(line).or_else(|| quoted_host(line)))
@@ -558,8 +565,7 @@ fn quoted_host(line: &str) -> Option<String> {
 
 fn url_host(line: &str) -> Option<String> {
     for scheme in ["https://", "http://"] {
-        if let Some(idx) = line.find(scheme) {
-            let rest = &line[idx + scheme.len()..];
+        if let Some((_, rest)) = line.split_once(scheme) {
             let host: String = rest
                 .chars()
                 .take_while(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-')
@@ -616,9 +622,12 @@ fn in_socket_context(lines: &[&str], index: usize) -> bool {
     ];
     const WINDOW: usize = 10;
     let start = index.saturating_sub(WINDOW);
-    lines[start..=index]
-        .iter()
-        .any(|l| MARKERS.iter().any(|m| l.contains(m)))
+    // As in `host_from_context`: an out-of-range window means "no socket
+    // context", which is the fail-safe answer — it leaves the denial described
+    // in general terms rather than mislabelled as a network block.
+    lines
+        .get(start..=index)
+        .is_some_and(|window| window.iter().any(|l| MARKERS.iter().any(|m| l.contains(m))))
 }
 
 /// Absolute path a line was refused, if it reads like a blocked file
@@ -636,6 +645,18 @@ fn filesystem_denial(line: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    // Tests assert; an assertion failing *is* a panic, and a test that
+    // carefully propagated errors instead would report a pass on a broken
+    // invariant. The panic discipline in `Cargo.toml` is about `senv` the
+    // process, not about the suite that interrogates it.
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::string_slice,
+        clippy::arithmetic_side_effects
+    )]
     use super::*;
 
     fn receipts() -> Receipts {
