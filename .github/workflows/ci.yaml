@@ -9,6 +9,19 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # install.sh is the path most people will take to get senv, and nothing else
+  # in CI executes it. A syntax error in it is invisible until it is being
+  # piped into someone's shell.
+  packaging:
+    name: install.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: sh -n install.sh
+      # POSIX sh, not bash: the script is run by whatever /bin/sh is on the
+      # machine curl'ing it, which on Debian and Ubuntu is dash.
+      - run: shellcheck --shell=sh install.sh
+
   check:
     name: fmt + clippy (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
