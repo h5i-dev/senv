@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>senv Manual — Commands, Policy, and senv.toml Reference</title>
+  <meta name="description" content="The senv reference: every command and flag, the install and run boundaries, the senv.toml schema, isolation tiers, the trust model, receipts, state layout, environment variables, and the limits of the boundary.">
+  <meta name="author" content="h5i-dev">
+  <meta name="theme-color" content="#D21C1C">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <link rel="canonical" href="https://senv.h5i.dev/manual/">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml">
+  <link rel="icon" type="image/png" href="/_static/logo.png">
+  <link rel="apple-touch-icon" href="/_static/logo.png">
+
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="senv">
+  <meta property="og:title" content="senv Manual — Commands, Policy, and senv.toml Reference">
+  <meta property="og:description" content="Every command and flag, the install and run boundaries, the senv.toml schema, isolation tiers, the trust model, receipts, and the limits of the boundary.">
+  <meta property="og:url" content="https://senv.h5i.dev/manual/">
+  <meta property="og:image" content="https://senv.h5i.dev/_static/logo.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="senv Manual — Commands, Policy, and senv.toml Reference">
+  <meta name="twitter:description" content="Every command and flag, the install and run boundaries, the senv.toml schema, isolation tiers, the trust model, receipts, and the limits of the boundary.">
+  <meta name="twitter:image" content="https://senv.h5i.dev/_static/logo.png">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "senv Manual",
+        "description": "The senv reference: every command and flag, the install and run boundaries, the senv.toml schema, isolation tiers, the trust model, receipts, state layout, environment variables, and the limits of the boundary.",
+        "author": {"@type": "Organization", "name": "h5i-dev"},
+        "publisher": {"@type": "Organization", "name": "h5i"},
+        "datePublished": "2026-08-14",
+        "dateModified": "2026-08-14",
+        "mainEntityOfPage": "https://senv.h5i.dev/manual/",
+        "proficiencyLevel": "Beginner"
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {"@type": "ListItem", "position": 1, "name": "senv", "item": "https://senv.h5i.dev/"},
+          {"@type": "ListItem", "position": 2, "name": "Manual", "item": "https://senv.h5i.dev/manual/"}
+        ]
+      }
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800;900&family=Space+Grotesk:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800;900&family=Space+Grotesk:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="/_static/blog.css">
+  <link rel="stylesheet" href="/_static/highlight.css">
+  <style>
+    /* The manual is the site's article layout with a two-level index: the
+       measure sits beside a sticky section list, both hung off the sheet's
+       own gutter. Everything else comes from the chassis. */
+    .manual-wrap{
+      display:grid;grid-template-columns:250px minmax(0,var(--measure));
+      gap:60px;justify-content:center;align-items:start;
+      padding:54px var(--gut) 78px;border-bottom:1px solid var(--line2);
+    }
+    .manual-toc{position:sticky;top:84px;align-self:start;
+      max-height:calc(100vh - 120px);overflow-y:auto;min-width:0;}
+    .manual-toc .toc-head{margin:0 0 12px;font-family:var(--mono);font-size:10px;
+      letter-spacing:.2em;text-transform:uppercase;color:var(--faint);}
+    .manual-toc nav{display:flex;flex-direction:column;}
+    .manual-toc a{display:block;padding:6px 0 6px 13px;
+      border-left:1px solid var(--line2);color:var(--dim);
+      font-size:13px;line-height:1.45;transition:color .15s,border-color .15s;}
+    .manual-toc a:hover{color:var(--ink);}
+    .manual-toc a.t2{font-family:var(--mono);font-size:12px;color:var(--text);}
+    .manual-toc a.t3{padding-left:26px;font-size:12.5px;}
+    .manual-toc a.active{color:var(--spot);border-left-color:var(--spot);}
+    .manual-toc .t3group{display:flex;flex-direction:column;}
+    .manual-toc::-webkit-scrollbar{width:6px;}
+
+    .manual-body{min-width:0;max-width:var(--measure);font-size:16px;color:var(--dim);
+      overflow-wrap:break-word;}
+    .manual-body h1{font-family:var(--disp);font-weight:900;
+      font-size:clamp(32px,4vw,58px);letter-spacing:-.05em;line-height:.95;
+      color:var(--ink);margin:0 0 22px;}
+    .manual-body h2{font-family:var(--disp);font-weight:800;font-size:25px;
+      letter-spacing:-.035em;line-height:1.15;color:var(--ink);
+      margin:46px 0 16px;padding-top:18px;border-top:1px solid var(--line);
+      scroll-margin-top:84px;}
+    .manual-body hr+h2{border-top:0;padding-top:0;margin-top:26px;}
+    .manual-body h3{font-family:var(--disp);font-weight:700;font-size:18px;
+      letter-spacing:-.02em;color:var(--ink);margin:32px 0 12px;scroll-margin-top:84px;}
+    .manual-body h4{font-family:var(--disp);font-weight:700;font-size:15px;
+      color:var(--text);margin:24px 0 8px;scroll-margin-top:84px;}
+    .manual-body h3 code{font-size:1em;background:none;border:0;padding:0;color:var(--ink);}
+    .manual-body p{margin:0 0 18px;}
+    .manual-body ul,.manual-body ol{margin:0 0 18px;padding-left:22px;}
+    .manual-body li{margin:6px 0;}
+    .manual-body li::marker{color:var(--faint);}
+    .manual-body strong{color:var(--ink);font-weight:500;}
+    .manual-body a{color:var(--spot);text-decoration:underline;
+      text-decoration-color:color-mix(in srgb,var(--spot) 45%,transparent);
+      text-underline-offset:3px;}
+    .manual-body a:hover{text-decoration-color:currentColor;}
+    .manual-body a code{color:var(--spot);}
+    .manual-body code{font-family:var(--mono);font-size:13.5px;color:var(--ink);
+      background:var(--panel);border:1px solid var(--line2);padding:1px 6px;}
+    .manual-body pre{background:var(--panel);border:1px solid var(--line2);
+      padding:16px 18px;margin:0 0 22px;overflow-x:auto;}
+    .manual-body pre code{background:none;border:0;padding:0;
+      font-size:13.5px;line-height:1.7;color:var(--text);white-space:pre;}
+    .manual-body blockquote{margin:26px 0;padding-left:18px;
+      border-left:2px solid var(--spot-solid);color:var(--ink);}
+    .manual-body blockquote p{color:var(--ink);margin:0 0 8px;}
+    .manual-body hr{border:0;border-top:1px solid var(--line);margin:34px 0;}
+    .manual-body table{width:100%;border-collapse:collapse;margin:0 0 22px;
+      font-family:var(--mono);font-size:12.5px;display:block;overflow-x:auto;}
+    .manual-body th,.manual-body td{border:1px solid var(--line);
+      padding:10px 13px;text-align:left;vertical-align:top;font-weight:400;}
+    .manual-body th{background:var(--panel);color:var(--faint);
+      font-size:10px;letter-spacing:.16em;text-transform:uppercase;white-space:nowrap;}
+    .manual-body td{color:var(--dim);}
+
+    @media (max-width:1100px){
+      .manual-wrap{grid-template-columns:minmax(0,1fr);gap:0;}
+      .manual-toc{display:none;}
+    }
+  </style>
+</head>
+<body>
+
+<a class="skip-link" href="#what-senv-is">Skip to content</a>
+
+<nav>
+  <a class="nav-logo" href="/">
+    <img src="/_static/logo.png" alt="h5i">
+    <span>senv</span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="/#what-you-get">Features</a></li>
+    <li><a href="/#install">Install</a></li>
+    <li><a href="/manual/" aria-current="page">Manual</a></li>
+    <li><a href="https://h5i.dev/">h5i</a></li>
+    <li><a href="https://github.com/h5i-dev/senv" class="nav-cta">GitHub &rarr;</a></li>
+  </ul>
+</nav>
+
+<main class="manual-wrap">
+  <aside class="manual-toc" aria-label="Manual contents">
+    <div class="toc-head">CLI Reference</div>
+    <nav>
+      <a class="t2" href="#what-senv-is">What senv is</a>
+      <a class="t2" href="#install">Install</a>
+      <a class="t2" href="#the-two-boundaries">The two boundaries</a>
+      <div class="t3group">
+        <a class="t3" href="#provisioning">Provisioning</a>
+        <a class="t3" href="#the-install-boundary">The install boundary</a>
+        <a class="t3" href="#the-run-boundary">The run boundary</a>
+      </div>
+      <a class="t2" href="#commands">Commands</a>
+      <div class="t3group">
+        <a class="t3" href="#global-options">Global options</a>
+        <a class="t3" href="#senv-init">senv init</a>
+        <a class="t3" href="#senv-add">senv add / remove</a>
+        <a class="t3" href="#senv-sync">senv sync</a>
+        <a class="t3" href="#senv-lock">senv lock</a>
+        <a class="t3" href="#senv-run">senv run</a>
+        <a class="t3" href="#senv-shell">senv shell</a>
+        <a class="t3" href="#senv-status">senv status</a>
+        <a class="t3" href="#senv-report">senv report</a>
+        <a class="t3" href="#senv-allow">senv allow</a>
+        <a class="t3" href="#senv-trust">senv trust</a>
+        <a class="t3" href="#senv-doctor">senv doctor</a>
+        <a class="t3" href="#senv-gc">senv gc</a>
+        <a class="t3" href="#senv-uv">senv uv</a>
+      </div>
+      <a class="t2" href="#configuration">Configuration</a>
+      <div class="t3group">
+        <a class="t3" href="#env-section">[env]</a>
+        <a class="t3" href="#install-section">[install]</a>
+        <a class="t3" href="#run-section">[run]</a>
+        <a class="t3" href="#secrets-section">[secrets]</a>
+      </div>
+      <a class="t2" href="#policy">Policy</a>
+      <div class="t3group">
+        <a class="t3" href="#isolation-tiers">Isolation tiers</a>
+        <a class="t3" href="#platform-matrix">Platform matrix</a>
+        <a class="t3" href="#host-patterns">Host patterns</a>
+      </div>
+      <a class="t2" href="#trust">Trust</a>
+      <a class="t2" href="#receipts">Receipts</a>
+      <a class="t2" href="#files">Files</a>
+      <a class="t2" href="#environment-variables">Environment variables</a>
+      <a class="t2" href="#ci">Using senv in CI</a>
+      <a class="t2" href="#limits">Limits</a>
+      <a class="t2" href="#see-also">See also</a>
+    </nav>
+  </aside>
+
+  <article class="manual-body">
+    <h1>senv manual</h1>
+
+    <p><strong>senv runs uv and your code inside an OS-level sandbox.</strong> Installs reach package
+      registries and nothing else, and cannot write to your source tree. Your code runs with no network by
+      default, an environment it cannot modify, and no access to your credentials.</p>
+
+    <p>A senv project stays a valid uv project. senv adds no files to your tree beyond an optional
+      <code>senv.toml</code>, and every command below has the uv command you already know underneath it.</p>
+
+    <h2 id="what-senv-is">What senv is</h2>
+
+    <p>A virtual environment is a <code>PATH</code> convention, not a security boundary. Packages inside one
+      can read <code>~/.ssh</code>, take your environment variables, open sockets to any destination, and
+      execute build code during installation with your full user permissions. senv keeps the workflow and puts
+      a boundary underneath it, with a separate policy for each moment that carries risk.</p>
+
+    <table>
+      <thead>
+        <tr><th>&nbsp;</th><th>Install &#183; sync / add / lock</th><th>Run &#183; run / shell</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Network</strong></td><td>PyPI and configured indexes only</td><td>denied by default</td></tr>
+        <tr><td><strong>Project source</strong></td><td>read-only</td><td>read-write</td></tr>
+        <tr><td><strong>Python environment</strong></td><td>writable for installation</td><td><strong>read-only</strong></td></tr>
+        <tr><td><strong>Credentials</strong></td><td>unavailable</td><td>only explicitly declared secrets</td></tr>
+        <tr><td><strong>Resource limits</strong></td><td>CPU, file size, wall clock; memory and processes on Linux</td><td>CPU and file size; memory and processes on Linux</td></tr>
+      </tbody>
+    </table>
+
+    <p>senv is not a package scanner. It does not decide whether a dependency is malicious; it decides what a
+      dependency is able to do. Lockfile hashes and dependency review remain as important as they were.</p>
+
+    <h2 id="install">Install</h2>
+
+<pre><code class="language-bash">curl -fsSL https://senv.h5i.dev/install.sh | sh   # prebuilt binary, checksum-verified
+
+uv tool install h5i-senv          # also: pipx install h5i-senv, pip install h5i-senv
+cargo install --git https://github.com/h5i-dev/senv</code></pre>
+
+    <p>The script picks the build for your platform, verifies it against the SHA-256 published beside it, and
+      installs to <code>/usr/local/bin</code>. <code>SENV_INSTALL_DIR</code> changes the destination and
+      <code>SENV_VERSION=vX.Y.Z</code> pins a version.</p>
+
+    <p>senv requires <a href="https://docs.astral.sh/uv/">uv</a> on <code>PATH</code>.</p>
+
+    <ul>
+      <li><strong>Linux:</strong> restricting installs to package registries also requires
+        <code>slirp4netns</code> and <code>nftables</code>
+        (<code>sudo apt install slirp4netns nftables</code> on Debian and Ubuntu).</li>
+      <li><strong>macOS:</strong> no additional sandbox runtime. senv uses the built-in Seatbelt sandbox.</li>
+      <li><strong>Windows:</strong> use WSL2.</li>
+    </ul>
+
+    <p>Run <code>senv doctor</code> before relying on any of it: it reports what this host can actually
+      enforce, so a gap surfaces before it fails mid-workflow.</p>
+
+    <h2 id="the-two-boundaries">The two boundaries</h2>
+
+    <p>senv has three phases. Two of them are boundaries you interact with; the third exists so the first two
+      have something trustworthy to stand on.</p>
+
+    <h3 id="provisioning">Provisioning</h3>
+
+    <p>Installing an interpreter (<code>uv python install</code>, triggered by <code>senv init --python</code>)
+      runs in its own phase with no third-party code in it. Interpreters are therefore shared across projects
+      and read-only everywhere else, which is why a shared interpreter cache is safe when a shared
+      <em>wheel</em> cache is not.</p>
+
+    <h3 id="the-install-boundary">The install boundary</h3>
+
+    <p>Supply-chain attacks execute before a package is ever imported: an sdist build backend runs during
+      installation, with whatever permissions the installing user has.</p>
+
+    <p>senv resolves and installs in a staging area containing the project manifests and <strong>none of the
+      project source</strong>, then verifies and copies the result back. Network access is restricted to
+      package registries and pinned at the network layer, and no secret can name the install phase at all.</p>
+
+    <p>Two escape hatches exist, both explicit and both recorded:</p>
+
+    <ul>
+      <li><code>--in-place</code> on <code>add</code>, <code>remove</code>, <code>lock</code>, and
+        <code>uv</code> resolves in the project directory instead of a staging copy, giving the install phase
+        write access to your source. It is announced and stamped into the receipt.</li>
+      <li><code>project-writable = true</code> in <code>[install]</code> is the persistent form, for build
+        backends (older setuptools layouts in particular) that insist on writing metadata into the source
+        tree. senv detects that specific failure and names the key rather than guessing.</li>
+    </ul>
+
+    <h3 id="the-run-boundary">The run boundary</h3>
+
+    <p>While your code runs, the project is read-write and the environment is not. The managed environment
+      lives outside the project tree, and <code>.venv</code> points at it without exposing a writable parent
+      directory. Landlock evaluates the resolved target of that symlink, so a sandboxed process that replaces
+      the link gains nothing.</p>
+
+    <p>senv compiles bytecode during installation and disables writable bytecode caches at run time. Without
+      that, a package could leave behind a modified <code>.pyc</code> that Python would prefer over the
+      protected source &#8212; a persistence path around a read-only environment.</p>
+
+    <p>Environment variables are not inherited. The child gets senv's baseline &#8212; <code>PATH</code>,
+      <code>HOME</code>, <code>LANG</code>, <code>TERM</code>, <code>COLORTERM</code> &#8212; plus whatever
+      you list in <code>[run.env] pass</code>, plus any declared secrets.</p>
+
+    <h2 id="commands">Commands</h2>
+
+<pre><code class="language-bash">senv init [--python V] [--replace-venv] [--no-sync]
+senv add &lt;pkg&gt;... [--group G] [--dev] [--in-place]
+senv remove &lt;pkg&gt;... [--group G] [--dev] [--in-place]
+senv sync [--frozen] [-- &lt;uv args&gt;...]
+senv lock [--check] [--in-place]
+senv run [--allow-net HOST]... &lt;cmd&gt; [args...]
+senv shell [--allow-net HOST]...
+senv status
+senv report [--limit N] [--suggest]
+senv allow &lt;host&gt;...
+senv trust
+senv doctor
+senv gc [--prune] [--cache]
+senv uv [--in-place] -- &lt;args&gt;...</code></pre>
+
+    <h3 id="global-options">Global options</h3>
+
+    <table>
+      <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><code>--json</code></td><td>Emit machine-readable JSON instead of prose. Available on every subcommand, including error output.</td></tr>
+        <tr><td><code>--project DIR</code></td><td>Operate on this project instead of searching upward from the working directory.</td></tr>
+      </tbody>
+    </table>
+
+    <p><strong>Exit codes.</strong> A confined command's own exit code passes through untouched, so
+      <code>senv run pytest</code> is a drop-in for <code>uv run pytest</code> in a CI script. senv's own
+      failures use exit code <code>2</code>. A child killed by a signal still produces a non-zero code rather
+      than wrapping to zero.</p>
+
+    <h3 id="senv-init">senv init</h3>
+
+    <p>Create or adopt a project, then build its environment. In an existing project this <em>adopts</em>
+      rather than scaffolds: <code>pyproject.toml</code>, <code>uv.lock</code>, and
+      <code>.python-version</code> are taken as they are.</p>
+
+    <table>
+      <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><code>--python VERSION</code></td><td>Python version for uv to use, e.g. <code>3.13</code>. Written to <code>.python-version</code>, which is uv's own mechanism.</td></tr>
+        <tr><td><code>--replace-venv</code></td><td>Replace an existing <code>.venv</code> directory with a link to senv's environment.</td></tr>
+        <tr><td><code>--no-sync</code></td><td>Set up the project without building the environment.</td></tr>
+      </tbody>
+    </table>
+
+    <p>An existing <code>.venv</code> is left alone by default, because those packages were installed outside
+      the boundary and senv does not claim a boundary over bytes that never passed through one. senv creates
+      a separate managed environment and explains how to switch; until the first sandboxed sync,
+      <code>senv status</code> reports the environment as host-installed rather than sandboxed.</p>
+
+    <h3 id="senv-add">senv add / senv remove</h3>
+
+    <p>Add or remove dependencies. Resolution happens in a staging copy of your manifests, the result is
+      written back, and the environment is synced.</p>
+
+    <table>
+      <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><code>--group GROUP</code></td><td>Add to a dependency group (uv's <code>--group</code>).</td></tr>
+        <tr><td><code>--dev</code></td><td>Add as a development dependency.</td></tr>
+        <tr><td><code>--in-place</code></td><td>Resolve in the project directory instead of a staging copy, giving the install phase write access to your source. Announced and recorded.</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="senv-sync">senv sync</h3>
+
+    <p>Install the locked dependencies into the environment.</p>
+
+    <table>
+      <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><code>--frozen</code></td><td>Fail instead of updating a stale lockfile. The right default for CI.</td></tr>
+        <tr><td><code>&lt;uv args&gt;</code></td><td>Trailing arguments are passed to <code>uv sync</code> unchanged.</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="senv-lock">senv lock</h3>
+
+    <p>Update the lockfile without touching the environment. <code>--check</code> verifies the lockfile is
+      current and writes nothing; <code>--in-place</code> behaves as it does for <code>add</code>.</p>
+
+    <h3 id="senv-run">senv run</h3>
+
+    <p>Run a command inside the run boundary. Flags after the command name belong to the command, not to
+      senv.</p>
+
+<pre><code class="language-bash">senv run pytest
+senv run python -m myapp --port 8000
+senv run --allow-net api.example.com python fetch.py</code></pre>
+
+    <table>
+      <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><code>--allow-net HOST</code></td><td>Let this command reach a host, for this invocation only. Repeatable. Widening beyond <code>senv.toml</code> is announced and recorded in the receipt.</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="senv-shell">senv shell</h3>
+
+    <p>Open an interactive shell inside the run boundary &#8212; the equivalent of
+      <code>source .venv/bin/activate</code>, except that the boundary comes with it. Takes the same
+      <code>--allow-net</code> flag as <code>run</code>.</p>
+
+    <h3 id="senv-status">senv status</h3>
+
+    <p>Show the environment and the policy that is enforced: the resolved policy per phase, the isolation
+      tier actually selected on this host, current grants, resource limits, whether the environment was built
+      inside the boundary or adopted, and the digest of each phase's policy.</p>
+
+    <p>Limits your platform cannot apply are marked as unenforced rather than printed as ceilings. A
+      configured downgrade such as <code>install.net = "host"</code> is reported prominently here.</p>
+
+    <h3 id="senv-report">senv report</h3>
+
+    <p>Show what ran, what was denied, and what was redacted, from the receipts.</p>
+
+    <table>
+      <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><code>--limit N</code></td><td>How many recent commands to show. Default 20.</td></tr>
+        <tr><td><code>--suggest</code></td><td>Print a <code>senv.toml</code> stanza that would allow everything recorded as blocked. Nothing is written; applying it stays an explicit, diffable edit.</td></tr>
+      </tbody>
+    </table>
+
+    <p>There is deliberately no observe mode that runs your code unconfined to learn a policy. Denial-driven
+      suggestion gets the same information out of confined runs.</p>
+
+    <h3 id="senv-allow">senv allow</h3>
+
+    <p>Allow the run phase to reach a host, writing the grant into <code>senv.toml</code> and accepting it as
+      the new baseline in the same step.</p>
+
+<pre><code class="language-bash">senv allow api.example.com
+senv allow '*.s3.amazonaws.com' api.example.com:8443</code></pre>
+
+    <p>Patterns may carry a port. A single-label wildcard such as <code>*.com</code> is refused outright: it is
+      the one typo that turns an allowlist into an open door.</p>
+
+    <p>Because this command widens the policy and then re-baselines it, it starts from a policy you have
+      already accepted &#8212; if <code>senv.toml</code> has drifted from the trusted snapshot,
+      <code>allow</code> refuses rather than launder someone else's edit through your legitimate one. And if
+      <code>[run] net</code> is already <code>"host"</code>, nothing is added and senv says so: turning
+      unrestricted egress into an allowlist here would silently narrow a policy you did not ask it to
+      narrow.</p>
+
+    <h3 id="senv-trust">senv trust</h3>
+
+    <p>Accept the current <code>senv.toml</code> as the trusted baseline. Required after any widening edit
+      &#8212; see <a href="#trust">Trust</a>.</p>
+
+    <h3 id="senv-doctor">senv doctor</h3>
+
+    <p>Report what this host can enforce: which isolation tiers are available, whether a registry allowlist
+      can be enforced during installs, and which resource limits apply on this platform. Run it before
+      trusting the boundary on a new machine or a CI image.</p>
+
+    <h3 id="senv-gc">senv gc</h3>
+
+    <p>Find state belonging to projects that no longer exist. Without <code>--prune</code> it only reports
+      what it would remove; <code>--cache</code> includes this project's wheel cache.</p>
+
+    <h3 id="senv-uv">senv uv</h3>
+
+    <p>Run an arbitrary uv command inside the install boundary, for anything senv does not wrap.</p>
+
+<pre><code class="language-bash">senv uv -- tree
+senv uv -- pip list</code></pre>
+
+    <h2 id="configuration">Configuration</h2>
+
+    <p><code>senv.toml</code> sits in the project root, is checked in, and is entirely optional. Without it,
+      the fail-closed defaults apply. The file first appears when you widen something &#8212;
+      <code>senv allow</code> creates it.</p>
+
+    <p>Layering is: built-in defaults &#8592; <code>senv.toml</code> &#8592; per-invocation flags. Widening
+      beyond the file requires a flag, and the flag is announced and recorded.</p>
+
+    <p><strong>Unknown keys are an error.</strong> The schema rejects them everywhere. A misspelled key in a
+      security policy must fail loudly rather than sit in the file reading as though it were enforced.</p>
+
+    <h3 id="env-section">[env]</h3>
+
+<pre><code class="language-toml">[env]
+python = "3.13"
+isolation = "auto"              # auto | process | supervised | container | microvm
+image = "..."                   # required by the container and microvm tiers
+uv = "/opt/bin/uv"              # absolute path, when uv is not on PATH
+allow-command-secrets = false</code></pre>
+
+    <table>
+      <thead><tr><th>Key</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>python</code></td><td>Python version for uv to use.</td></tr>
+        <tr><td><code>isolation</code></td><td>Tier to enforce. <code>auto</code> picks the strongest tier the host supports for each phase. <code>workspace</code> is rejected: that h5i tier applies no confinement, and senv has no unconfined execution path.</td></tr>
+        <tr><td><code>image</code></td><td>Base OCI image. Required by the <code>container</code> and <code>microvm</code> tiers.</td></tr>
+        <tr><td><code>uv</code></td><td>Absolute path to the uv binary. Rejected if it lives inside the project or inside senv's state, where sandboxed code could rewrite the binary the install phase is about to run.</td></tr>
+        <tr><td><code>allow-command-secrets</code></td><td>Permit <code>source = "command:…"</code> secrets, which execute <strong>on the host, outside the sandbox</strong>, with your full environment. Off by default, and separate from the secret declaration itself so a package that edits this file cannot enable it quietly.</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="install-section">[install]</h3>
+
+<pre><code class="language-toml">[install]
+extra-indexes = ["download.pytorch.org"]
+net = "registries"              # "registries" (default) | "host" (warned downgrade)
+cache = "project"               # "project" (default) | "shared"
+read = ["~/wheels"]             # extra read-only grants during installs
+project-writable = false
+
+[install.resources]
+mem = "8G"
+wall = "60m"</code></pre>
+
+    <table>
+      <thead><tr><th>Key</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>extra-indexes</code></td><td>Package registries beyond PyPI, added to the install-phase allowlist.</td></tr>
+        <tr><td><code>net</code></td><td><code>registries</code> restricts egress to the package indexes. <code>host</code> is the explicit, warned downgrade for hosts that cannot enforce a domain allowlist; it is never selected automatically and is stamped into every receipt.</td></tr>
+        <tr><td><code>cache</code></td><td><code>project</code> keeps the wheel cache per project. A wheel cache is written <em>during</em> the install phase, which is when third-party build backends run, so <code>shared</code> means a compromised install in one project can reach another. It saves disk and trades away isolation.</td></tr>
+        <tr><td><code>read</code></td><td>Extra read-only paths the install phase may see &#8212; for a local path dependency outside the project tree.</td></tr>
+        <tr><td><code>project-writable</code></td><td>Let the install phase write to the project directory. Off by default. Needed only by build backends that insist on writing metadata into the source tree.</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="run-section">[run]</h3>
+
+<pre><code class="language-toml">[run]
+net = "deny"                    # "deny" | "host" | ["api.example.com", "*.s3.amazonaws.com"]
+
+[run.fs]
+read  = ["~/datasets"]          # extra read-only grants
+write = []                      # the project and a scratch dir are already writable
+
+[run.env]
+pass = ["MY_APP_MODE"]          # added to senv's baseline, never replacing it
+
+[run.resources]
+mem   = "4G"
+wall  = "30m"                   # "none" for a dev server
+procs = 256
+fsize = "1G"
+cpu   = "10m"</code></pre>
+
+    <table>
+      <thead><tr><th>Key</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>net</code></td><td><code>deny</code> is a real deny on every backend. A list is an allowlist. <code>host</code> is unrestricted egress and has to be written deliberately.</td></tr>
+        <tr><td><code>fs.read</code> / <code>fs.write</code></td><td>Grants beyond the project, the environment, and senv's scratch directory.</td></tr>
+        <tr><td><code>env.pass</code></td><td>Host environment variables forwarded to the command, added to senv's baseline of <code>PATH</code>, <code>HOME</code>, <code>LANG</code>, <code>TERM</code>, and <code>COLORTERM</code>.</td></tr>
+        <tr><td><code>resources.mem</code></td><td>Memory ceiling. Linux cgroups; not enforceable on macOS.</td></tr>
+        <tr><td><code>resources.wall</code></td><td>Wall-clock ceiling. <code>"none"</code> is the escape hatch for dev servers and watchers: it resolves to a very long but finite wall, so the kill switch still exists and still appears in the digest.</td></tr>
+        <tr><td><code>resources.procs</code></td><td>Process ceiling. Linux cgroups; not enforceable on macOS.</td></tr>
+        <tr><td><code>resources.fsize</code></td><td>Maximum size of a single file. An rlimit; applies everywhere.</td></tr>
+        <tr><td><code>resources.cpu</code></td><td>CPU-time backstop. An rlimit; applies everywhere.</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="secrets-section">[secrets]</h3>
+
+<pre><code class="language-toml">[secrets.OPENAI_API_KEY]
+source = "env:OPENAI_API_KEY"   # env:VAR | file:/abs/path | command:&lt;shell&gt;
+inject = "env"                  # "env" (default) | "file"
+phases = ["run"]                # "run" and/or "shell" — never "install"</code></pre>
+
+    <p>The table key is the environment-variable name the child receives. A secret can never name the install
+      phase: a credential visible to a dependency's build backend is a credential handed to whoever wrote
+      that backend.</p>
+
+    <p>A <code>command:</code> source runs on the host, outside the sandbox, so it additionally requires
+      <code>allow-command-secrets = true</code> in <code>[env]</code>. Declared secret values are stripped
+      verbatim from receipts before writing, and h5i's credential scanner checks what remains for anything
+      else that looks like a key.</p>
+
+    <h2 id="policy">Policy</h2>
+
+    <h3 id="isolation-tiers">Isolation tiers</h3>
+
+    <table>
+      <thead><tr><th>Tier</th><th>Mechanism</th><th>Where senv uses it</th></tr></thead>
+      <tbody>
+        <tr><td><code>process</code></td><td>Landlock, seccomp-bpf, namespaces, and rlimits on Linux; Seatbelt on macOS</td><td>Default run tier.</td></tr>
+        <tr><td><code>supervised</code></td><td>Adds a private network namespace with nftables rules pinned to resolved addresses, and syscall-gated sockets</td><td>Default install tier on Linux, because a registry allowlist needs it.</td></tr>
+        <tr><td><code>container</code></td><td>Rootless Podman, read-only rootfs, DNS-pinned CONNECT proxy</td><td>Opt-in, and the fallback when <code>supervised</code> is unavailable but Podman is. The one tier with a direct per-request egress tally.</td></tr>
+        <tr><td><code>microvm</code></td><td>A separate kernel, through microsandbox</td><td>Opt-in, for when a shared kernel is not an acceptable assumption.</td></tr>
+      </tbody>
+    </table>
+
+    <p>The Linux <code>process</code> tier cannot enforce a domain allowlist &#8212; its network modes are
+      all-or-nothing. So <code>senv run</code> with the default <code>net = "deny"</code> works everywhere at
+      the lightest tier, while <code>senv sync</code> needs <code>supervised</code> (which needs
+      <code>slirp4netns</code>, <code>nft</code>, and cgroup-v2 delegation) or <code>container</code>. On
+      macOS, Seatbelt covers installs at the base tier.</p>
+
+    <p><strong>senv never silently downgrades.</strong> On a host with none of the above, <code>senv sync</code>
+      is refused with the <code>senv doctor</code> explanation rather than run with an unenforced allowlist.</p>
+
+    <h3 id="platform-matrix">Platform matrix</h3>
+
+    <table>
+      <thead><tr><th>Platform</th><th>Enforcement</th><th>Gaps</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Linux</strong></td>
+          <td>Landlock filesystem allowlists, seccomp-bpf syscall filtering, namespaces, rlimits and cgroups. Network allowlists use a private namespace and nftables rules pinned to resolved addresses.</td>
+          <td>Registry allowlisting needs <code>slirp4netns</code> and <code>nftables</code>.</td>
+        </tr>
+        <tr>
+          <td><strong>macOS</strong></td>
+          <td>Seatbelt filesystem and network confinement. Allowed egress passes through a DNS-pinned loopback proxy, and other name resolution is denied outright &#8212; so the allowlist holds against any client, including one that ignores proxy settings.</td>
+          <td>No seccomp. No cgroups, so memory and process ceilings are marked unenforced rather than applied. Apple's system Python caches bytecode outside the environment.</td>
+        </tr>
+        <tr>
+          <td><strong>Windows</strong></td>
+          <td>Via WSL2, as Linux.</td>
+          <td>Some WSL2 setups lack the pieces <code>supervised</code> needs; <code>senv doctor</code> says so.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 id="host-patterns">Host patterns</h3>
+
+    <p>A host entry is a domain, optionally with a leading <code>*.</code> wildcard and optionally with a
+      port: <code>api.example.com</code>, <code>*.s3.amazonaws.com</code>,
+      <code>registry.internal:8443</code>. Patterns are validated where you can see them, and a single-label
+      wildcard such as <code>*.com</code> is refused.</p>
+
+    <p>An allowlist is expressed as <code>deny</code> plus a host list, which means the same thing on every
+      backend. This matters: pairing a host list with <code>net = "host"</code> reads as an allowlist and
+      compiles to unrestricted egress on Seatbelt.</p>
+
+    <h2 id="trust">Trust</h2>
+
+    <p><code>senv.toml</code> lives inside the project, and the run phase grants the project read-write. A
+      compromised dependency can therefore edit the policy. senv keeps the last accepted policy snapshot
+      <strong>outside</strong> the sandbox so that edit cannot take effect silently:</p>
+
+    <ul>
+      <li>an unchanged or narrower policy runs normally;</li>
+      <li>a wider policy is refused, with a diff, until you inspect and accept it with
+        <code>senv trust</code>.</li>
+    </ul>
+
+<pre><code class="language-text">senv: senv.toml grants more than senv recorded, so nothing was run
+  the policy on disk is wider than the one you last accepted:
+    + [run] net: deny → unrestricted
+    + [run.env] pass: added AWS_SECRET_ACCESS_KEY
+  → if you made this change, run `senv trust`; if you did not,
+    inspect senv.toml and your recent dependencies first</code></pre>
+
+    <p>The same check applies the first time senv sees a project whose policy is wider than the defaults, and
+      to the <code>pyproject.toml</code> sections that control install behavior: <code>[build-system]</code>
+      and <code>[tool.uv]</code>.</p>
+
+    <p><strong>This is tamper-evidence, not tamper-prevention.</strong> A dependency can still write to a
+      writable project. What it cannot do is have the write take effect without a human step.</p>
+
+    <h2 id="receipts">Receipts</h2>
+
+    <p>Every command appends a receipt outside the sandbox: append-only JSONL, one line per command, holding
+      what ran, what was denied, what was redacted, and a sha256 digest of the phase policy that was actually
+      enforced. Command output is kept only when the command failed &#8212; a successful run's output is your
+      business, not the log's.</p>
+
+    <p>Receipts live outside every grant senv issues, and an integration test asserts that a process under a
+      run policy cannot write the receipt log. This is why senv's state cannot live in the project: receipts
+      a compromised package can rewrite are not evidence.</p>
+
+    <p>Two honest limits. Kernel-tier denial reports <em>infer</em> some denials from program output, which
+      untrusted code can influence, so every suggested grant deserves review before you accept it; the
+      container tier is the one with a direct per-request tally. And a receipt is protected from the
+      sandboxed process, not notarized against the person who owns the machine.</p>
+
+    <h2 id="files">Files</h2>
+
+<pre><code class="language-text">project/                      # senv adds nothing here that was not already yours
+  senv.toml                   # optional policy source (checked in)
+  pyproject.toml, uv.lock     # uv's domain (checked in)
+  .venv -> …/state/…/venv     # a symlink, so editors and language servers work
+
+~/.local/state/senv/projects/&lt;name&gt;-&lt;hash&gt;/
+  venv/                       # the environment itself
+  cache/                      # this project's wheel cache (default)
+  scratch/                    # run-phase writable scratch, incl. the pycache prefix
+  tmp/{install,run,provision} # per-phase TMPDIR
+  stage/                      # manifest staging for lock/add/remove
+  receipt.jsonl               # append-only: what ran, denials, digests
+  policy.{install,run}.toml   # the resolved policy, for inspection
+  state.json                  # provenance, lock hash, last digests
+
+~/.cache/senv/
+  uv/                         # shared wheel cache (opt-in)
+  python/                     # uv-managed interpreters, shared, provisioned alone</code></pre>
+
+    <p>The <code>policy.*.toml</code> files are written for inspection and never read back as input: senv
+      recompiles the policy on every invocation.</p>
+
+    <h2 id="environment-variables">Environment variables</h2>
+
+    <table>
+      <thead><tr><th>Variable</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><code>SENV_STATE_DIR</code></td><td>Where senv keeps per-project state. Defaults to <code>$XDG_STATE_HOME/senv</code>, then <code>~/.local/state/senv</code>.</td></tr>
+        <tr><td><code>SENV_CACHE_DIR</code></td><td>Where senv keeps shared caches. Defaults to <code>$XDG_CACHE_HOME/senv</code>, then <code>~/.cache/senv</code>.</td></tr>
+        <tr><td><code>SENV_UV</code></td><td>Path to the uv binary, taking precedence over <code>PATH</code>. Subject to the same location check as <code>[env] uv</code>.</td></tr>
+        <tr><td><code>SENV_INSTALL_DIR</code></td><td><em>Installer only.</em> Install destination. Defaults to <code>/usr/local/bin</code>.</td></tr>
+        <tr><td><code>SENV_VERSION</code></td><td><em>Installer only.</em> Pin a release, e.g. <code>v0.1.0</code>.</td></tr>
+      </tbody>
+    </table>
+
+    <p><strong>senv refuses to start if <code>SENV_STATE_DIR</code> or <code>SENV_CACHE_DIR</code> points
+      inside the project.</strong> This is not a hypothetical: keeping senv's state in the workspace so CI
+      can cache it puts the environment, the receipts, and the trusted baseline inside the run phase's write
+      grant, and every guarantee on this page collapses at once. A state root that merely <em>contains</em>
+      the project is fine.</p>
+
+    <h2 id="ci">Using senv in CI</h2>
+
+<pre><code class="language-bash">senv doctor                  # fail early if this runner cannot enforce the policy
+senv sync --frozen           # install exactly what the lockfile says
+senv run pytest              # exit code passes through
+senv report --json           # what ran and what was denied, for the job log</code></pre>
+
+    <p>Two things to plan for. A runner without <code>slirp4netns</code> and <code>nftables</code>, and
+      without Podman, cannot enforce a registry allowlist, so <code>senv sync</code> is refused rather than
+      quietly downgraded &#8212; install those packages in the image, or set
+      <code>install.net = "host"</code> deliberately and accept that it appears in <code>senv status</code>
+      and in every receipt. And do not point <code>SENV_STATE_DIR</code> at the workspace to cache it between
+      jobs; senv will refuse.</p>
+
+    <h2 id="limits">Limits</h2>
+
+    <ul>
+      <li><strong>The default tiers share the host kernel.</strong> Landlock, seccomp, and Seatbelt are
+        OS-level isolation, not a hypervisor boundary. Use <code>isolation = "microvm"</code> when a separate
+        kernel is required.</li>
+      <li><strong>senv does not identify malicious packages.</strong> Lockfile hashes and dependency review
+        remain important.</li>
+      <li><strong>Run the environment through senv.</strong> <code>source .venv/bin/activate</code>, an
+        editor invoking <code>.venv/bin/python</code>, or any other host-side execution bypasses the run
+        boundary.</li>
+      <li><strong>Install-time code can modify the environment.</strong> Installation must write packages and
+        scripts; the install sandbox protects your source, credentials, and non-registry network, but cannot
+        make the environment itself read-only.</li>
+      <li><strong>Denial suggestions are hints, not proof.</strong> Kernel-tier reports infer some denials
+        from program output, which untrusted code can influence.</li>
+      <li><strong>State must remain outside the project.</strong> See
+        <a href="#environment-variables">environment variables</a>.</li>
+      <li><strong>Runtime wall-clock limits are not currently enforced.</strong> CPU and file-size rlimits
+        apply everywhere; memory and process limits use Linux cgroups and do not apply on macOS.</li>
+      <li><strong>macOS Python startup can vary by interpreter.</strong> Apple's system Python may recompile
+        imports on each run, because its bytecode cache is outside the managed environment.
+        <code>senv init --python 3.13</code> selects a managed interpreter without that behavior.</li>
+      <li><strong>Policy tampering is detected, not prevented.</strong></li>
+    </ul>
+
+    <h2 id="see-also">See also</h2>
+
+    <ul>
+      <li><a href="/">senv overview</a> &#8212; what the boundary is and why the two phases differ.</li>
+      <li><a href="https://github.com/h5i-dev/senv/blob/main/DESIGN.md">DESIGN.md</a> &#8212; the full threat
+        model, the design rationale, and the decisions that changed during implementation.</li>
+      <li><a href="https://h5i.dev/">h5i</a> &#8212; the sandbox engine senv links, and the tool that
+        confines a whole coding-agent session rather than one Python project.</li>
+      <li><a href="https://docs.astral.sh/uv/">uv documentation</a> &#8212; the workflow underneath.</li>
+    </ul>
+  </article>
+</main>
+
+<footer>
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <img src="/_static/logo.png" alt="h5i">
+      <span>senv<span class="red"> / by h5i</span></span>
+    </div>
+    <nav class="footer-links">
+      <a href="/">Home</a>
+      <a href="/manual/">Manual</a>
+      <a href="/#install">Install</a>
+      <a href="/#limits">Limits</a>
+      <a href="https://h5i.dev/">h5i.dev</a>
+      <a href="https://github.com/h5i-dev/senv">GitHub</a>
+      <a href="https://github.com/h5i-dev/senv/blob/main/DESIGN.md">Design</a>
+      <a href="https://github.com/h5i-dev/senv/issues">Issues</a>
+    </nav>
+    <div class="footer-legal">Apache 2.0 · Built with Rust</div>
+  </div>
+</footer>
+
+<script src="/_static/blog.js" defer></script>
+<script src="/_static/highlight.js" defer></script>
+<script>
+  // scrollspy: highlight the current section in the sidebar
+  (function(){
+    var links=[].slice.call(document.querySelectorAll('.manual-toc a'));
+    var map={};links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a;});
+    var heads=[].slice.call(document.querySelectorAll('.manual-body h2[id],.manual-body h3[id]'));
+    var obs=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(a){a.classList.remove('active');});
+          var a=map[e.target.id];if(a){a.classList.add('active');a.scrollIntoView({block:'nearest'});}
+        }
+      });
+    },{rootMargin:'-80px 0px -70% 0px'});
+    heads.forEach(function(h){obs.observe(h);});
+  })();
+</script>
+</body>
+</html>
