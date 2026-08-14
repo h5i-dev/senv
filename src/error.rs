@@ -134,9 +134,11 @@ pub mod fs {
     use super::{Result, SenvError};
     use std::path::Path;
 
-    pub fn read_to_string(path: &Path) -> Result<String> {
-        std::fs::read_to_string(path).map_err(|e| SenvError::io(path, e))
-    }
+    // NOTE: there is deliberately no unguarded `read_to_string` here. Every
+    // file senv parses lives somewhere the sandbox can write, so each read goes
+    // through one of the bounded, non-blocking, regular-file-only helpers
+    // below. An unguarded wrapper sitting beside them is an invitation to reach
+    // for the wrong one.
 
     /// Largest file senv will parse from a location the sandbox can write.
     ///
@@ -148,25 +150,176 @@ pub mod fs {
     pub const MAX_PARSED_BYTES: u64 = 16 * 1024 * 1024;
 
     /// Read a file senv is going to parse, refusing an implausible one.
+    ///
+    /// Follows symlinks — some callers read manifests in ancestor directories
+    /// senv does not govern — but is otherwise as defensive as
+    /// [`read_to_string_no_follow`], and for the same reason: `pyproject.toml`
+    /// is in the project, so its contents *and its file type* are chosen by the
+    /// code the boundary contains. `os.mkfifo('pyproject.toml')` used to wedge
+    /// every senv command forever on the open, since `read_to_string` blocks
+    /// waiting for a writer that never comes.
     pub fn read_to_string_bounded(path: &Path) -> Result<String> {
-        let len = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        read_bounded(open_regular(path, 0)?, path)
+    }
+
+    fn too_large(path: &Path, len: u64) -> SenvError {
+        SenvError::refused(
+            format!(
+                "{} is {} MiB, which is too large to be a real one",
+                path.display(),
+                len / 1024 / 1024
+            ),
+            "senv parses this file on every command, and it lives somewhere code running \
+             under senv can write — so an implausible size is refused rather than loaded."
+                .to_string(),
+            format!(
+                "inspect {} and replace it with the file you meant",
+                path.display()
+            ),
+        )
+    }
+
+    /// Read a file senv parses **as policy**, refusing to follow a symlink.
+    ///
+    /// The counterpart of [`write_no_follow`], and it closes the same door from
+    /// the other side. senv already refuses to *write* `senv.toml` through a
+    /// link because the project directory is writable by the code the policy
+    /// governs. Reading it through one was worse, and was a working
+    /// arbitrary-file-read:
+    ///
+    /// A package replaces `senv.toml` with a symlink to `~/.netrc`. senv — the
+    /// unconfined process — follows it, fails to parse it as TOML, and toml's
+    /// error quotes the offending source line back to the terminal:
+    ///
+    /// ```text
+    /// senv: …/senv.toml: TOML parse error at line 1, column 9
+    ///   |
+    /// 1 | machine api.example.com login deploy password S3cr3tT0ken
+    /// ```
+    ///
+    /// Verified before this change. The credential never crossed the sandbox
+    /// boundary — senv carried it out on the attacker's behalf, which is the
+    /// same sentence `crate::uv`'s staging code already uses about the file
+    /// it declines to copy. `~/.aws/credentials`, `~/.git-credentials` and a
+    /// `.env` all read the same way, and one line is the whole secret.
+    ///
+    /// `O_NOFOLLOW` turns that into an `ELOOP` that [`symlink_aware`] explains.
+    pub fn read_to_string_no_follow(path: &Path) -> Result<String> {
+        read_bounded(open_no_follow(path)?, path)
+    }
+
+    /// Read an already-open file, bounded.
+    ///
+    /// The bound is applied against the descriptor, not a separate `stat` of
+    /// the path: the two can disagree when the author of the file is hostile,
+    /// and only the descriptor is the thing actually being read.
+    fn read_bounded(file: std::fs::File, path: &Path) -> Result<String> {
+        use std::io::Read;
+        let len = file.metadata().map(|m| m.len()).unwrap_or(0);
         if len > MAX_PARSED_BYTES {
-            return Err(SenvError::refused(
-                format!(
-                    "{} is {} MiB, which is too large to be a real one",
-                    path.display(),
-                    len / 1024 / 1024
-                ),
-                "senv parses this file on every command, and it lives somewhere code running \
-                 under senv can write — so an implausible size is refused rather than loaded."
-                    .to_string(),
-                format!(
-                    "inspect {} and replace it with the file you meant",
-                    path.display()
-                ),
-            ));
+            return Err(too_large(path, len));
         }
-        read_to_string(path)
+        let mut text = String::new();
+        file.take(MAX_PARSED_BYTES + 1)
+            .read_to_string(&mut text)
+            .map_err(|e| SenvError::io(path, e))?;
+        if text.len() as u64 > MAX_PARSED_BYTES {
+            return Err(too_large(path, text.len() as u64));
+        }
+        Ok(text)
+    }
+
+    /// Open a **regular** file for reading, following no symlink and blocking
+    /// on nothing.
+    ///
+    /// Three flags, and every one of them is load-bearing because the caller is
+    /// always opening a path the sandbox can create:
+    ///
+    /// - `O_NOFOLLOW` is the point: senv reads these unconfined, so a link would
+    ///   redirect the read anywhere on the disk.
+    /// - `O_NONBLOCK` stops the open itself from hanging. `open(2)` on a FIFO
+    ///   for reading blocks until a writer arrives, so replacing `senv.toml`
+    ///   with `os.mkfifo('senv.toml')` wedged every senv command **forever** —
+    ///   verified, and a worse denial of service than the oversized-file one
+    ///   these readers already guard against. It is the trap in replacing a
+    ///   `metadata()` check with an open, since the check never touched the
+    ///   file.
+    /// - the `is_file` check afterwards is what makes the open equivalent to
+    ///   the check it replaced: a device or a directory is not something senv
+    ///   should read as policy, and on a regular file `O_NONBLOCK` means
+    ///   nothing at all.
+    pub fn open_no_follow(path: &Path) -> Result<std::fs::File> {
+        #[cfg(unix)]
+        return open_regular(path, libc::O_NOFOLLOW);
+        #[cfg(not(unix))]
+        return open_regular(path, 0);
+    }
+
+    /// Open a regular file for reading, blocking on nothing, with `extra`
+    /// added to the open flags.
+    #[cfg_attr(not(unix), allow(unused_variables))]
+    fn open_regular(path: &Path, extra: i32) -> Result<std::fs::File> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(extra | libc::O_NONBLOCK | libc::O_CLOEXEC)
+                .open(path)
+                .map_err(|e| symlink_aware_read(path, e))?;
+            if !file.metadata().map(|m| m.is_file()).unwrap_or(false) {
+                return Err(SenvError::refused(
+                    format!("{} is not a regular file", path.display()),
+                    "senv reads this file unconfined, and code running under senv can create \
+                     anything here — a fifo that never delivers, a device, a directory. Only a \
+                     regular file is read."
+                        .to_string(),
+                    format!("replace {} with a regular file", path.display()),
+                ));
+            }
+            Ok(file)
+        }
+        #[cfg(not(unix))]
+        {
+            std::fs::File::open(path).map_err(|e| SenvError::io(path, e))
+        }
+    }
+
+    /// Copy a file without following a symlink at the source.
+    ///
+    /// The `symlink_metadata`-then-`copy` this replaces was a time-of-check to
+    /// time-of-use gap: the check and the copy are two syscalls, and between
+    /// them anything still running under a previous `senv run` — a dev server,
+    /// a watcher, both of which this design calls ordinary — could swap the
+    /// checked regular file for a link to `~/.ssh/id_ed25519`. `fs::copy`
+    /// follows links, so senv would have carried the key into the staging
+    /// directory, which is the install phase's own writable working directory
+    /// and readable by every build backend that runs there.
+    ///
+    /// Opening with `O_NOFOLLOW` and copying from the descriptor makes the
+    /// check and the read the same operation, so there is no window to win.
+    pub fn copy_no_follow(src: &Path, dest: &Path) -> Result<()> {
+        let mut input = open_no_follow(src)?;
+        let mut output = create_new_no_follow(dest)?;
+        std::io::copy(&mut input, &mut output).map_err(|e| SenvError::io(dest, e))?;
+        Ok(())
+    }
+
+    /// The read-side counterpart of [`symlink_aware`].
+    fn symlink_aware_read(path: &Path, e: std::io::Error) -> SenvError {
+        #[cfg(unix)]
+        if e.raw_os_error() == Some(libc::ELOOP) {
+            return SenvError::refused(
+                format!("{} is a symbolic link", path.display()),
+                "senv will not read a file it parses as policy through a symlink: code running \
+                 under senv can create one, and senv reads this file unconfined — so the link \
+                 would make senv open something elsewhere on your disk and quote it back in an \
+                 error message."
+                    .to_string(),
+                format!("replace {} with a regular file", path.display()),
+            );
+        }
+        SenvError::io(path, e)
     }
 
     pub fn write(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
@@ -253,10 +406,6 @@ pub mod fs {
 
     pub fn remove_dir_all(path: &Path) -> Result<()> {
         std::fs::remove_dir_all(path).map_err(|e| SenvError::io(path, e))
-    }
-
-    pub fn copy(from: &Path, to: &Path) -> Result<u64> {
-        std::fs::copy(from, to).map_err(|e| SenvError::io(from, e))
     }
 
     pub fn canonicalize(path: &Path) -> Result<std::path::PathBuf> {

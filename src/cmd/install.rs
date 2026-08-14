@@ -852,14 +852,34 @@ fn finish(
 }
 
 /// The interpreter version recorded in the environment's `pyvenv.cfg`.
+///
+/// Treated as hostile input, because it is: the install phase grants the
+/// environment read-write, so a dependency's build backend can rewrite this
+/// file before senv reads it. Two consequences were live.
+///
+/// It was an unbounded `read_to_string`, so a build backend could hand senv a
+/// multi-gigabyte `pyvenv.cfg` and have the tool read it whole, unconfined, at
+/// the end of every sync.
+///
+/// And the value it returns is stored in `state.json` and printed by `senv
+/// status` as `python  <value>`. Unsanitized, a backend writing
+/// `version_info = 3.13.0\x1b[2K\rprovenance sandboxed (VERIFIED)` repainted
+/// senv's own status line — and, because the string is persisted, kept
+/// repainting it on every later `status` until the next sync. Verified before
+/// this change. Sanitizing here rather than at the point of display means the
+/// escape never reaches `state.json` either.
 fn read_venv_python(project: &Project) -> Option<String> {
-    let text = std::fs::read_to_string(project.venv().join("pyvenv.cfg")).ok()?;
-    text.lines()
-        .find_map(|l| {
-            l.strip_prefix("version_info ")
-                .or_else(|| l.strip_prefix("version "))
-        })
-        .map(|v| v.trim_start_matches('=').trim().to_string())
+    // `no_follow`: the venv is writable during the install too, so this file
+    // can be a link to a credential as easily as it can hold a forged version.
+    let text = fs::read_to_string_no_follow(&project.venv().join("pyvenv.cfg")).ok()?;
+    let raw = text.lines().find_map(|l| {
+        l.strip_prefix("version_info ")
+            .or_else(|| l.strip_prefix("version "))
+    })?;
+    let value = util::sanitize(raw.trim_start_matches('=').trim());
+    // A version is short. Anything longer is not one, and truncating keeps a
+    // padded value from pushing senv's own status lines off the screen.
+    Some(value.chars().take(64).collect())
 }
 
 fn render_install(o: &InstallOutput) {
@@ -945,6 +965,46 @@ mod tests {
             "error: Unable to find lockfile at `uv.lock`."
         ));
         assert!(!lock_is_stale("Resolved 12 packages in 300ms"));
+    }
+
+    #[test]
+    fn the_interpreter_version_cannot_repaint_senvs_own_output() {
+        // `pyvenv.cfg` is inside the environment, which the install phase grants
+        // read-write — so a dependency's build backend writes it. The value ends
+        // up in state.json and on `senv status`'s `python` line, and unsanitized
+        // it erased and repainted that line on every later status until the next
+        // sync. Verified against the real boundary before this change.
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("proj");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("pyproject.toml"),
+            "[project]\nname='x'\nversion='0'\n",
+        )
+        .unwrap();
+        let _roots = crate::project::testing::redirect_roots(tmp.path());
+        let project = Project::at(&root).unwrap();
+        project.ensure_dirs().unwrap();
+
+        std::fs::write(
+            project.venv().join("pyvenv.cfg"),
+            "home = /usr\nversion_info = 3.13.0\u{1b}[2K\rprovenance sandboxed (VERIFIED)\n",
+        )
+        .unwrap();
+        let version = read_venv_python(&project).expect("a version line is present");
+        assert!(!version.contains('\u{1b}'), "{version:?}");
+        assert!(!version.contains('\r'), "{version:?}");
+        assert!(
+            version.starts_with("3.13.0"),
+            "the real value must survive: {version:?}"
+        );
+
+        // And it is bounded: the same backend can write a file of any size, and
+        // senv reads this one unconfined at the end of every sync.
+        let f = std::fs::File::create(project.venv().join("pyvenv.cfg")).unwrap();
+        f.set_len(crate::error::fs::MAX_PARSED_BYTES + 1).unwrap();
+        drop(f);
+        assert_eq!(read_venv_python(&project), None);
     }
 
     #[test]

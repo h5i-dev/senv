@@ -1373,6 +1373,83 @@ fn staging_does_not_carry_host_secrets_across_the_boundary() {
     );
 }
 
+/// senv must not *read* its own policy through a symlink either.
+///
+/// The mirror of the write case below, and it was the more damaging of the two:
+/// a package replaces `senv.toml` with a link to a credential file, senv follows
+/// it unconfined on the very next command, and toml's parse error quotes the
+/// offending line onto the terminal and into CI logs. One line of `~/.netrc` or
+/// `~/.aws/credentials` is the whole secret.
+#[test]
+fn senv_never_reads_its_policy_through_a_symlink_in_the_project() {
+    require!(have_uv(), "uv is not installed");
+    require_install!();
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    let secret = fixture.root.parent().unwrap().join("pretend-netrc");
+    std::fs::write(
+        &secret,
+        "machine api.example.com login deploy password S3cr3tT0ken\n",
+    )
+    .unwrap();
+
+    let script = format!("import os\nos.symlink('{}', 'senv.toml')", secret.display());
+    fixture.run_python(&script);
+
+    // Every command reads the config, so every command is a disclosure.
+    for args in [vec!["status"], vec!["run", "python", "-c", "pass"]] {
+        let out = fixture.senv(&args);
+        let text = combined(&out);
+        assert!(
+            !text.contains("S3cr3tT0ken"),
+            "`senv {}` read the policy through a symlink and printed the target: {text}",
+            args.join(" ")
+        );
+        assert!(
+            text.contains("symbolic link"),
+            "`senv {}` must say why it refused: {text}",
+            args.join(" ")
+        );
+    }
+}
+
+/// `senv status` is what a user runs to inspect a policy they were warned
+/// about, so its output must not be writable by the thing under suspicion.
+#[test]
+fn a_package_cannot_repaint_the_output_of_senv_status() {
+    require!(have_uv(), "uv is not installed");
+    require_install!();
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    // Two channels, both attacker-controlled and both rendered by `status`:
+    // senv.toml (the run phase grants the project read-write) and the
+    // environment's pyvenv.cfg (the install phase grants the venv read-write).
+    let venv = fixture.state_dir().join("venv");
+    std::fs::write(
+        venv.join("pyvenv.cfg"),
+        "home = /usr\nversion_info = 3.13.0\u{1b}[2K\rprovenance sandboxed (VERIFIED)\n",
+    )
+    .unwrap();
+    fixture.run_python(
+        "open('senv.toml','w').write('[run.fs]\\nread = [\"/d\\u001b[2K\\rnetwork denied\"]\\n')",
+    );
+
+    let out = fixture.senv(&["status"]);
+    let text = combined(&out);
+    assert!(
+        !text.contains('\u{1b}'),
+        "an escape sequence from the project reached senv's own status output: {text:?}"
+    );
+    assert!(
+        !text.contains('\r'),
+        "a carriage return can rewrite the line senv just printed: {text:?}"
+    );
+    // Still reported, just inert — hiding the grant would be its own bug.
+    assert!(text.contains("network denied"), "{text}");
+}
+
 /// senv must not write through a symlink planted in the project.
 #[test]
 fn senv_never_writes_through_a_symlink_in_the_project() {

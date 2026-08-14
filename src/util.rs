@@ -19,8 +19,53 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// sha256 of a file's contents, or `None` if it cannot be read.
+///
+/// Streamed, and bounded. Both matter because every file this is called on —
+/// `uv.lock`, `pyproject.toml` — lives in the project directory, which the run
+/// phase grants read-write: the contents are chosen by the code the boundary
+/// exists to contain.
+///
+/// It used to be `std::fs::read`, which loads the whole file. `senv status` and
+/// every `senv run` hash `uv.lock` to decide whether the environment is stale,
+/// so a package writing a 3 GB `uv.lock` took `senv status` to 2.2 GB of RSS
+/// and 147 seconds — measured — and bricked every later command. That is the
+/// same one-line attack on the tool itself that [`crate::error::fs::MAX_PARSED_BYTES`]
+/// exists to stop; hashing simply was not covered by it.
+///
+/// A file past the bound reads as `None` ("cannot tell"), which is the same
+/// answer senv gives for a missing one. It is the honest verdict: nothing that
+/// large is a lockfile senv would agree to parse either.
+/// It also opens through [`crate::error::fs::open_no_follow`] rather than
+/// `File::open`, which is what keeps `open(2)` from blocking: `uv.lock` is in
+/// the project, so `os.mkfifo('uv.lock')` would otherwise wedge every `senv
+/// run` and `senv status` on the open, before any of the bounding below is
+/// reached.
 pub fn sha256_file(path: &Path) -> Option<String> {
-    std::fs::read(path).ok().map(|b| sha256_hex(&b))
+    use std::io::Read;
+
+    let file = crate::error::fs::open_no_follow(path).ok()?;
+    if file.metadata().ok()?.len() > crate::error::fs::MAX_PARSED_BYTES {
+        return None;
+    }
+    let mut reader = file.take(crate::error::fs::MAX_PARSED_BYTES + 1);
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    let mut total: u64 = 0;
+    loop {
+        let n = reader.read(&mut buf).ok()?;
+        if n == 0 {
+            break;
+        }
+        total += n as u64;
+        // The metadata check above is a fast path, not the guarantee: the file
+        // can grow between the stat and the read, and the whole point is that
+        // its author is hostile.
+        if total > crate::error::fs::MAX_PARSED_BYTES {
+            return None;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Some(format!("{:x}", hasher.finalize()))
 }
 
 /// Milliseconds since the Unix epoch. Saturates rather than panicking on a
@@ -275,6 +320,38 @@ mod tests {
         assert_eq!(format_utc(1_786_579_200_000), "2026-08-13T00:00:00Z");
         // A leap day, the case a hand-rolled calendar gets wrong.
         assert_eq!(format_utc(1_709_164_800_000), "2024-02-29T00:00:00Z");
+    }
+
+    #[test]
+    fn hashing_a_project_file_cannot_be_turned_into_a_denial_of_service() {
+        // `uv.lock` sits in the project, which the run phase grants read-write,
+        // and every `senv run` hashes it to check whether the environment is
+        // stale. With `std::fs::read` behind this, a 3 GB `uv.lock` took
+        // `senv status` to 2.2 GB of RSS and 147 seconds — measured — and every
+        // later command with it.
+        let tmp = tempfile::tempdir().unwrap();
+        let small = tmp.path().join("uv.lock");
+        std::fs::write(&small, b"version = 1\n").unwrap();
+        assert_eq!(
+            sha256_file(&small).as_deref(),
+            Some(sha256_hex(b"version = 1\n").as_str()),
+            "an ordinary lockfile must still hash to its contents"
+        );
+
+        // Sparse, so the test costs no disk: what matters is that senv does not
+        // pull it into memory.
+        let huge = tmp.path().join("huge.lock");
+        let f = std::fs::File::create(&huge).unwrap();
+        f.set_len(crate::error::fs::MAX_PARSED_BYTES + 1).unwrap();
+        drop(f);
+        assert_eq!(
+            sha256_file(&huge),
+            None,
+            "a file too large to be a real lockfile must read as 'cannot tell', \
+             not be loaded"
+        );
+
+        assert_eq!(sha256_file(&tmp.path().join("absent")), None);
     }
 
     #[test]

@@ -63,7 +63,14 @@ pub struct PhaseStatus {
 pub fn status(ctx: &Ctx) -> Result<i32> {
     let project = ctx.project_unchecked()?;
     ctx.warn_if_untrusted(&project);
-    let state = project.load_state();
+    let mut state = project.load_state();
+    // `state.json` is senv's own file, outside every grant — but the interpreter
+    // string in it was copied out of the environment's `pyvenv.cfg`, which the
+    // install phase grants a build backend read-write. It is sanitized on the
+    // way in now; sanitizing on the way out as well is what protects a state
+    // file that was already poisoned before this senv was installed, since
+    // nothing rewrites it until the next successful sync.
+    state.python = state.python.as_deref().map(util::sanitize);
     let uv_bin = crate::uv::find(&project).ok();
 
     let lock = match project.lock_is_current(&state) {
@@ -122,7 +129,14 @@ pub fn status(ctx: &Ctx) -> Result<i32> {
                 project::VenvLink::Dangling => "linked, but nothing built yet".to_string(),
                 project::VenvLink::Absent => "absent".to_string(),
                 project::VenvLink::Directory => "a real directory (not senv's)".to_string(),
-                project::VenvLink::OtherLink(p) => format!("links elsewhere: {}", p.display()),
+                // The link target is whatever the run phase pointed `.venv` at,
+                // so it is attacker-chosen text on senv's own status line.
+                project::VenvLink::OtherLink(p) => {
+                    format!(
+                        "links elsewhere: {}",
+                        util::sanitize(&p.display().to_string())
+                    )
+                }
                 project::VenvLink::Foreign => "unreadable".to_string(),
             },
             size: util::human_bytes(util::dir_size(&project.venv())),
@@ -204,7 +218,10 @@ fn phase_status(project: &Project, phase: Phase, uv_bin: Option<&std::path::Path
             policy_digest: None,
             secrets: Vec::new(),
             notes: Vec::new(),
-            unavailable: Some(e.to_string()),
+            // An engine refusal quotes the grant it refused, and that grant
+            // came from senv.toml. Multiline because these are rendered as a
+            // block, not spliced into one of senv's sentences.
+            unavailable: Some(util::sanitize_multiline(&e.to_string())),
         },
     }
 }
@@ -217,7 +234,8 @@ fn phase_status(project: &Project, phase: Phase, uv_bin: Option<&std::path::Path
 /// PyPI on every sync.
 fn describe_net(p: &h5i_sandbox::sandbox_policy::Profile) -> String {
     if policy::has_allowlist(p) {
-        format!("{}{}", p.net_egress.join(", "), egress_caveat())
+        let hosts: Vec<String> = p.net_egress.iter().map(|h| util::sanitize(h)).collect();
+        format!("{}{}", hosts.join(", "), egress_caveat())
     } else if policy::is_unrestricted(p) {
         "UNRESTRICTED".to_string()
     } else {
@@ -250,6 +268,9 @@ fn egress_caveat() -> &'static str {
 /// has to be added here from the enforcement mode rather than inferred from the
 /// grant lists. Inferring it was how `status` came to report the project as
 /// read-only during installs while it was in fact writable.
+///
+/// Every grant string here came out of `senv.toml`, which the run phase can
+/// write — see [`sanitized_grants`].
 fn writable_summary(
     project: &Project,
     p: &h5i_sandbox::sandbox_policy::Profile,
@@ -259,13 +280,30 @@ fn writable_summary(
     if !work_readonly {
         out.push(format!("{} (the project)", project.root.display()));
     }
-    out.extend(
-        p.fs_write
-            .iter()
-            .filter(|w| !matches!(w.as_str(), "$WORK" | "/dev/null" | "/dev/zero"))
-            .cloned(),
-    );
+    out.extend(sanitized_grants(p.fs_write.iter().filter(|w| {
+        !matches!(w.as_str(), "$WORK" | "/dev/null" | "/dev/zero")
+    })));
     out
+}
+
+/// Strip terminal control sequences from grant paths before they are displayed.
+///
+/// `[run.fs] read`, `[run.fs] write` and `[run] net` are copied verbatim out of
+/// `senv.toml` into the compiled policy, and `senv.toml` lives in the project —
+/// which the run phase grants read-write. So these strings are chosen by the
+/// code the boundary contains, and `senv status` prints them.
+///
+/// That made `status` forgeable by the one thing it is supposed to expose. A
+/// package writing `read = ["/data[2K\rnetwork    denied"]` had its own
+/// text erase and repaint senv's lines; verified before this change, with the
+/// raw `ESC[2K` and `\r` reaching the terminal. `status` is what a user runs
+/// *after* senv warns that a policy was widened behind their back, so it is
+/// precisely the output that must not be writable by the suspect.
+///
+/// The same reasoning `crate::trust` already applies to the widenings it
+/// reports — that code sanitizes, and this did not.
+fn sanitized_grants<'a>(items: impl Iterator<Item = &'a String>) -> Vec<String> {
+    items.map(|s| util::sanitize(s)).collect()
 }
 
 fn readable_summary(project: &Project, p: &h5i_sandbox::sandbox_policy::Profile) -> Vec<String> {
@@ -286,16 +324,20 @@ fn readable_summary(project: &Project, p: &h5i_sandbox::sandbox_policy::Profile)
     ];
     let venv = project.venv().display().to_string();
     let root = project.root.display().to_string();
+    // Compared before sanitizing, rendered after: the comparison must be
+    // against the grant the policy actually carries, and only the rendering is
+    // a place a control sequence could do harm. See `sanitized_grants`.
     p.fs_read
         .iter()
         .filter(|r| !BASELINE.contains(&r.as_str()))
         .map(|r| {
+            let shown = util::sanitize(r);
             if *r == venv {
-                format!("{r} (the environment, read-only)")
+                format!("{shown} (the environment, read-only)")
             } else if *r == root {
-                format!("{r} (the project, read-only)")
+                format!("{shown} (the project, read-only)")
             } else {
-                r.clone()
+                shown
             }
         })
         .collect()
@@ -640,8 +682,13 @@ pub fn allow(ctx: &Ctx, args: &crate::cli::AllowArgs) -> Result<i32> {
     }
 
     let path = project.config_path.clone();
-    let text = if path.is_file() {
-        fs::read_to_string(&path)?
+    // The same guarded read `Config::load` uses, not a bare one. This is the
+    // second time senv opens this file in one command and it is about to write
+    // it back, so it must not be the weaker of the two reads: `senv.toml` is in
+    // the project, and between the load at startup and here it can have become
+    // a symlink, a fifo, or a gigabyte.
+    let text = if std::fs::symlink_metadata(&path).is_ok() {
+        fs::read_to_string_no_follow(&path)?
     } else {
         String::new()
     };
@@ -851,12 +898,14 @@ pub fn doctor(ctx: &Ctx) -> Result<i32> {
     let uv_version = if project_specified {
         match project.as_ref().map(crate::uv::find) {
             // Reported, not executed: running a configured path to read its
-            // version is running an attacker-chosen binary unconfined.
+            // version is running an attacker-chosen binary unconfined. And
+            // since it is attacker-chosen, it is sanitized before it is
+            // printed — `[env] uv` comes from senv.toml.
             Some(Ok(path)) => Some(format!(
                 "{} (configured; not executed here)",
-                path.display()
+                util::sanitize(&path.display().to_string())
             )),
-            Some(Err(e)) => Some(format!("REFUSED — {e}")),
+            Some(Err(e)) => Some(format!("REFUSED — {}", util::sanitize(&e.to_string()))),
             None => None,
         }
     } else {

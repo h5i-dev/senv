@@ -54,7 +54,17 @@ pub fn find(project: &Project) -> Result<PathBuf> {
             ("project", &project.root),
             ("senv state", &project.state_dir),
         ] {
-            if path.starts_with(dir) {
+            // Both sides canonicalized, or the comparison is decorative. `path`
+            // is already resolved; `state_dir` is built from `$XDG_STATE_HOME`
+            // or `$SENV_STATE_DIR` and is not, so a state root reached through
+            // a symlinked component (`/tmp` on macOS is one, and CI sets these
+            // vars under it routinely) made `starts_with` false for a uv that
+            // sits squarely inside it — and the run phase can write to
+            // `state_dir/scratch`. The trust gate refuses a changed `[env] uv`
+            // before this is reached, so this is the second lock on that door,
+            // but a second lock that does not engage is not one.
+            let dir = fs::canonicalize(dir).unwrap_or_else(|_| dir.clone());
+            if path.starts_with(&dir) {
                 return Err(SenvError::refused(
                     format!("[env] uv points inside your {label} directory"),
                     format!(
@@ -249,25 +259,28 @@ pub fn prepare_stage(project: &Project) -> Result<Stage> {
 
     for name in STAGE_FILES.iter().chain(STAGE_GLOBS.iter()) {
         let src = project.root.join(name);
-        // `symlink_metadata`, not `is_file`: these paths live in the project,
-        // which the run phase can write, and senv does this copy *unconfined*.
-        // A package that replaces `README.md` with a link to `~/.ssh/id_ed25519`
-        // would otherwise have senv carry the key into the staging directory —
-        // which is the install phase's own writable working directory, readable
-        // by every build backend that runs there. senv would be exfiltrating
-        // the credential across its own boundary on the attacker's behalf.
-        let Ok(meta) = std::fs::symlink_metadata(&src) else {
-            continue;
-        };
-        if meta.file_type().is_symlink() {
-            eprintln!(
-                "warning: not staging {name} — it is a symbolic link, and senv will not copy \
-                 whatever it points at into the install sandbox"
-            );
-            continue;
-        }
-        if meta.is_file() {
-            fs::copy(&src, &dir.join(name))?;
+        // `copy_no_follow`, not `symlink_metadata` then `fs::copy`: these paths
+        // live in the project, which the run phase can write, and senv does this
+        // copy *unconfined*. A package that replaces `README.md` with a link to
+        // `~/.ssh/id_ed25519` would otherwise have senv carry the key into the
+        // staging directory — which is the install phase's own writable working
+        // directory, readable by every build backend that runs there. senv would
+        // be exfiltrating the credential across its own boundary on the
+        // attacker's behalf.
+        //
+        // Checking first and copying afterwards left a window between the two
+        // syscalls in which exactly that swap could happen; opening with
+        // `O_NOFOLLOW` and copying from the descriptor closes it.
+        match fs::copy_no_follow(&src, &dir.join(name)) {
+            Ok(()) => {}
+            // A link, a fifo, a device — senv will not copy whatever is behind
+            // it into the install sandbox. The refusal already says which.
+            Err(e @ SenvError::Refused { .. }) => {
+                eprintln!("warning: not staging {name} — {e}")
+            }
+            // Anything else (unreadable, vanished mid-copy) is not senv's to
+            // fail on: uv reports a missing manifest far better than senv can.
+            Err(_) => continue,
         }
     }
     Ok(Stage {
@@ -289,11 +302,15 @@ pub fn prepare_stage(project: &Project) -> Result<Stage> {
 /// senv's own boundary, which is the same sentence this module already used
 /// about the input side.
 fn read_staged(path: &Path) -> Result<Option<String>> {
-    let Ok(meta) = std::fs::symlink_metadata(path) else {
+    // Absent is ordinary (no lockfile yet); anything present must be a regular
+    // file senv can open without following a link. The open is what enforces
+    // that — the earlier `symlink_metadata` check was a separate syscall from
+    // the read, and only the open makes the two atomic.
+    if std::fs::symlink_metadata(path).is_err() {
         return Ok(None);
-    };
-    if !meta.file_type().is_file() {
-        return Err(SenvError::refused(
+    }
+    fs::open_no_follow(path).map_err(|e| match e {
+        SenvError::Refused { .. } => SenvError::refused(
             format!("{} is not a regular file", path.display()),
             "senv will not read a staged result through a symlink: the staging directory is \
              writable by the install it is staging, so whatever this points at could be \
@@ -301,9 +318,10 @@ fn read_staged(path: &Path) -> Result<Option<String>> {
                 .to_string(),
             "this usually means a build backend interfered; inspect the staging directory and \
              re-run",
-        ));
-    }
-    Ok(Some(fs::read_to_string_bounded(path)?))
+        ),
+        other => other,
+    })?;
+    Ok(Some(fs::read_to_string_no_follow(path)?))
 }
 
 /// Digest of a staged file, refusing a symlink for the same reason.
