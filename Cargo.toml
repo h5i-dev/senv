@@ -1,0 +1,33 @@
+[package]
+name = "senv"
+version = "0.1.0"
+edition = "2024"
+description = "senv — a security boundary for Python environments. Persistent, sandboxed Python environments powered by uv and h5i."
+license = "Apache-2.0"
+repository = "https://github.com/h5i-dev/senv"
+
+[[bin]]
+name = "senv"
+path = "src/main.rs"
+
+[dependencies]
+# The confinement engine. Pinned to a commit, not a branch: the policy digest
+# story depends on the enforcement code being the code we reviewed.
+h5i-sandbox = { git = "https://github.com/h5i-dev/h5i", rev = "d83af8f44015c09581460e9e5c07266a7867105c" }
+h5i-error = { git = "https://github.com/h5i-dev/h5i", rev = "d83af8f44015c09581460e9e5c07266a7867105c" }
+
+clap = { version = "4", features = ["derive", "wrap_help"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# 0.8 matches the h5i workspace: Profile/ResolvedPolicy serialization must not
+# skew across the crate boundary (the digest is over the TOML bytes).
+toml = { version = "0.8", features = ["parse", "display"] }
+# `senv allow` edits the user's senv.toml in place; toml_edit preserves their
+# comments and formatting where a round-trip through `toml` would not.
+toml_edit = "0.22"
+sha2 = "0.10"
+thiserror = "2.0"
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3.8"

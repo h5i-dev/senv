@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # The integration suite drives a real `uv`. Without it those tests skip,
+      # which would quietly hide every end-to-end assertion.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          # senv is a Rust project that *drives* uv; there is no Python
+          # dependency file here for uv's cache key to hash.
+          enable-cache: false
+
+      # The install boundary needs a tier that can enforce an egress
+      # allowlist. On Linux that is the supervised tier, which needs these.
+      - name: Install sandbox prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y slirp4netns nftables
+
+      # Ubuntu 24.04 — which these runners are — ships an AppArmor profile that
+      # forbids unprivileged user namespaces. Every senv tier is built on one,
+      # so without this `unshare(CLONE_NEWUSER)` fails, both kernel tiers report
+      # unavailable, and the whole boundary suite skips itself while the run
+      # stays green. That is the failure the guard at the end of this job
+      # exists to catch, and this is the line that prevents it.
+      - name: Allow unprivileged user namespaces
+        if: runner.os == 'Linux'
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo sysctl -w kernel.unprivileged_userns_clone=1 || true
+
+      - name: What can this runner enforce?
+        run: cargo run --locked -- doctor || true
+
+      - run: cargo test --locked -- --nocapture
+
+      # Integration tests skip themselves on a host that cannot confine, so a
+      # green suite could mean "nothing ran". Fail loudly instead: this repo's
+      # whole claim is that the boundary is real, and CI has to prove it on at
+      # least one platform. This guard has already earned its place once, by
+      # catching a run in which all 102 boundary assertions were skipped.
+      - name: The boundary was actually exercised
+        if: runner.os == 'Linux'
+        run: |
+          out="$(cargo test --locked --test cli -- --nocapture 2>&1)"
+          echo "$out"
+          if echo "$out" | grep -q "SKIP:"; then
+            echo "::error::integration tests skipped on Linux — the sandbox was not exercised"
+            echo "$out" | grep "SKIP:"
+            exit 1
+          fi
