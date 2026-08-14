@@ -103,7 +103,7 @@ pub fn find_for(config: Option<&crate::config::Config>) -> Result<PathBuf> {
     }
 
     for candidate in candidates {
-        if is_executable(&candidate) {
+        if is_executable_file(&candidate) {
             // Canonicalize: uv is often a symlink, and Landlock grants resolve
             // to the real path. Granting the link would grant nothing.
             return fs::canonicalize(&candidate);
@@ -116,7 +116,7 @@ pub fn find_for(config: Option<&crate::config::Config>) -> Result<PathBuf> {
     ))
 }
 
-fn is_executable(path: &Path) -> bool {
+pub fn is_executable_file(path: &Path) -> bool {
     let Ok(md) = std::fs::metadata(path) else {
         return false;
     };
@@ -275,6 +275,40 @@ pub fn prepare_stage(project: &Project) -> Result<Stage> {
         lock_before: util::sha256_file(&dir.join("uv.lock")),
         dir,
     })
+    // The `before` digests are of files senv itself just copied in, so they
+    // need no symlink check; the *results* read back in `apply_stage` do.
+}
+
+/// Read a file the sandbox produced, refusing to follow a symlink.
+///
+/// The staging directory is the install phase's own writable working
+/// directory, so a build backend running during resolution can replace
+/// `stage/uv.lock` with a link to `~/.config/uv/uv.toml` or a credentials
+/// file. senv then reads it **unconfined** and copies the contents into the
+/// project, where sandboxed code can read them — carrying a secret across
+/// senv's own boundary, which is the same sentence this module already used
+/// about the input side.
+fn read_staged(path: &Path) -> Result<Option<String>> {
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return Ok(None);
+    };
+    if !meta.file_type().is_file() {
+        return Err(SenvError::refused(
+            format!("{} is not a regular file", path.display()),
+            "senv will not read a staged result through a symlink: the staging directory is \
+             writable by the install it is staging, so whatever this points at could be \
+             anything on your disk."
+                .to_string(),
+            "this usually means a build backend interfered; inspect the staging directory and \
+             re-run",
+        ));
+    }
+    Ok(Some(fs::read_to_string_bounded(path)?))
+}
+
+/// Digest of a staged file, refusing a symlink for the same reason.
+fn staged_digest(path: &Path) -> Result<Option<String>> {
+    Ok(read_staged(path)?.map(|text| crate::util::sha256_hex(text.as_bytes())))
 }
 
 /// What copying a staged result back to the project changed.
@@ -300,7 +334,7 @@ pub fn apply_stage(
     let mut result = StageResult::default();
 
     let staged_pyproject = stage.dir.join("pyproject.toml");
-    let after = util::sha256_file(&staged_pyproject);
+    let after = staged_digest(&staged_pyproject)?;
     let manifest_changed = after != stage.pyproject_before && after.is_some();
 
     if manifest_changed {
@@ -313,7 +347,7 @@ pub fn apply_stage(
             ));
         } else {
             let before = fs::read_to_string_bounded(&project.pyproject_path()).unwrap_or_default();
-            let now = fs::read_to_string_bounded(&staged_pyproject)?;
+            let now = read_staged(&staged_pyproject)?.unwrap_or_default();
             for unexpected in unexpected_manifest_changes(&before, &now) {
                 result.warnings.push(format!(
                     "pyproject.toml changed outside the dependency lists: {unexpected}"
@@ -333,10 +367,10 @@ pub fn apply_stage(
     }
 
     let staged_lock = stage.dir.join("uv.lock");
-    if staged_lock.is_file() {
-        let after = util::sha256_file(&staged_lock);
+    if staged_lock.exists() {
+        let after = staged_digest(&staged_lock)?;
         if after != stage.lock_before {
-            let text = fs::read_to_string_bounded(&staged_lock)?;
+            let text = read_staged(&staged_lock)?.unwrap_or_default();
             toml::from_str::<toml::Value>(&text).map_err(|e| {
                 SenvError::config(&staged_lock, format!("staged lockfile is invalid: {e}"))
             })?;

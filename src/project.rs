@@ -283,9 +283,17 @@ impl Project {
         None
     }
 
+    /// The policy this project presents right now: `senv.toml` plus the parts
+    /// of `pyproject.toml` that decide what code an install runs.
+    pub fn policy_snapshot(&self) -> crate::trust::PolicySnapshot {
+        let manifest =
+            crate::error::fs::read_to_string_bounded(&self.pyproject_path()).unwrap_or_default();
+        crate::trust::PolicySnapshot::of_project(&self.config, &manifest)
+    }
+
     /// Compare the configuration on disk with the snapshot senv recorded.
     pub fn trust_verdict(&self) -> crate::trust::Verdict {
-        let current = crate::trust::PolicySnapshot::of(&self.config);
+        let current = self.policy_snapshot();
         match self.load_state().trusted {
             None => crate::trust::Verdict::FirstSight,
             // A snapshot written by a different senv cannot be compared field
@@ -310,7 +318,7 @@ impl Project {
         let mut state = self.load_state();
         state.version = State::VERSION;
         state.project_root = self.root.display().to_string();
-        state.trusted = Some(crate::trust::PolicySnapshot::of(&self.config));
+        state.trusted = Some(self.policy_snapshot());
         self.save_state(&state)
     }
 
@@ -335,6 +343,10 @@ impl Project {
         };
         if meta.file_type().is_symlink() {
             return match std::fs::read_link(&link) {
+                // Points at senv's environment, but that environment may not
+                // exist yet — reporting "linked" for a dangling link sent
+                // people looking in the wrong place.
+                Ok(target) if target == self.venv() && !self.venv_exists() => VenvLink::Dangling,
                 Ok(target) if target == self.venv() => VenvLink::Ours,
                 Ok(target) => VenvLink::OtherLink(target),
                 Err(_) => VenvLink::Foreign,
@@ -349,7 +361,7 @@ impl Project {
         let status = self.venv_link_status();
         let link = self.venv_link();
         match status {
-            VenvLink::Ours => Ok(status),
+            VenvLink::Ours | VenvLink::Dangling => Ok(status),
             VenvLink::Absent => {
                 symlink(&self.venv(), &link)?;
                 Ok(VenvLink::Ours)
@@ -381,6 +393,8 @@ impl Project {
 pub enum VenvLink {
     /// A symlink to senv's environment.
     Ours,
+    /// A symlink to senv's environment, which does not exist yet.
+    Dangling,
     /// Nothing there.
     Absent,
     /// A real directory — an environment installed outside senv.
@@ -395,6 +409,11 @@ impl VenvLink {
     /// The warning to print, if this state deserves one.
     pub fn warning(&self) -> Option<String> {
         match self {
+            VenvLink::Dangling => Some(
+                ".venv points at senv's environment, which has not been built yet — run \
+                 `senv sync`."
+                    .to_string(),
+            ),
             VenvLink::Directory => Some(
                 "a real .venv directory exists here, so senv left it alone. Your editor and \
                  `source .venv/bin/activate` will use that environment, not senv's — run \
@@ -688,7 +707,16 @@ mod tests {
 
         assert_eq!(project.venv_link_status(), VenvLink::Absent);
         assert_eq!(project.ensure_venv_link().expect("link"), VenvLink::Ours);
+        // Nothing has been built yet, so the link is real but dangling — and
+        // saying "linked" for that sent people looking in the wrong place.
+        assert_eq!(project.venv_link_status(), VenvLink::Dangling);
+        assert!(project.venv_link_status().warning().is_some());
+
+        // Once the environment exists, it is simply ours.
+        std::fs::create_dir_all(project.venv()).unwrap();
+        std::fs::write(project.venv().join("pyvenv.cfg"), "home = /usr\n").unwrap();
         assert_eq!(project.venv_link_status(), VenvLink::Ours);
+        assert!(project.venv_link_status().warning().is_none());
 
         // Now the adoption case: a real directory the user built with plain uv.
         std::fs::remove_file(project.venv_link()).unwrap();

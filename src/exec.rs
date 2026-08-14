@@ -28,7 +28,15 @@ pub struct Execution {
     pub exit_code: i32,
     pub timed_out: bool,
     pub wall_ms: u64,
-    /// Empty for streaming runs, which never capture.
+    /// The child's stdout, kept separate from its stderr.
+    ///
+    /// Merging the two was a real bug, not a tidiness question:
+    /// `senv uv -- export --format requirements-txt > reqs.txt` wrote the
+    /// requirements to stderr and the status line to stdout, so every redirect
+    /// through the documented escape hatch produced the wrong file.
+    pub stdout: String,
+    pub stderr: String,
+    /// Both streams together, for denial analysis and receipts.
     pub output: String,
     pub record: Record,
 }
@@ -56,8 +64,15 @@ pub fn run_captured(
             .map_err(|e| explain_engine_error(e, plan))?
     };
 
-    let mut output = String::from_utf8_lossy(&outcome.stdout).into_owned();
-    output.push_str(&String::from_utf8_lossy(&outcome.stderr));
+    // Bounded before anything is copied. h5i collects the child's whole output
+    // into a Vec with no cap, and senv then copied it three more times (lossy
+    // conversion, concatenation, redaction) — a build backend streaming 1.5 GB
+    // took senv, the one unconfined process here, to 5 GB of RSS. Slicing first
+    // means senv adds a couple of megabytes instead of multiplying. Capping
+    // h5i's own read is the real fix and belongs upstream.
+    let stdout = bounded(&outcome.stdout);
+    let stderr = bounded(&outcome.stderr);
+    let output = format!("{stdout}{stderr}");
 
     let wall_ms = outcome.wall_ms.min(u128::from(u64::MAX)) as u64;
     let record = receipts(project).record(
@@ -83,6 +98,8 @@ pub fn run_captured(
         exit_code: exit_code_of(outcome.exit_code, outcome.timed_out),
         timed_out: outcome.timed_out,
         wall_ms,
+        stdout,
+        stderr,
         output,
         record,
     })
@@ -135,9 +152,26 @@ pub fn run_streaming(
         exit_code: outcome.exit_code,
         timed_out: false,
         wall_ms,
+        stdout: String::new(),
+        stderr: String::new(),
         output: String::new(),
         record,
     })
+}
+
+/// The head and tail of a byte stream, with the middle summarized.
+///
+/// Both ends matter: a failure explains itself at the end, and the command
+/// being run is echoed at the beginning.
+fn bounded(bytes: &[u8]) -> String {
+    const KEEP: usize = 512 * 1024;
+    if bytes.len() <= KEEP * 2 {
+        return String::from_utf8_lossy(bytes).into_owned();
+    }
+    let head = String::from_utf8_lossy(&bytes[..KEEP]).into_owned();
+    let tail = String::from_utf8_lossy(&bytes[bytes.len() - KEEP..]).into_owned();
+    let skipped = bytes.len() - KEEP * 2;
+    format!("{head}\n… senv omitted {skipped} bytes of output …\n{tail}")
 }
 
 /// Mirrors this process's stderr into a buffer while still writing it through
@@ -406,21 +440,27 @@ pub fn wrap(text: &str, width: usize, indent: usize) -> String {
     out
 }
 
-/// Write captured output to the user's terminal, unchanged.
+/// Replay captured output on the streams it came from.
 ///
-/// Not redacted: this is the command's own output going to the person who ran
-/// it, exactly as it would appear without senv. Redaction applies to the
-/// *receipt*, which is a file that outlives the session.
-pub fn emit_output(output: &str) {
-    if output.is_empty() {
+/// Each stream goes back where it belongs, so `senv uv -- export > reqs.txt`
+/// produces the requirements and not senv's status line. Not redacted: this is
+/// the command's own output going to the person who ran it, exactly as it would
+/// appear without senv. Redaction applies to the *receipt*, which is a file
+/// that outlives the session.
+pub fn emit_output(run: &Execution) {
+    write_stream(&mut std::io::stdout(), &run.stdout);
+    write_stream(&mut std::io::stderr(), &run.stderr);
+}
+
+fn write_stream(sink: &mut impl Write, text: &str) {
+    if text.is_empty() {
         return;
     }
-    let mut err = std::io::stderr();
-    let _ = err.write_all(output.as_bytes());
-    if !output.ends_with('\n') {
-        let _ = err.write_all(b"\n");
+    let _ = sink.write_all(text.as_bytes());
+    if !text.ends_with('\n') {
+        let _ = sink.write_all(b"\n");
     }
-    let _ = err.flush();
+    let _ = sink.flush();
 }
 
 /// Fail with a message naming the environment that does not exist yet.

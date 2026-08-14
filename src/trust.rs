@@ -86,6 +86,32 @@ pub struct PolicySnapshot {
     /// persistence primitive, not a convenience.
     pub run_limits: Limits,
     pub install_limits: Limits,
+    /// Digest of `pyproject.toml`'s `[build-system]` table.
+    ///
+    /// Not senv's config, but unquestionably policy: it names the code that
+    /// runs during an install. `pyproject.toml` sits in the run phase's write
+    /// grant, and the install phase grants the environment read-write — so a
+    /// package that executed once could point `build-backend` at a script it
+    /// had just dropped, and the next ordinary `senv sync` ran that script with
+    /// write access to the environment. Verified: it planted a `.pth` and the
+    /// attacker's code then ran on every later `senv run`, straight through the
+    /// read-only environment guarantee.
+    pub build_system: Option<String>,
+    /// Whether this snapshot was taken with a manifest in hand.
+    ///
+    /// `None` for the two digests below has to mean "that table is absent",
+    /// not "we never looked" — otherwise *adding* a `[tool.uv]` table where
+    /// there was none reads as no change, which is precisely how a package
+    /// would turn on `no-binary` and get arbitrary code execution during the
+    /// next sync. This flag separates the two.
+    pub manifest_seen: bool,
+    /// Digest of the `[tool.uv]` table.
+    ///
+    /// Same reasoning. `no-binary` alone turns every wheel install into a
+    /// source build, which is arbitrary code execution during `sync`; so do
+    /// `no-build-isolation`, `extra-build-dependencies` and `config-settings`,
+    /// and none of them needs the network senv restricts.
+    pub tool_uv: Option<String>,
 }
 
 /// The resource ceilings a phase runs under. `None` means senv's built-in
@@ -211,6 +237,30 @@ impl PolicySnapshot {
         PolicySnapshot::of(&Config::default())
     }
 
+    /// [`PolicySnapshot::of`], plus the parts of `pyproject.toml` that decide
+    /// what code an install executes.
+    pub fn of_project(config: &Config, manifest: &str) -> PolicySnapshot {
+        let mut snapshot = PolicySnapshot::of(config);
+        let parsed: Option<toml::Value> = toml::from_str(manifest).ok();
+        let digest = |key: &str, sub: Option<&str>| -> Option<String> {
+            let value = match sub {
+                Some(sub) => parsed.as_ref()?.get(key)?.get(sub)?,
+                None => parsed.as_ref()?.get(key)?,
+            };
+            // `Debug`, not `toml::to_string`: serializing a bare table value
+            // fails (TOML wants values before sub-tables), and the `unwrap_or_default`
+            // that hid it made every manifest digest the empty string — so two
+            // different build backends compared equal and the check passed
+            // while detecting nothing. `toml::Value`'s map is a `BTreeMap`, so
+            // the debug rendering is ordered and stable.
+            Some(crate::util::sha256_hex(format!("{value:?}").as_bytes()))
+        };
+        snapshot.manifest_seen = true;
+        snapshot.build_system = digest("build-system", None);
+        snapshot.tool_uv = digest("tool", Some("uv"));
+        snapshot
+    }
+
     /// Reduce a configuration to what a reviewer would care about.
     pub fn of(config: &Config) -> PolicySnapshot {
         let run_net = if config.run.net.is_host() {
@@ -261,6 +311,11 @@ impl PolicySnapshot {
                 .collect(),
             run_limits: Limits::of(&config.run.resources, Limits::run_defaults()),
             install_limits: Limits::of(&config.install.resources, Limits::install_defaults()),
+            // Filled in by `of_project`, which is the only caller with the
+            // manifest in hand.
+            manifest_seen: false,
+            build_system: None,
+            tool_uv: None,
         };
         for list in [
             &mut snapshot.run_hosts,
@@ -369,6 +424,25 @@ impl PolicySnapshot {
         self.install_limits
             .widenings(&previous.install_limits, "install.resources", &mut found);
 
+        // Only meaningful once a baseline exists: on a first sighting there is
+        // nothing to compare a manifest against, and reporting every project's
+        // build backend as a change would make the first run of every project
+        // a prompt.
+        if previous.manifest_seen && self.build_system != previous.build_system {
+            found.push(
+                "[build-system] in pyproject.toml changed — this names the code that runs \
+                 during an install"
+                    .to_string(),
+            );
+        }
+        if previous.manifest_seen && self.tool_uv != previous.tool_uv {
+            found.push(
+                "[tool.uv] in pyproject.toml changed — these settings decide what an install \
+                 builds from source, and therefore what code it executes"
+                    .to_string(),
+            );
+        }
+
         // These three are conservative: any change at all is reported, because
         // each redirects what senv executes or how strongly it confines, and
         // there is no ordering in which a change is obviously safe.
@@ -456,6 +530,55 @@ mod tests {
 
     fn verdict(before: &str, after: &str) -> Vec<String> {
         PolicySnapshot::of(&config(after)).widenings(&PolicySnapshot::of(&config(before)))
+    }
+
+    #[test]
+    fn changing_the_build_backend_needs_acknowledging() {
+        // The attack this closes: a package edits pyproject.toml to point
+        // `build-backend` at a script it just wrote, and the next ordinary
+        // `senv sync` runs that script with the environment writable — which
+        // persisted a `.pth` and defeated the read-only environment.
+        let cfg = Config::default();
+        let before = PolicySnapshot::of_project(
+            &cfg,
+            "[project]\nname='x'\nversion='0'\n\
+             [build-system]\nrequires=['hatchling']\nbuild-backend='hatchling.build'\n",
+        );
+        let after = PolicySnapshot::of_project(
+            &cfg,
+            "[project]\nname='x'\nversion='0'\n\
+             [build-system]\nrequires=[]\nbuild-backend='evil'\nbackend-path=['.']\n",
+        );
+        assert!(
+            before.build_system.is_some(),
+            "the fixture must have a build system"
+        );
+        assert_ne!(
+            before.build_system, after.build_system,
+            "two different backends must not digest the same"
+        );
+        let w = after.widenings(&before);
+        assert!(w.iter().any(|f| f.contains("build-system")), "{w:?}");
+
+        // `[tool.uv] no-binary` is arbitrary code execution during sync with no
+        // network needed, so it counts too.
+        let after = PolicySnapshot::of_project(
+            &cfg,
+            "[project]\nname='x'\nversion='0'\n\
+             [build-system]\nrequires=['hatchling']\nbuild-backend='hatchling.build'\n\
+             [tool.uv]\nno-binary = true\n",
+        );
+        let w = after.widenings(&before);
+        assert!(w.iter().any(|f| f.contains("tool.uv")), "{w:?}");
+
+        // Adding a table that was not there before counts: `[tool.uv]` absent
+        // must not read the same as "we never looked at a manifest".
+        assert!(before.tool_uv.is_none(), "the baseline has no [tool.uv]");
+        assert!(before.manifest_seen);
+
+        // An unchanged manifest is silent, and so is a first sighting.
+        assert!(before.widenings(&before).is_empty());
+        assert!(after.widenings(&PolicySnapshot::defaults()).is_empty());
     }
 
     #[test]

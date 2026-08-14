@@ -464,6 +464,36 @@ unconfined code touches paths inside the sandbox's write grant.** Anywhere that
 happens — reading a config, copying a manifest, writing a lockfile, executing a
 tool — the path is attacker-controlled input and has to be treated as such.
 
+### A third round, and the limits of "the policy is one file"
+
+Two more escalations, both of which say the same thing: `senv.toml` is not the
+only policy in a project.
+
+**`pyproject.toml` decides what code an install executes.** Its
+`[build-system]` names the build backend, and `[tool.uv]` settings like
+`no-binary` turn every wheel install into a source build. Both live in the run
+phase's write grant, and the install phase grants the environment read-write —
+so a package that ran once could point `build-backend` at a script it had just
+dropped, and the next ordinary `senv sync` executed that script with write
+access to the environment. Verified: it planted a `.pth` that then ran on every
+later `senv run`, straight through the read-only-environment guarantee. Both
+tables are now digested into the trust snapshot, so changing either is a
+widening. Note the flag that goes with them: `None` for a digest has to mean
+"that table is absent", not "no manifest was recorded" — otherwise *adding* a
+`[tool.uv]` table where there was none reads as no change at all, which was a
+gap in the first version of this fix.
+
+**`senv allow` blessed whatever was on disk when it finished.** It re-read
+`senv.toml` to record the new baseline, and between the trust check and that
+re-read lie a config read, a parse and two fsync'd writes. Code under a
+concurrent `senv run` — a dev server, a watcher, a test run, all of which this
+design calls ordinary — could flip the file between empty and hostile and win
+on the first attempt, turning the one command every denial message recommends
+into "trust my policy". It now records the document senv itself produced.
+
+The general rule these two produce: **re-reading a file you just wrote is a
+TOCTOU, and any file the sandbox can write is policy if senv acts on it.**
+
 Two smaller findings from the same review, both fixed: `.python-version` and
 `[env] python` are attacker-writable and became `uv` arguments, so a value that
 is not version-shaped (`--mirror=https://evil`) is now refused rather than
@@ -771,6 +801,11 @@ Still open:
   phase split (resolve/install/run) generalises. Whether senv should grow into
   that, or stay the Python tool whose name says so, is a positioning question
   rather than a technical one.
+- **Bounding the output senv collects.** h5i reads a captured child's whole
+  output into memory with no cap. A build backend streaming 1.5 GB took senv —
+  the one unconfined process in the picture — to 5 GB of RSS. senv no longer
+  multiplies that (it slices head and tail before any copy, which brought the
+  same case to 1.5 GB), but the cap itself belongs upstream.
 - **A shared-cache poisoning story.** Per-project caching sidesteps it rather
   than solving it. Content-addressed verification on cache reads would let the
   shared cache be the safe default again.

@@ -12,6 +12,7 @@ use crate::error::{Result, SenvError};
 use crate::exec;
 use crate::policy::{self, Phase, PlanOptions};
 use crate::project::Project;
+use std::path::Path;
 
 #[derive(Debug, Serialize)]
 pub struct RunOutput {
@@ -49,11 +50,18 @@ pub fn run(ctx: &Ctx, args: &crate::cli::RunArgs) -> Result<i32> {
     let mut argv = args.argv.clone();
     if let Some(resolved) = exec::venv_program(&project, &argv[0]) {
         argv[0] = resolved;
-    } else if !argv[0].contains('/') && !is_system_tool(&argv[0]) {
+    } else if !argv[0].contains('/') && !on_system_path(&argv[0]) {
         return Err(SenvError::refused(
-            format!("`{}` is not installed in this environment", argv[0]),
-            format!("looked in {}", project.venv().join("bin").display()),
-            format!("add it with `senv add {}`", argv[0]),
+            format!("`{}` is not available in this environment", argv[0]),
+            format!(
+                "looked in {} and on the sandbox's PATH",
+                project.venv().join("bin").display()
+            ),
+            format!(
+                "if it is a Python package, `senv add {}`; if it is a system tool, give its \
+                 absolute path (senv run /usr/bin/{}) and grant what it needs",
+                argv[0], argv[0]
+            ),
         ));
     }
 
@@ -130,13 +138,16 @@ pub fn shell(ctx: &Ctx, args: &crate::cli::ShellArgs) -> Result<i32> {
     Ok(run.exit_code)
 }
 
-/// Tools that come from the system rather than the environment, so a bare name
-/// is legitimate even though it is not in `.venv/bin`.
-fn is_system_tool(program: &str) -> bool {
-    matches!(
-        program,
-        "python" | "python3" | "sh" | "bash" | "env" | "ls" | "cat" | "echo" | "make" | "git"
-    )
+/// Is this program on the `PATH` the sandbox will actually give the child?
+///
+/// A hardcoded list of ten names refused `senv run node`, `npm`, `tox` and
+/// `printenv` with the advice "add it with `senv add node`", which is nonsense
+/// for anything that is not a Python package. The question is not "is this a
+/// tool senv has heard of" but "will the child be able to exec it".
+fn on_system_path(program: &str) -> bool {
+    crate::policy::system_path()
+        .split(':')
+        .any(|dir| !dir.is_empty() && crate::uv::is_executable_file(&Path::new(dir).join(program)))
 }
 
 fn pick_shell() -> String {

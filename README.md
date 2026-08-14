@@ -253,8 +253,10 @@ have:
   limits and do apply everywhere — use `[run.resources] cpu` to bound a runaway
   command. `senv status` says which is which.
 - senv detects a policy widened behind your back; it cannot prevent the write.
-  A package can always edit files in your project — including `pyproject.toml`,
-  so review dependency changes you did not make.
+  "Policy" includes `pyproject.toml`'s `[build-system]` and `[tool.uv]` tables,
+  which decide what code an install runs — changing either needs `senv trust`.
+  A package can still edit the rest of your project, so review dependency
+  changes you did not make.
 - Linux and macOS. Windows via WSL2.
 
 See [DESIGN.md](DESIGN.md) for the threat model and the reasoning behind each

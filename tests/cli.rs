@@ -516,10 +516,20 @@ fn a_command_that_is_not_installed_names_the_environment_and_the_fix() {
     let out = fixture.senv(&["run", "pytest"]);
     let text = combined(&out);
     assert_eq!(out.status.code(), Some(2), "{text}");
-    assert!(text.contains("not installed"), "{text}");
+    assert!(text.contains("not available"), "{text}");
     assert!(
         text.contains("senv add pytest"),
         "the fix must be copy-pasteable: {text}"
+    );
+
+    // A system tool on the sandbox's own PATH is not senv's business to
+    // refuse. A hardcoded ten-name list used to turn `senv run node` into
+    // "add it with `senv add node`", which is nonsense for a non-Python tool.
+    let out = fixture.senv(&["run", "printenv", "HOME"]);
+    assert!(
+        out.status.success(),
+        "a system tool on PATH must run: {}",
+        combined(&out)
     );
 }
 
@@ -1035,6 +1045,98 @@ fn a_cpu_limit_stops_a_runaway_command() {
         elapsed < std::time::Duration::from_secs(30),
         "the CPU limit did not fire: ran for {elapsed:?}"
     );
+}
+
+/// A package must not reach the environment by swapping the build backend.
+///
+/// The run phase can write `pyproject.toml`, and the install phase grants the
+/// environment read-write — so pointing `build-backend` at a dropped script
+/// let a package write into the "read-only" environment on the next ordinary
+/// sync. Verified before the fix: it planted a `.pth` that then ran on every
+/// later `senv run`.
+#[test]
+fn a_package_cannot_reach_the_environment_by_swapping_the_build_backend() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    fixture.run_python(
+        "import pathlib\n\
+         pathlib.Path('evil.py').write_text('def build_wheel(*a, **k): pass\\n')\n\
+         p = pathlib.Path('pyproject.toml')\n\
+         p.write_text(p.read_text() + '\\n[build-system]\\nrequires = []\\n\
+         build-backend = \"evil\"\\nbackend-path = [\".\"]\\n')",
+    );
+
+    let out = fixture.senv(&["sync"]);
+    let text = combined(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "the swap must be refused: {text}"
+    );
+    assert!(text.contains("build-system"), "and named: {text}");
+}
+
+/// Turning on a `[tool.uv]` setting that makes installs build from source is
+/// arbitrary code execution during sync, and needs no network.
+#[test]
+fn adding_a_tool_uv_table_is_caught_even_when_there_was_none() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    fixture.run_python(
+        "import pathlib\n\
+         p = pathlib.Path('pyproject.toml')\n\
+         p.write_text(p.read_text() + '\\n[tool.uv]\\nno-binary = true\\n')",
+    );
+
+    let out = fixture.senv(&["sync"]);
+    let text = combined(&out);
+    assert_eq!(out.status.code(), Some(2), "{text}");
+    assert!(text.contains("tool.uv"), "{text}");
+}
+
+/// `senv allow` must bless the document it wrote, not whatever is on disk when
+/// it finishes.
+#[test]
+fn allow_records_what_it_wrote_not_a_re_read() {
+    require!(have_uv(), "uv is not installed");
+    require!(
+        can_install(),
+        "this host cannot enforce an egress allowlist"
+    );
+    let fixture = Fixture::new(Some(DEMO));
+    fixture.sync();
+
+    // Stand in for a concurrent writer: the file is hostile at the moment
+    // `allow` finishes. Re-reading it here was a full escalation — the
+    // hostile config became the trusted baseline.
+    std::fs::write(fixture.root.join("senv.toml"), "[run]\nnet = \"deny\"\n").unwrap();
+    assert!(fixture.senv(&["trust"]).status.success());
+
+    let out = fixture.senv(&["allow", "example.com"]);
+    assert!(out.status.success(), "{}", combined(&out));
+    std::fs::write(
+        fixture.root.join("senv.toml"),
+        "[env]\nallow-command-secrets = true\n[run]\nnet = \"host\"\n",
+    )
+    .unwrap();
+
+    // The hostile edit is not part of the baseline, so it is still refused.
+    let out = fixture.senv(&["run", "python", "-c", "print(1)"]);
+    let text = combined(&out);
+    assert_eq!(out.status.code(), Some(2), "{text}");
+    assert!(text.contains("grants more than senv recorded"), "{text}");
 }
 
 /// A package must not be able to persist through the bytecode cache.

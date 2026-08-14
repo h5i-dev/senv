@@ -59,6 +59,15 @@ pub fn init(ctx: &Ctx, args: &crate::cli::InitArgs) -> Result<i32> {
         None => std::env::current_dir().map_err(|e| SenvError::io(PathBuf::from("."), e))?,
     };
 
+    // Check the policy before writing anything. `init` used to create
+    // `pyproject.toml` and `.python-version` first, so a project it then
+    // refused had already been modified.
+    let existing = Project::at(&root).ok();
+    if let Some(project) = &existing {
+        project.ensure_dirs()?;
+        ctx.guard_trust(project)?;
+    }
+
     // Adoption, not scaffolding: an existing manifest is taken as it is.
     let manifest_path = root.join("pyproject.toml");
     let manifest = if manifest_path.is_file() {
@@ -80,6 +89,8 @@ pub fn init(ctx: &Ctx, args: &crate::cli::InitArgs) -> Result<i32> {
         )?;
     }
 
+    // Re-read: the manifest may have just been created, which changes what
+    // `Project::at` discovers.
     let project = Project::at(&root)?;
     project.ensure_dirs()?;
     // `init` ends by running a sync, so it goes through the same gate as any
@@ -206,7 +217,6 @@ pub fn sync(ctx: &Ctx, args: &crate::cli::SyncArgs) -> Result<i32> {
 
 fn sync_inner(ctx: &Ctx, project: &Project, args: &crate::cli::SyncArgs) -> Result<InstallOutput> {
     let uv_bin = uv::find(project)?;
-    project.ensure_venv_link()?;
     let mut changed = Vec::new();
     let mut warnings = Vec::new();
 
@@ -384,7 +394,7 @@ fn provision(ctx: &Ctx, project: &Project, uv_bin: &std::path::Path) -> Result<i
     )?;
     exec::print_notes(&plan.notes);
     let run = exec::run_captured(project, &plan, &argv, Some("installing python"))?;
-    exec::emit_output(&run.output);
+    exec::emit_output(&run);
     Ok(run.exit_code)
 }
 
@@ -692,9 +702,15 @@ fn finish(
     warnings: Vec<String>,
     record_sync: bool,
 ) -> Result<InstallOutput> {
-    exec::emit_output(&run.output);
+    exec::emit_output(&run);
     exec::print_denials(&run.record);
 
+    // Link `.venv` only once there is something behind it. Linking first left a
+    // dangling symlink in a project that never had one when the first sync
+    // failed, breaking editors and `source .venv/bin/activate`.
+    if run.succeeded() && record_sync {
+        let _ = project.ensure_venv_link();
+    }
     if run.succeeded() && record_sync {
         let mut state = project.load_state();
         state.version = State::VERSION;
@@ -752,10 +768,12 @@ fn render_install(o: &InstallOutput) {
         eprintln!("warning: {}", exec::wrap(w, 74, 9));
     }
     if !o.changed.is_empty() {
-        println!("updated {}", o.changed.join(", "));
+        eprintln!("updated {}", o.changed.join(", "));
     }
+    // senv's own progress line goes to stderr: stdout belongs to the command,
+    // and `senv uv -- export > reqs.txt` must produce requirements.
     if o.exit_code == 0 {
-        println!(
+        eprintln!(
             "ok  uv {}  ({} tier, {:.1}s)",
             o.command.first().map(String::as_str).unwrap_or(""),
             o.tier,

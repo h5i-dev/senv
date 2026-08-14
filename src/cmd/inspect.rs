@@ -107,6 +107,7 @@ pub fn status(ctx: &Ctx) -> Result<i32> {
             last_sync: state.last_sync_ms.map(util::format_utc),
             venv_link: match project.venv_link_status() {
                 project::VenvLink::Ours => "linked".to_string(),
+                project::VenvLink::Dangling => "linked, but nothing built yet".to_string(),
                 project::VenvLink::Absent => "absent".to_string(),
                 project::VenvLink::Directory => "a real directory (not senv's)".to_string(),
                 project::VenvLink::OtherLink(p) => format!("links elsewhere: {}", p.display()),
@@ -639,10 +640,31 @@ pub fn allow(ctx: &Ctx, args: &crate::cli::AllowArgs) -> Result<i32> {
     array.set_trailing_comma(false);
     run["net"] = toml_edit::value(array);
 
-    project::write_atomic(&path, doc.to_string().as_bytes())?;
-    // The user asked for exactly this widening, so record the result as
-    // trusted — otherwise the next command would refuse over senv's own edit.
-    Project::at(&project.root)?.record_trust()?;
+    let rendered = doc.to_string();
+    project::write_atomic(&path, rendered.as_bytes())?;
+
+    // Baseline the document senv just produced, **not** a re-read of the file.
+    //
+    // The user asked for exactly this widening, so the result has to be
+    // recorded as trusted or the next command would refuse over senv's own
+    // edit. Re-reading `senv.toml` to do that was a working escalation:
+    // between `guard_trust` at the top of this function and the record here
+    // lie a config read, a parse and two fsync'd writes, and anything that
+    // edited the file inside that window was silently blessed. Code under a
+    // concurrent `senv run` — a dev server, a watcher, a test run, all of which
+    // this design calls ordinary — can flip the file between empty and hostile
+    // in a loop and win on the first attempt, turning the one command every
+    // denial message recommends into "trust my policy". The laundered config
+    // carried `allow-command-secrets` and a `command:` secret, which is
+    // unconfined host execution, after which `senv trust` reported nothing to
+    // accept, forever.
+    let written: crate::config::Config = toml::from_str(&rendered).map_err(|e| {
+        SenvError::config(&path, format!("senv wrote a config it cannot parse: {e}"))
+    })?;
+    written.validate(&path)?;
+    let mut baselined = project.clone();
+    baselined.config = written;
+    baselined.record_trust()?;
 
     let out = AllowOutput {
         config: path.display().to_string(),

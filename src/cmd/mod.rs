@@ -60,13 +60,15 @@ fn widened_error(widenings: &[String]) -> SenvError {
         .collect::<Vec<_>>()
         .join("");
     SenvError::refused(
-        "senv.toml grants more than senv recorded, so nothing was run",
+        "this project's policy grants more than senv recorded, so nothing was run",
         format!(
-            "the policy on disk is wider than the one you last accepted:{list}\n               senv.toml lives in your project, which your code can write — so a change it did \
-             not make is a change worth looking at before running anything."
+            "the policy on disk is wider than the one you last accepted:{list}\n  \
+             senv.toml and pyproject.toml both live in your project, which your code can \
+             write — so a change neither you nor your tools made is worth looking at before \
+             running anything."
         ),
         "if you made this change, run `senv trust` to accept it; if you did not, inspect \
-         senv.toml and your recent dependencies first",
+         those files and your recent dependencies first",
     )
 }
 
@@ -99,28 +101,25 @@ impl Ctx {
         let verdict = project.trust_verdict();
         match verdict {
             crate::trust::Verdict::Widened(widenings) => Err(widened_error(&widenings)),
-            // A first sighting is adopted rather than refused: reaching it
-            // means the user chose to work in this project, and a senv.toml
-            // that arrived with the repository is trusted exactly as much as
-            // the code beside it. It is still worth saying out loud when that
-            // config grants more than the defaults.
-            // A first sighting has no baseline to compare against, so a
-            // configuration that grants more than senv's defaults has to be
-            // looked at rather than adopted.
+            // A first sighting has no baseline to compare against, so a policy
+            // that grants more than senv's defaults has to be looked at rather
+            // than adopted.
             //
             // This is what closes the nested-project bypass: the run phase can
             // write anywhere in the project, so a package can manufacture a
             // whole new project in a subdirectory the user plausibly cd's into
             // — `tests/`, say — with its own hostile `senv.toml`. That project
-            // has no recorded state, so a permissive first sighting would
-            // adopt it silently, and a `command:` secret there is unconfined
-            // host execution. A wide config on first contact is exactly the
-            // moment to stop.
-            // Same handling as a first sighting, different sentence: after an
-            // upgrade the user has seen this project before, and being told
-            // otherwise would read as senv losing track of its own state.
+            // has no recorded state, so a permissive first sighting would adopt
+            // it silently, and a `command:` secret there is unconfined host
+            // execution.
+            //
+            // A snapshot from another senv version lands here too, with its own
+            // sentence: after an upgrade the user *has* seen this project
+            // before, and saying otherwise would read as senv losing track of
+            // its own state.
             crate::trust::Verdict::FormatChanged | crate::trust::Verdict::FirstSight => {
-                let wide = crate::trust::PolicySnapshot::of(&project.config)
+                let wide = project
+                    .policy_snapshot()
                     .widenings(&crate::trust::PolicySnapshot::defaults());
                 if wide.is_empty() {
                     return project.record_trust();

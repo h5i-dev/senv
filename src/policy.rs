@@ -662,9 +662,21 @@ pub fn warm_host_probes() {
         h5i_sandbox::cgroup::probe();
         return;
     };
+    // Non-blocking with a short budget, never a bare `LOCK_EX`. The fallback
+    // lock directory is world-writable, so any local user could take this lock
+    // first and hold it — and every senv command would then hang at startup.
+    // Failing to take it costs only the pre-existing probe race, which is worth
+    // far less than a hang.
     // SAFETY: flock on a descriptor we own; released explicitly below and by
     // the close on drop regardless.
-    let locked = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } == 0;
+    let mut locked = false;
+    for _ in 0..50 {
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+            locked = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
     h5i_sandbox::cgroup::probe();
     if locked {
         // SAFETY: same descriptor, still open.
@@ -744,7 +756,7 @@ fn parse_wall_or(r: &crate::config::ResourceSection, default: u64) -> Result<u64
 /// The host's `PATH` is not reused: it routinely points at directories the
 /// policy does not grant (and, on WSL, at the whole Windows filesystem), which
 /// turns every `command not found` into a puzzle.
-fn system_path() -> String {
+pub fn system_path() -> String {
     "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string()
 }
 
