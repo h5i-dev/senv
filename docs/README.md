@@ -9,7 +9,7 @@ index.html        the product page: what the boundary is, the two phases, limits
 manual/           the reference: every command and flag, senv.toml, tiers, receipts
 _static/          the h5i site chassis, shared verbatim with h5i.dev
 CNAME             senv.h5i.dev
-llms.txt          the same material, condensed for machine readers
+llms.txt          the same material, condensed for machine readers like LLMs
 sitemap.xml       both canonical pages; add a row when you add a page
 robots.txt        allow everything, point at the sitemap
 .nojekyll         only matters if Pages is ever repointed at a branch
