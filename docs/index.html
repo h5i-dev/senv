@@ -73,7 +73,7 @@
         ],
         "url": "https://senv.h5i.dev/",
         "downloadUrl": "https://github.com/h5i-dev/senv",
-        "installUrl": "https://senv.h5i.dev/#install",
+        "installUrl": "https://senv.h5i.dev/manual/#install",
         "softwareHelp": "https://senv.h5i.dev/manual/",
         "softwareRequirements": "uv on PATH; slirp4netns and nftables on Linux for registry allowlisting during installs",
         "programmingLanguage": "Rust",
@@ -210,26 +210,6 @@
     .phase-plate table.data tbody th { white-space: nowrap; }
     .phase-plate .deny { color: var(--danger); }
     .phase-plate .ok { color: var(--green); }
-    /* Two terminals side by side where the point is the contrast between
-       them; one column as soon as the measure stops holding both. */
-    .pair { display: grid; gap: 24px; }
-    @media (min-width: 900px) { .pair { grid-template-columns: 1fr 1fr; } }
-    .pair .terminal { margin: 0; }
-    .prose { max-width: var(--measure); color: var(--dim); font-size: 16px; }
-    .prose p { margin: 0 0 18px; }
-    .prose p strong { color: var(--ink); font-weight: 500; }
-    .prose code { font-family: var(--mono); font-size: 13.5px; color: var(--ink);
-      background: var(--panel); border: 1px solid var(--line2); padding: 1px 6px; }
-    .prose a { color: var(--spot); text-decoration: underline;
-      text-underline-offset: 3px; }
-    .prose ul { margin: 0 0 18px; padding-left: 22px; }
-    .prose li { margin: 8px 0; }
-    .prose li::marker { color: var(--faint); }
-    .cfg { margin: 26px 0; }
-    .cfg pre { background: var(--panel); border: 1px solid var(--line2);
-      padding: 16px 18px; overflow-x: auto; font-family: var(--mono);
-      font-size: 13px; line-height: 1.75; color: var(--text); }
-    .cfg pre code { background: none; border: 0; padding: 0; white-space: pre; }
   </style>
 </head>
 <body>
@@ -245,7 +225,7 @@
   </a>
   <ul class="nav-links">
     <li><a href="#what-you-get">Features</a></li>
-    <li><a href="#install">Install</a></li>
+    <li><a href="/manual/#install">Install</a></li>
     <li><a href="/manual/">Manual</a></li>
     <li><a href="https://h5i.dev/">h5i</a></li>
     <li><a href="https://github.com/h5i-dev/senv" class="nav-cta">GitHub &rarr;</a></li>
@@ -515,258 +495,6 @@
 
 </div>
 
-<!-- ── Denials ───────────────────────────────────────────────── -->
-<section id="denials">
-  <div class="container">
-    <div class="section-head">
-      <span class="section-tag">Working with the boundary</span>
-      <h2 class="section-title">Allow only what your program needs.</h2>
-      <p class="section-sub">A boundary people cannot work with is a boundary people turn off. Every denial
-        arrives with the narrowest command that would permit it.</p>
-    </div>
-
-    <div class="pair">
-      <div class="terminal">
-        <div class="terminal-bar"><span class="terminal-path">what a denial looks like</span></div>
-        <div class="terminal-body"><pre><code><span class="t-prompt">$</span> <span class="t-cmd">senv run pytest</span>
-<span class="t-out">...</span>
-<span class="t-red">senv blocked 1 operation(s):</span>
-<span class="t-out">  &#8226; network access to api.stripe.com</span>
-<span class="t-out">    allow it with: </span><span class="t-bold">senv allow api.stripe.com</span></code></pre></div>
-      </div>
-      <div class="terminal">
-        <div class="terminal-bar"><span class="terminal-path">three ways to answer it</span></div>
-        <div class="terminal-body"><pre><code><span class="t-prompt">$</span> <span class="t-cmd">senv allow api.stripe.com</span>
-<span class="t-cmt"># persistent: writes the grant into senv.toml</span>
-
-<span class="t-prompt">$</span> <span class="t-cmd">senv run --allow-net api.stripe.com pytest</span>
-<span class="t-cmt"># this invocation only, announced and recorded</span>
-
-<span class="t-prompt">$</span> <span class="t-cmd">senv report --suggest</span>
-<span class="t-cmt"># prints a stanza to review; writes nothing</span></code></pre></div>
-      </div>
-    </div>
-
-    <div class="prose">
-      <p>There is deliberately no observe mode that runs your code unconfined to learn a policy from it.
-        That would mean running untrusted code without a boundary exactly once, which is once too many.
-        Denial-driven suggestion gets the same information out of <strong>confined</strong> runs.</p>
-      <p>Some denials are guarantees rather than defaults, and senv does not offer a way around them.
-        Runtime code cannot make the environment writable and cannot read <code>~/.ssh</code>, so no
-        suggestion will ever propose it.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ── Trust ─────────────────────────────────────────────────── -->
-<section id="trust">
-  <div class="container">
-    <div class="section-head">
-      <span class="section-tag">Tamper-evidence</span>
-      <h2 class="section-title">The policy is inside the sandbox. The baseline is not.</h2>
-      <p class="section-sub"><code>senv.toml</code> lives in your project, and your project is writable while
-        your code runs. So a compromised dependency can edit the policy &#8212; and senv is built on the
-        assumption that one will try.</p>
-    </div>
-
-    <div class="terminal">
-      <div class="terminal-bar"><span class="terminal-path">a widened policy, refused</span></div>
-      <div class="terminal-body"><pre><code><span class="t-prompt">$</span> <span class="t-cmd">senv run python app.py</span>
-<span class="t-red">senv: senv.toml grants more than senv recorded, so nothing was run</span>
-<span class="t-out">  the policy on disk is wider than the one you last accepted:</span>
-<span class="t-warn">    + [run] net: deny &#8594; unrestricted</span>
-<span class="t-warn">    + [run.env] pass: added AWS_SECRET_ACCESS_KEY</span>
-<span class="t-out">  &#8594; if you made this change, run </span><span class="t-bold">senv trust</span><span class="t-out">; if you did not,</span>
-<span class="t-out">    inspect senv.toml and your recent dependencies first</span></code></pre></div>
-    </div>
-
-    <div class="prose">
-      <p>senv keeps the last accepted policy snapshot outside the sandbox. An unchanged or narrower policy
-        runs normally; a wider one stops the command and shows you the diff. The same check applies the first
-        time senv sees a project whose policy is wider than the defaults, and to the
-        <code>pyproject.toml</code> sections that control install behavior &#8212;
-        <code>[build-system]</code> and <code>[tool.uv]</code>.</p>
-      <p>Two settings carry extra weight, so they get extra protection. A <code>command:</code> secret source
-        executes on the host, so it requires <code>allow-command-secrets = true</code>. And a configured
-        <code>uv</code> is rejected outright if it lives inside the project or inside senv's own state, where
-        sandboxed code could rewrite the binary that the install phase is about to run.</p>
-      <p><strong>This is tamper-evidence, not tamper-prevention.</strong> A dependency can still edit files in
-        a writable project; what it cannot do is have the edit silently take effect. Everything senv writes
-        &#8212; the environment, receipts, the trusted baseline &#8212; lives outside your project tree, and
-        senv refuses to start if <code>SENV_STATE_DIR</code> or <code>SENV_CACHE_DIR</code> points back
-        inside it.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ── Configuration ─────────────────────────────────────────── -->
-<section id="configuration">
-  <div class="container">
-    <div class="section-head">
-      <span class="section-tag">Configuration</span>
-      <h2 class="section-title">Optional, checked in, and written in Python vocabulary.</h2>
-      <p class="section-sub">Without a <code>senv.toml</code>, the fail-closed defaults apply. The file first
-        appears when you widen something &#8212; <code>senv allow</code> creates it.</p>
-    </div>
-    <div class="cfg">
-<pre><code class="language-toml">[env]
-python = "3.13"
-isolation = "auto"              # auto | process | supervised | container | microvm
-allow-command-secrets = false   # permit command: secret sources on the host
-
-[install]
-extra-indexes = ["download.pytorch.org"]
-cache = "project"               # "shared" saves disk but trades away isolation
-
-[run]
-net = "deny"                    # "deny" | "host" | ["api.example.com", "*.s3.amazonaws.com"]
-
-[run.fs]
-read = ["~/datasets"]           # additional read-only paths
-write = []                      # project and scratch space are already writable
-
-[run.resources]
-mem = "4G"
-wall = "30m"                    # use "none" for a dev server
-
-[secrets.OPENAI_API_KEY]
-source = "env:OPENAI_API_KEY"   # env:… | file:… | command:…
-phases = ["run"]                # secrets are never exposed to install-time build code</code></pre>
-    </div>
-    <div class="prose">
-      <p>Unknown keys are an error, not a warning. A misspelled key in a security policy must fail loudly
-        rather than sit in the file reading as though it were enforced, and a single-label wildcard such as
-        <code>.com</code> is refused outright &#8212; it is the one typo that turns an allowlist into an open
-        door. The <a href="/manual/#configuration">manual</a> documents every field.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ── How it works ──────────────────────────────────────────── -->
-<section id="enforcement">
-  <div class="container">
-    <div class="section-head">
-      <span class="section-tag">How it works</span>
-      <h2 class="section-title">One knob, four tiers, and a refusal instead of a downgrade.</h2>
-      <p class="section-sub">senv uses <a href="https://github.com/h5i-dev/h5i">h5i-sandbox</a> as its
-        confinement engine and compiles <code>senv.toml</code> into an h5i policy. You never write h5i policy
-        by hand.</p>
-    </div>
-    <div class="tbl-wrap">
-      <table class="data">
-        <thead>
-          <tr><th scope="col">Platform / tier</th><th scope="col">Enforcement</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <th scope="row">Linux</th>
-            <td>Landlock filesystem allowlists, seccomp-bpf syscall filtering, namespaces, and
-              rlimits/cgroups. Network allowlists use a private namespace with nftables rules pinned to
-              resolved addresses.</td>
-          </tr>
-          <tr>
-            <th scope="row">macOS</th>
-            <td>Seatbelt filesystem and network confinement. Allowed egress passes through a DNS-pinned
-              loopback proxy; other name resolution is denied outright, so the allowlist holds even against a
-              client that ignores proxy settings.</td>
-          </tr>
-          <tr>
-            <th scope="row">Container</th>
-            <td>Optional rootless Podman isolation. The one tier with a direct per-request egress tally.</td>
-          </tr>
-          <tr>
-            <th scope="row">MicroVM</th>
-            <td>Optional VM-grade isolation with a separate kernel.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="prose">
-      <p><strong>senv never silently downgrades.</strong> If the host cannot enforce the requested policy, it
-        refuses to run and says what is missing. <code>senv doctor</code> reports what your machine can
-        enforce before anything fails mid-workflow, and <code>senv status</code> names the platform-specific
-        gaps &#8212; macOS has no seccomp and cannot apply cgroup memory or process limits, so senv marks
-        those numbers unenforced rather than printing them as ceilings.</p>
-      <p>There is no <code>--unsafe</code> that runs your code on the host. The weakest reachable state is
-        the <code>process</code> tier with <code>net = "host"</code>, which has to be configured explicitly
-        and is reported loudly by <code>senv status</code>.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ── Install ───────────────────────────────────────────────── -->
-<section id="install">
-  <div class="container">
-    <div class="section-head">
-      <span class="section-tag">Install</span>
-      <h2 class="section-title">One binary, then <code>senv doctor</code>.</h2>
-      <p class="section-sub">The script picks the build for your platform, checks it against the SHA-256
-        published beside it, and installs to <code>/usr/local/bin</code>.</p>
-    </div>
-    <div class="cfg">
-<pre><code class="language-bash">curl -fsSL https://senv.h5i.dev/install.sh | sh   # prebuilt binary, checksum-verified
-
-uv tool install h5i-senv                         # also: pipx install h5i-senv, pip install h5i-senv
-cargo install --git https://github.com/h5i-dev/senv
-
-senv doctor                                      # what this host can actually enforce</code></pre>
-    </div>
-    <div class="prose">
-      <p>Set <code>SENV_INSTALL_DIR</code> to install elsewhere, or <code>SENV_VERSION=vX.Y.Z</code> to pin a
-        version. senv requires <a href="https://docs.astral.sh/uv/">uv</a> on <code>PATH</code>.</p>
-      <ul>
-        <li><strong>Linux:</strong> registry allowlisting during installation also needs
-          <code>slirp4netns</code> and <code>nftables</code>
-          (<code>sudo apt install slirp4netns nftables</code> on Debian/Ubuntu).</li>
-        <li><strong>macOS:</strong> no additional sandbox runtime; senv uses the built-in Seatbelt sandbox.</li>
-        <li><strong>Windows:</strong> use WSL2.</li>
-      </ul>
-    </div>
-  </div>
-</section>
-
-<!-- ── Limits ────────────────────────────────────────────────── -->
-<section id="limits">
-  <div class="container">
-    <div class="section-head">
-      <span class="section-tag">Limits</span>
-      <h2 class="section-title">What senv does not do.</h2>
-      <p class="section-sub">A security tool that overstates its boundary teaches people to trust the wrong
-        things. These are the limits worth knowing before you rely on it.</p>
-    </div>
-    <div class="prose">
-      <ul>
-        <li><strong>The default tiers share the host kernel.</strong> Landlock, seccomp, and Seatbelt are
-          OS-level isolation, not a hypervisor boundary. Use <code>isolation = "microvm"</code> when a
-          separate kernel is required.</li>
-        <li><strong>senv does not identify malicious packages.</strong> It contains what a package can do.
-          Lockfile hashes and dependency review stay as important as they were.</li>
-        <li><strong>Run the environment through senv.</strong> <code>source .venv/bin/activate</code>, an
-          editor invoking <code>.venv/bin/python</code>, or any other host-side execution bypasses the run
-          boundary. Use <code>senv run</code> or <code>senv shell</code>.</li>
-        <li><strong>Install-time code can modify the environment.</strong> Installation must write packages
-          and scripts. The install sandbox protects your source, your credentials, and non-registry network,
-          but it cannot make the environment itself read-only while writing to it.</li>
-        <li><strong>Denial suggestions are hints, not proof.</strong> Kernel-tier reports infer some denials
-          from program output, which untrusted code can influence. Review every suggested grant before
-          accepting it. Container-tier network requests have a direct per-request tally.</li>
-        <li><strong>State must stay outside the project.</strong> senv refuses <code>SENV_STATE_DIR</code> or
-          <code>SENV_CACHE_DIR</code> locations inside the project, because runtime code could then alter
-          environments, receipts, or trusted baselines.</li>
-        <li><strong>Runtime wall-clock limits are not currently enforced.</strong> CPU and file-size rlimits
-          apply everywhere; memory and process limits use Linux cgroups and do not apply on macOS.</li>
-        <li><strong>macOS Python startup varies by interpreter.</strong> Apple's system Python may recompile
-          imports on each run, because its bytecode cache lives outside the managed environment.
-          <code>senv init --python 3.13</code> selects a managed interpreter without that behavior.</li>
-        <li><strong>Policy tampering is detected, not prevented.</strong> A dependency can edit files in the
-          writable project; senv refuses a widened policy until you trust it.</li>
-      </ul>
-      <p>The full threat model and design rationale live in
-        <a href="https://github.com/h5i-dev/senv/blob/main/DESIGN.md">DESIGN.md</a>.</p>
-    </div>
-  </div>
-</section>
-
 <!-- ── FAQ ───────────────────────────────────────────────────── -->
 <section id="faq">
   <div class="container">
@@ -838,7 +566,8 @@ senv doctor                                      # what this host can actually e
           read-only during an install. Kernel-tier denial reports infer some denials from program output,
           which untrusted code can influence, so review every suggested grant. And running
           <code>.venv/bin/python</code> directly from an editor bypasses the run boundary entirely; use
-          <code>senv run</code> or <code>senv shell</code>. The <a href="#limits">full list</a> is above.</div>
+          <code>senv run</code> or <code>senv shell</code>. The
+          <a href="/manual/#limits">manual</a> keeps the full list.</div>
       </details>
       <details class="faq-item">
         <summary>What does senv put in my repository?</summary>
@@ -905,8 +634,8 @@ senv doctor                                      # what this host can actually e
     <nav class="footer-links">
       <a href="/">Home</a>
       <a href="/manual/">Manual</a>
-      <a href="#install">Install</a>
-      <a href="#limits">Limits</a>
+      <a href="/manual/#install">Install</a>
+      <a href="/manual/#limits">Limits</a>
       <a href="https://h5i.dev/">h5i.dev</a>
       <a href="https://github.com/h5i-dev/senv">GitHub</a>
       <a href="https://github.com/h5i-dev/senv/blob/main/DESIGN.md">Design</a>

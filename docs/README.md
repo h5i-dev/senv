@@ -37,7 +37,8 @@ one of those changes, check:
 - the two-phase table on `index.html` and its twin in `manual/`;
 - the command and flag tables in `manual/` against `src/cli.rs`;
 - the `senv.toml` schema in `manual/` against `src/config.rs`;
-- the limits list, which appears on both pages and in `llms.txt`;
+- the limits list, which lives in `manual/` and in `llms.txt` (the product page
+  keeps only the FAQ's short version, and links out for the rest);
 - `dateModified` in the manual's JSON-LD and `lastmod` in `sitemap.xml`.
 
 Every claim on these pages should name the mechanism that backs it. If a
