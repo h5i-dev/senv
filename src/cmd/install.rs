@@ -449,7 +449,12 @@ fn lock_is_stale(output: &str) -> bool {
 /// is the one predictable false refusal in the install boundary, so it gets a
 /// named fix instead of a raw traceback.
 fn read_only_project_hint(output: &str) -> Option<String> {
+    // Seatbelt refuses with EPERM where Landlock gives EACCES, so matching only
+    // "Permission denied" meant the retry never fired on macOS and every
+    // setuptools project failed to install there. CI caught it; a
+    // Linux-only reading of "denied" is a portability bug, not a wording nit.
     let denied = output.contains("Read-only file system")
+        || output.contains("Operation not permitted")
         || (output.contains("Permission denied") && output.contains("egg-info"))
         || output.contains("Permission denied: '");
     if !denied {

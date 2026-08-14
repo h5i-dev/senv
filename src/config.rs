@@ -305,7 +305,7 @@ impl Config {
             }
         }
 
-        for (name, _) in self.secrets.iter() {
+        for name in self.secrets.keys() {
             if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
                 return Err(SenvError::config(
                     path,

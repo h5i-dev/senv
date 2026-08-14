@@ -189,7 +189,23 @@ fn describe_net(p: &h5i_sandbox::sandbox_policy::Profile) -> String {
     } else if p.net_egress.is_empty() {
         "UNRESTRICTED".to_string()
     } else {
-        p.net_egress.join(", ")
+        format!("{}{}", p.net_egress.join(", "), egress_caveat())
+    }
+}
+
+/// How an allowlist is enforced, when that is not obvious.
+///
+/// On Linux it is nftables rules pinned to resolved addresses, so a program
+/// that ignores proxy variables still cannot get out. macOS has no equivalent:
+/// h5i enforces it with a host allowlist proxy, and a raw socket goes straight
+/// past. Printing the same "allowlist: pypi.org" on both would claim a
+/// containment macOS does not provide — CI caught exactly that, with a raw
+/// socket reaching a host the allowlist excluded.
+fn egress_caveat() -> &'static str {
+    if cfg!(target_os = "macos") {
+        " (enforced by a proxy — a program using a raw socket can bypass it)"
+    } else {
+        ""
     }
 }
 

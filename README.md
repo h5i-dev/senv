@@ -225,7 +225,10 @@ supplies the Python-shaped policy on top of it.
   namespace with nftables rules pinned to resolved addresses — enforced by
   address, so a program that ignores `HTTPS_PROXY` still cannot get out.
 - **macOS**: Seatbelt, with the differences reported honestly by `senv doctor`
-  (no syscall filter; memory caps are not enforceable).
+  and `senv status`: no syscall filter, no enforceable memory cap, and an
+  egress allowlist enforced by a proxy rather than by address — so a program
+  using a raw socket can reach a host the allowlist excludes. `net = "deny"` is
+  a real deny on both platforms; an *allowlist* is weaker on macOS.
 - Stronger tiers (rootless Podman containers, microVMs with their own kernel)
   are available by setting `[env] isolation`.
 

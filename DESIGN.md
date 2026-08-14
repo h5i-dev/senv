@@ -553,8 +553,16 @@ tier cannot enforce a domain allowlist** — its network modes are all-or-nothin
 - `senv run` with the default `net = "deny"` works everywhere, at the lightest
   tier. This is the common case and it is cheap.
 - `senv sync` needs `supervised` (requires `slirp4netns`, `nft`, cgroup-v2
-  delegation) or `container` (Podman). On macOS, Seatbelt enforces host
-  allowlists at the base tier, so installs work out of the box.
+  delegation) or `container` (Podman). On macOS, Seatbelt covers it at the base
+  tier, so installs work out of the box.
+- **An allowlist means something weaker on macOS.** Linux pins nftables rules
+  to resolved addresses, so a program that ignores proxy variables still cannot
+  get out. macOS has no equivalent — h5i enforces an allowlist with a host
+  proxy, which constrains clients that honour it and nothing else. CI caught
+  senv claiming otherwise: a raw socket reached a host the allowlist excluded.
+  `senv status` now says so wherever it prints an allowlist, and the
+  integration test asserts what each platform actually delivers rather than the
+  stronger guarantee. `net = "deny"` is a real deny on both.
 - On hosts with neither (bare CI runners, some WSL2 setups), `senv sync` is
   **refused** with the `senv doctor` explanation. The user may explicitly
   configure `install.net = "host"` — accepted with a prominent warning in

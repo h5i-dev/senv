@@ -274,16 +274,32 @@ fn the_network_is_denied_by_default_and_openable_on_purpose() {
         "the allowed host was still blocked: {text}"
     );
 
-    // And nothing else came with it.
+    // And nothing else came with it — on a platform that can enforce that.
+    //
+    // Linux pins nftables rules to resolved addresses, so a raw socket to an
+    // off-list host fails. macOS has no equivalent: h5i enforces the allowlist
+    // with a host proxy, which constrains clients that honour proxy variables
+    // and nothing else. Asserting Linux's guarantee everywhere would make this
+    // test claim a containment macOS does not provide, so it asserts what each
+    // platform actually delivers and `senv status` says which one you have.
     let (_, text) = fixture.run_python(
         "import socket\n\
          try:\n    socket.create_connection(('pypi.org', 443), 8); print('CONNECTED')\n\
          except OSError as e: print('blocked')",
     );
-    assert!(
-        text.contains("blocked"),
-        "the allowlist leaked to other hosts: {text}"
-    );
+    if cfg!(target_os = "macos") {
+        let out = fixture.senv(&["status"]);
+        assert!(
+            combined(&out).contains("raw socket"),
+            "macOS cannot contain a raw socket, so status must say so: {}",
+            combined(&out)
+        );
+    } else {
+        assert!(
+            text.contains("blocked"),
+            "the allowlist leaked to other hosts: {text}"
+        );
+    }
 }
 
 #[test]
