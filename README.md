@@ -73,15 +73,6 @@ uv tool install h5i-senv     # also: pipx install h5i-senv, pip install h5i-senv
 cargo install --git https://github.com/h5i-dev/senv
 ```
 
-Every one of these gives you the same Rust binary. There is no Python in senv;
-the PyPI package is a delivery mechanism, and it is worth installing as a
-*tool* rather than into a project's environment — an environment that can
-rewrite the binary confining it is not confined by it.
-
-Building from source needs a C toolchain and OpenSSL headers (`libssl-dev` on
-Debian/Ubuntu). Add `--features vendored-openssl` to build OpenSSL from source
-instead, which is what the published binaries do.
-
 senv requires [`uv`](https://docs.astral.sh/uv/) on `PATH`.
 
 - **Linux:** registry allowlisting during installation also requires
