@@ -62,8 +62,6 @@ two moments that carry different risks:
 cargo install --git https://github.com/h5i-dev/senv
 ```
 
-Or download a binary from [Releases](https://github.com/h5i-dev/senv/releases).
-
 senv requires [`uv`](https://docs.astral.sh/uv/) on `PATH`.
 
 - **Linux:** registry allowlisting during installation also requires
