@@ -33,8 +33,6 @@ senv status               # see exactly what is enforced on this machine
 A senv project is still a uv project. It uses the same `pyproject.toml` and
 `uv.lock`, and teammates without senv can continue using `uv` directly.
 
-**Local-first. No hosted environment. No account required.**
-
 ---
 
 ## Why senv?
