@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://senv.h5i.dev/sitemap.xml

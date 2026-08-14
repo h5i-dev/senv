@@ -1,0 +1,62 @@
+name: Pages
+
+# Publishes `docs/` to senv.h5i.dev with Actions rather than the legacy
+# branch build, for the reason h5i moved: a build GitHub runs on its side is
+# one this repository can neither see nor time-bound, so a failure there looks
+# like a green tree with a stale site. Building the artifact here makes the
+# upload a step with logs, and a red run means the deploy actually failed.
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      # `docs/` is the entire published site. `install.sh` is copied into it
+      # below, so a change to the installer must redeploy too.
+      - "docs/**"
+      - "install.sh"
+      - ".github/workflows/pages.yaml"
+  # So a deploy can be re-run without an empty commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Queue deployments, never cancel one: a cancelled deploy is a site in an
+# unknown state, a queued one is just late.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: build · deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # The site's headline install command is
+      # `curl -fsSL https://senv.h5i.dev/install.sh | sh`, and the script it
+      # serves is the repository's own. Copying it at publish time rather than
+      # keeping a second copy under `docs/` means the served installer cannot
+      # drift from the one in the tree — there is only ever one file.
+      - name: Serve the repository's installer at /install.sh
+        run: cp install.sh docs/install.sh
+
+      # `docs/` is otherwise served verbatim: no Jekyll, no generator.
+      # `include-hidden-files` keeps `.nojekyll` in the artifact, which matters
+      # only on the day someone repoints the Pages source at a branch — the
+      # exact day that file exists for, and the day `_static/` would 404
+      # without it.
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs
+          include-hidden-files: true
+
+      - id: deployment
+        uses: actions/deploy-pages@v5

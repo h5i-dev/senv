@@ -1,0 +1,53 @@
+# senv
+
+> senv is an open-source security boundary for Python environments. It keeps the uv workflow and runs uv and your code inside an OS-level sandbox: dependency installation reaches package registries and nothing else and cannot write to your source tree, and your code runs with no network by default, an environment it cannot modify, and no access to your credentials. A senv project stays a valid uv project.
+
+## Start here
+
+- [Overview](https://senv.h5i.dev/): What the boundary is, why install and run need different policies, and the honest limits.
+- [Manual](https://senv.h5i.dev/manual/): Authoritative command, senv.toml, policy, receipt, and limitation reference.
+- [Install](https://senv.h5i.dev/#install): One binary, then `senv doctor` to see what the host can enforce.
+- [DESIGN.md](https://github.com/h5i-dev/senv/blob/main/DESIGN.md): Full threat model and design rationale.
+
+## Core model
+
+- Three phases: provisioning (no third-party code), install (`sync`/`add`/`remove`/`lock`/`uv`), run (`run`/`shell`).
+- Install phase: egress limited to package registries, project source read-only via a staging copy, no credentials at all.
+- Run phase: network denied by default, project read-write, Python environment read-only, only declared secrets present.
+- The environment lives outside the project tree; `.venv` is a symlink to it, so no writable grant contains it.
+- Bytecode is compiled at install time and writable bytecode caches are denied at run time, closing the `.pyc` persistence path.
+- Isolation tiers: process, supervised, container, microvm. `workspace` is rejected — senv has no unconfined execution path.
+- An explicitly requested policy the host cannot enforce fails closed; senv never silently downgrades.
+- An allowlist is expressed as `deny` plus a host list, which means the same thing on every backend.
+- `senv.toml` is optional, checked in, and rejects unknown keys. Defaults are fail-closed.
+- Widening `senv.toml` beyond the last accepted snapshot refuses the command until `senv trust` accepts it. The same check covers `[build-system]` and `[tool.uv]` in pyproject.toml.
+- Receipts are append-only JSONL outside every sandbox grant, with declared secrets stripped and a sha256 digest of the enforced policy.
+- senv links h5i-sandbox (the engine behind https://h5i.dev/) as a Rust crate and compiles senv.toml into an h5i policy.
+
+## Command mapping
+
+- `uv sync` → `senv sync`; `uv lock` → `senv lock`; `uv add X` → `senv add X`
+- `uv run pytest` → `senv run pytest`; `source .venv/bin/activate` → `senv shell`
+- any other uv command → `senv uv -- <args>`
+- Inspection: `senv status`, `senv report [--suggest]`, `senv doctor`, `senv gc`, `senv trust`, `senv allow <host>`
+- `--json` and `--project DIR` are global. Confined exit codes pass through; senv's own failures use exit code 2.
+
+## Honest limits
+
+- senv does not identify malicious packages; it bounds what a package can do.
+- Every tier below microvm shares the host kernel — OS-level isolation, not a hypervisor boundary.
+- Installation must write the environment, so the install phase cannot keep the environment read-only.
+- Kernel-tier denial reports infer some denials from program output, which untrusted code can influence; only the container tier has a direct per-request egress tally.
+- Host-side execution (`.venv/bin/python` from an editor, `source .venv/bin/activate`) bypasses the run boundary.
+- Runtime wall-clock limits are not currently enforced; memory and process limits need Linux cgroups and do not apply on macOS.
+- Policy tampering is detected, not prevented.
+
+## Platforms
+
+- Linux: Landlock, seccomp-bpf, namespaces, rlimits/cgroups; registry allowlisting also needs slirp4netns and nftables.
+- macOS: Seatbelt, with a DNS-pinned loopback proxy for allowed egress and name resolution denied otherwise. No seccomp, no cgroups.
+- Windows: WSL2.
+
+## License
+
+Apache-2.0. Source: https://github.com/h5i-dev/senv

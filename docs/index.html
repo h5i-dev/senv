@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>senv: Sandboxed Python Environments with the uv Workflow</title>
+  <meta name="description" content="senv puts an OS-level security boundary under Python environments. Dependencies install with registry-only network access and no reach into your source or credentials; your code runs with no network by default and an environment it cannot modify. Same pyproject.toml, same uv.lock, same commands.">
+  <meta name="keywords" content="python sandbox, sandboxed pip install, uv sandbox, supply chain attack python, malicious package protection, setup.py sandbox, read-only virtualenv, landlock seccomp python, seatbelt sandbox, python environment security, senv, h5i">
+  <meta name="author" content="h5i-dev">
+  <meta name="theme-color" content="#D21C1C">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+  <meta name="application-name" content="senv">
+  <link rel="canonical" href="https://senv.h5i.dev/">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml">
+  <link rel="icon" type="image/png" href="/_static/logo.png">
+  <link rel="apple-touch-icon" href="/_static/logo.png">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="senv">
+  <meta property="og:title" content="senv: Sandboxed Python Environments with the uv Workflow">
+  <meta property="og:description" content="A virtual environment is a PATH convention, not a security boundary. senv puts a real one underneath: installs reach package registries and nothing else, and your code runs with no network and an environment it cannot rewrite.">
+  <meta property="og:url" content="https://senv.h5i.dev/">
+  <meta property="og:image" content="https://senv.h5i.dev/_static/logo.png">
+  <meta property="og:image:alt" content="senv — a security boundary for Python environments">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="senv: Sandboxed Python Environments with the uv Workflow">
+  <meta name="twitter:description" content="Install dependencies with registry-only network access. Run your code with no network and a read-only environment. Same pyproject.toml, same uv.lock, same commands.">
+  <meta name="twitter:image" content="https://senv.h5i.dev/_static/logo.png">
+
+  <!-- Structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://h5i.dev/#org",
+        "name": "h5i",
+        "url": "https://h5i.dev/",
+        "logo": {"@type": "ImageObject", "url": "https://h5i.dev/_static/logo.png"},
+        "sameAs": ["https://github.com/h5i-dev/h5i", "https://github.com/h5i-dev/senv"]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://senv.h5i.dev/#website",
+        "name": "senv",
+        "url": "https://senv.h5i.dev/",
+        "description": "senv adds an OS-level security boundary to Python environments, keeping the uv workflow while isolating dependency installation and application execution from your credentials, network, and the rest of your machine.",
+        "publisher": {"@id": "https://h5i.dev/#org"},
+        "inLanguage": "en"
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://senv.h5i.dev/#app",
+        "name": "senv",
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "Python environment sandbox",
+        "operatingSystem": "Linux, macOS, Windows (WSL2)",
+        "description": "senv runs uv and your Python code inside an OS-level sandbox. Installs reach package registries and nothing else and cannot write to your source tree; your code runs with no network by default, an environment it cannot modify, and no access to your credentials. A senv project stays a valid uv project.",
+        "featureList": [
+          "Sandboxed dependency installation with a registry-only network allowlist",
+          "A read-only Python environment while your code runs",
+          "Network denied by default at run time, widened one host at a time",
+          "Credentials withheld from install-time build code entirely",
+          "Tamper-evident policy: a widened senv.toml is refused until you accept it",
+          "Append-only receipts stored outside the sandbox, with a digest of the enforced policy",
+          "Isolation tiers (process, supervised, container, microvm) that fail closed",
+          "Drop-in uv workflow: same pyproject.toml, same uv.lock, same commands"
+        ],
+        "url": "https://senv.h5i.dev/",
+        "downloadUrl": "https://github.com/h5i-dev/senv",
+        "installUrl": "https://senv.h5i.dev/manual/#install",
+        "softwareHelp": "https://senv.h5i.dev/manual/",
+        "softwareRequirements": "uv on PATH; slirp4netns and nftables on Linux for registry allowlisting during installs",
+        "programmingLanguage": "Rust",
+        "isAccessibleForFree": true,
+        "sameAs": ["https://github.com/h5i-dev/senv"],
+        "license": "https://www.apache.org/licenses/LICENSE-2.0",
+        "author": {"@type": "Person", "name": "h5i-dev"},
+        "publisher": {"@id": "https://h5i.dev/#org"},
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}
+      },
+      {
+        "@type": "BreadcrumbList",
+        "@id": "https://senv.h5i.dev/#breadcrumb",
+        "itemListElement": [
+          {"@type": "ListItem", "position": 1, "name": "h5i", "item": "https://h5i.dev/"},
+          {"@type": "ListItem", "position": 2, "name": "senv", "item": "https://senv.h5i.dev/"},
+          {"@type": "ListItem", "position": 3, "name": "Manual", "item": "https://senv.h5i.dev/manual/"}
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://senv.h5i.dev/#faq",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is senv?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "senv is a security boundary for Python environments. It runs uv and your code inside an OS-level sandbox with a different policy for each moment that carries risk: installs reach package registries and nothing else and cannot write to your source tree, and your code runs with no network by default, an environment it cannot modify, and no access to your credentials. It is one Rust binary, Apache 2.0, and it adds no files to your project beyond an optional senv.toml."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How is this different from venv or uv?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "venv and uv isolate dependencies, not code. A virtual environment is a PATH convention: a package inside one can still read ~/.ssh, take your environment variables, open a socket to any destination, and execute build code during installation with your full user permissions. senv keeps the uv workflow and puts an OS-level sandbox underneath it. A senv project is still a uv project, so teammates without senv keep running plain uv against the same repository."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does senv detect malicious packages?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No, and it does not try. senv contains what a package can do rather than deciding what a package is. Lockfile hashes, pinned versions, and dependency review remain exactly as important as before. What changes is the blast radius: a malicious sdist build backend runs with no reach into your source tree, your credentials, or any network destination that is not a package registry."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What does senv block at run time?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Network access is denied by default, the installed environment is read-only, credentials are unavailable unless declared as secrets in senv.toml, and CPU and file-size limits apply everywhere with memory and process limits on Linux. Your project directory stays read-write, because that is the point of running the code. When something is blocked, senv prints what was blocked and the narrowest command that would permit it."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "My program needs to call an API. Do I have to give up the boundary?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. You widen one host at a time. senv allow api.stripe.com records the grant in senv.toml, and senv run --allow-net api.stripe.com applies it to a single command. senv report --suggest aggregates the denials recorded across runs and prints a policy stanza to review; it never writes the policy for you. Some denials are guarantees rather than defaults, and senv does not offer to bypass those: runtime code cannot make the environment writable or read ~/.ssh."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can a compromised dependency widen the policy?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "It can edit senv.toml, because senv.toml lives in your project and your project is writable while your code runs. It cannot make that edit take effect. senv keeps the last accepted policy snapshot outside the sandbox: an unchanged or narrower policy runs normally, and a wider one is refused with a diff until you inspect it and run senv trust. The same check covers the pyproject.toml sections that control install behavior, [build-system] and [tool.uv]. This is tamper-evidence, not tamper-prevention, and we do not claim more."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What are the limits?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "The default tiers share the host kernel: Landlock, seccomp, and Seatbelt are OS-level isolation, not a hypervisor boundary, so isolation = microvm is the rung for when a separate kernel is required. Installation must write packages, so the install sandbox protects your source, credentials, and non-registry network but cannot make the environment read-only during an install. Kernel-tier denial reports infer some denials from program output, which untrusted code can influence, so review every suggested grant. And running .venv/bin/python directly from an editor bypasses the run boundary entirely; use senv run or senv shell."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What does senv put in my repository?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "An optional senv.toml, and nothing else. The environment, the wheel cache, the receipts, and the trusted policy baseline all live outside the project tree, because the run phase grants the project read-write and receipts a compromised package can rewrite are not evidence. .venv stays as a symlink so editors and language servers still resolve. senv refuses to run if SENV_STATE_DIR or SENV_CACHE_DIR points inside the project."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Which platforms does senv support?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Linux and macOS. On Linux, senv uses Landlock, seccomp-bpf, namespaces, and rlimits or cgroups, and registry allowlisting during installs additionally needs slirp4netns and nftables. On macOS it uses the built-in Seatbelt sandbox with a DNS-pinned loopback proxy for allowed egress, and no extra runtime is required; macOS has no seccomp and cannot enforce cgroup memory or process limits, which senv reports rather than silently ignoring. On Windows, use WSL2. Run senv doctor to see what your host can actually enforce."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What happens if my host cannot enforce the policy?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "senv refuses to run and explains what is missing. It never silently downgrades to a weaker boundary, and there is no flag that runs your code on the host unconfined. An explicit downgrade such as install.net = \"host\" is available for hosts that cannot allowlist registries, but it is written in the config, warned about in senv status, and stamped into every receipt."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How does senv relate to h5i?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "senv uses h5i-sandbox, the confinement engine behind h5i, as a linked Rust crate, and compiles the Python-shaped senv.toml into an h5i policy. h5i gives a coding agent a whole disposable development environment; senv confines one Python project's installs and runs. They share the enforcement layer, the receipt model, and the rule that a boundary fails closed."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800;900&family=Space+Grotesk:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800;900&family=Space+Grotesk:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800;900&family=Space+Grotesk:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="/_static/blog.css">
+  <link rel="stylesheet" href="/_static/highlight.css">
+  <style>
+    @media (min-width: 900px) {
+      .feat-grid.feat-grid-four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    /* The phase table is the page's central figure, so it gets the plate
+       treatment rather than sitting loose in the prose column. */
+    .phase-plate { border: 1px solid var(--line2); background: var(--panel); }
+    .phase-plate table.data { background: var(--bg); }
+    .phase-plate table.data thead th:first-child { width: 22%; }
+    .phase-plate table.data tbody th { white-space: nowrap; }
+    .phase-plate .deny { color: var(--danger); }
+    .phase-plate .ok { color: var(--green); }
+  </style>
+</head>
+<body>
+
+<a class="skip-link" href="#hero">Skip to content</a>
+<div class="scroll-progress" id="scroll-progress"></div>
+
+<!-- ── Nav ──────────────────────────────────────────────────── -->
+<nav>
+  <a class="nav-logo" href="/">
+    <img src="/_static/logo.png" alt="h5i">
+    <span>senv</span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="#what-you-get">Features</a></li>
+    <li><a href="/manual/#install">Install</a></li>
+    <li><a href="/manual/">Manual</a></li>
+    <li><a href="https://h5i.dev/">h5i</a></li>
+    <li><a href="https://github.com/h5i-dev/senv" class="nav-cta">GitHub &rarr;</a></li>
+  </ul>
+</nav>
+
+<!-- ── Hero ─────────────────────────────────────────────────── -->
+<section id="hero" tabindex="-1">
+  <div class="hero-inner">
+    <div class="hero-badge">Sandboxed installs · No network at run time · Read-only environment · Receipts</div>
+    <h1 class="hero-title"><em>Sandboxed</em> Python Environments</h1>
+    <p class="hero-sub">
+      senv keeps the <strong>uv workflow</strong> and puts an OS-level security boundary underneath it.
+      Dependencies install without reaching your source tree or your credentials. Your code runs with
+      <strong>no network by default</strong> and an environment it cannot rewrite.
+    </p>
+    <div class="hero-install" id="quickstart">
+      <code id="install-cmd">curl -fsSL https://senv.h5i.dev/install.sh | sh</code>
+      <button class="copy-btn" type="button">copy</button>
+    </div>
+    <div class="hero-meta">
+      Apache 2.0 · one Rust binary · same <code>pyproject.toml</code>, same <code>uv.lock</code> ·
+      <a href="/manual/">read the manual</a> · <a href="https://github.com/h5i-dev/senv">source</a>
+    </div>
+  </div>
+</section>
+
+<!-- ── The four facts ───────────────────────────────────────── -->
+<div class="strip">
+  <a class="stat" href="#everyday">
+    <b>uv</b><span>the workflow you already use</span>
+  </a>
+  <a class="stat" href="#how">
+    <b>2</b><span>policies: install and run</span>
+  </a>
+  <a class="stat" href="#how">
+    <b>0</b><span>files added to your repo</span>
+  </a>
+  <a class="stat" href="https://github.com/h5i-dev/senv/blob/main/LICENSE">
+    <b>Apache 2.0</b><span>open source, no lock-in</span>
+  </a>
+</div>
+
+<!-- ── What you get ─────────────────────────────────────────── -->
+<section id="what-you-get">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-tag">What senv gives you</span>
+      <h2 class="section-title">A boundary at both moments that carry risk.</h2>
+      <p class="section-sub">Installing a dependency and running your code are different threats, so senv
+        enforces different policies for each. Neither one is a mode you have to remember to turn on.</p>
+    </div>
+    <div class="feat-grid feat-grid-four">
+      <div class="feat-card">
+        <div class="feat-name">Install with registry-only network</div>
+        <div class="feat-desc">Resolution and installation happen in a staging area holding your manifests
+          and <strong>none of your source</strong>. Egress is pinned to package registries at the network
+          layer, so a build backend that runs during <code>pip install</code> has nowhere to send anything.</div>
+        <div class="feat-proves">senv sync &#183; senv add &#183; senv lock</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-name">Run with no network and no credentials</div>
+        <div class="feat-desc">Your code gets its project read-write and almost nothing else. Network access
+          is <strong>denied by default</strong>, and environment variables carrying credentials are absent
+          unless you declare them as secrets.</div>
+        <div class="feat-proves">senv run &#183; senv shell</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-name">Keep the environment read-only</div>
+        <div class="feat-desc">While your code runs, installed packages cannot rewrite the environment to
+          persist into the next run. senv compiles bytecode at install time and denies writable bytecode
+          caches at run time, so no package can leave a <code>.pyc</code> Python would prefer over the
+          protected source.</div>
+        <div class="feat-proves">venv outside the project &#183; no writable parent</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-name">Review what was actually enforced</div>
+        <div class="feat-desc">Every command appends a receipt outside the sandbox, with declared secrets
+          redacted and a <strong>digest of the policy that ran</strong>. What was blocked is a question with
+          an answer, not something you infer from a stack trace.</div>
+        <div class="feat-proves">senv status &#183; senv report &#183; senv doctor</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── The phase table ──────────────────────────────────────────
+     The central figure of the page. It is a table because the thing worth
+     showing is a comparison across one axis: the same four resources, two
+     different policies. Drawn in HTML off the site's own tokens so it stays
+     selectable, translatable, and impossible to leave stale as a PNG. -->
+<section class="fig" id="how">
+  <div class="phase-plate">
+    <div class="tbl-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th scope="col">Resource</th>
+            <th scope="col">Install &#183; <code>sync</code> / <code>add</code> / <code>lock</code></th>
+            <th scope="col">Run &#183; <code>run</code> / <code>shell</code></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Network</th>
+            <td>PyPI and configured indexes only</td>
+            <td><span class="deny">denied by default</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Project source</th>
+            <td>read-only &#8212; a staging copy, not your tree</td>
+            <td><span class="ok">read-write</span> &#8212; your code edits your files</td>
+          </tr>
+          <tr>
+            <th scope="row">Python environment</th>
+            <td>writable, because installing means writing</td>
+            <td><span class="deny">read-only</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Credentials</th>
+            <td><span class="deny">unavailable</span> &#8212; never exposed to build code</td>
+            <td>only the secrets you declared in <code>senv.toml</code></td>
+          </tr>
+          <tr>
+            <th scope="row">Resource limits</th>
+            <td>CPU, file size, wall clock; memory and processes on Linux</td>
+            <td>CPU and file size; memory and processes on Linux</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <p class="figcap">
+    Two policies, compiled from one optional <code>senv.toml</code> and applied without a flag to remember.
+    The asymmetry is the design: <b>installation writes the environment and must not touch your source</b>;
+    <b>execution writes your source and must not touch the environment</b>.
+    <a href="/manual/#policy">How each row is enforced</a>.
+  </p>
+</section>
+
+<!-- ── The problem ───────────────────────────────────────────── -->
+<section id="problem">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-tag">The problem</span>
+      <h2 class="section-title">A virtual environment is a <code>PATH</code> convention, not a boundary.</h2>
+      <p class="section-sub">venv and uv isolate dependencies from each other. They do not isolate code from
+        you. Everything a package can do, it can still do &#8212; with your user's full permissions.</p>
+    </div>
+    <div class="feat-grid feat-grid-four">
+      <div class="feat-card">
+        <div class="feat-name">Installation is code execution</div>
+        <div class="feat-desc">An sdist build backend runs during <code>install</code>, before anything is
+          ever imported and before any review of what you added. It runs as you, with your files and your
+          network.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-name">Your credentials are ambient</div>
+        <div class="feat-desc">A package inside a virtual environment can read <code>~/.ssh</code>, your
+          cloud config, and every environment variable in the process it was imported into. Nothing in the
+          venv model says otherwise.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-name">Any destination is reachable</div>
+        <div class="feat-desc">Exfiltration needs one socket. The dependency that opens it does not have to
+          be the one you installed &#8212; a transitive update days later is enough, and the lockfile hash
+          only tells you the bytes did not change.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-name">Persistence is free</div>
+        <div class="feat-desc">The environment is writable while the code runs, so a package can patch an
+          installed module or leave a bytecode cache behind and be back on the next run, whatever the
+          lockfile says.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Everyday commands ──────────────────────────────────────── -->
+<section id="everyday">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-tag">Adoption</span>
+      <h2 class="section-title">Four different letters, not a different tool.</h2>
+      <p class="section-sub">Flags pass through to uv and exit codes pass back to the caller, so
+        <code>senv run pytest</code> is as usable in CI as it is on your laptop.</p>
+    </div>
+    <div class="tbl-wrap">
+      <table class="data">
+        <thead>
+          <tr><th scope="col">What you do today</th><th scope="col">With senv</th><th scope="col">What changes</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">uv sync</th><td>senv sync</td><td>installs inside the install sandbox</td></tr>
+          <tr><th scope="row">uv lock</th><td>senv lock</td><td>resolves in a staging copy of your manifests</td></tr>
+          <tr><th scope="row">uv add requests</th><td>senv add requests</td><td>resolve, write back, sync &#8212; all confined</td></tr>
+          <tr><th scope="row">uv run pytest</th><td>senv run pytest</td><td>no network, read-only environment</td></tr>
+          <tr><th scope="row">source .venv/bin/activate</th><td>senv shell</td><td>the same boundary, interactively</td></tr>
+          <tr><th scope="row">any other uv command</th><td>senv uv -- &lt;args&gt;</td><td>runs inside the install boundary</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="figcap">
+      A senv project <b>is</b> a uv project. Same <code>pyproject.toml</code>, same <code>uv.lock</code>,
+      and the only new file is an optional <code>senv.toml</code>. Teammates without senv keep running plain
+      uv against the same repository, so one person can adopt it without a team-wide decision &#8212; and
+      opting out is deleting nothing.
+    </p>
+  </div>
+</section>
+
+<!-- ── The loop ─────────────────────────────────────────────── -->
+<div class="caps">
+
+  <a class="cap" href="/manual/#senv-init">
+    <div class="n">01</div>
+    <div>
+      <h3>Adopt the project<span class="arw">&nbsp;&rarr;</span></h3>
+      <p>In an existing project, <code>init</code> takes <code>pyproject.toml</code>, <code>uv.lock</code>,
+        and <code>.python-version</code> as they are. An existing <code>.venv</code> is left alone, because
+        those packages never passed through the boundary.</p>
+    </div>
+    <div class="ev">
+      <div class="tape"><b>$</b> <span>senv init --python 3.13</span></div>
+      <div class="ev-note">adopts, does not scaffold &#183; <code>--replace-venv</code> when you are ready</div>
+    </div>
+  </a>
+
+  <a class="cap" href="/manual/#the-install-boundary">
+    <div class="n">02</div>
+    <div>
+      <h3>Install behind the registry allowlist<span class="arw">&nbsp;&rarr;</span></h3>
+      <p>uv resolves and installs in a staging area containing your manifests and none of your source, with
+        egress pinned to package registries at the network layer.</p>
+    </div>
+    <div class="ev">
+      <div class="tape"><b>$</b> <span>senv add requests</span></div>
+      <div class="ev-note">no source &#183; no credentials &#183; registries only</div>
+    </div>
+  </a>
+
+  <a class="cap" href="/manual/#the-run-boundary">
+    <div class="n">03</div>
+    <div>
+      <h3>Run with the network closed<span class="arw">&nbsp;&rarr;</span></h3>
+      <p>Your project is writable and the environment is not. Network access is denied until you name a host,
+        and the grant is a line in a file you check in.</p>
+    </div>
+    <div class="ev">
+      <div class="tape"><b>$</b> <span>senv run pytest</span></div>
+      <div class="ev-note">read-only venv &#183; net deny &#183; exit code passes through</div>
+    </div>
+  </a>
+
+  <a class="cap" href="/manual/#senv-status">
+    <div class="n">04</div>
+    <div>
+      <h3>Read the boundary, not the docs<span class="arw">&nbsp;&rarr;</span></h3>
+      <p>See the policy that is actually enforced on this host, what was denied across recent runs, and which
+        limits your platform cannot apply. senv marks those rather than printing them as ceilings.</p>
+    </div>
+    <div class="ev">
+      <div class="tape"><b>$</b> <span>senv status</span></div>
+      <div class="ev-note">resolved policy &#183; isolation tier &#183; grants &#183; digest</div>
+    </div>
+  </a>
+
+</div>
+
+<!-- ── FAQ ───────────────────────────────────────────────────── -->
+<section id="faq">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-tag">FAQ</span>
+      <h2 class="section-title">Frequently asked questions</h2>
+      <p class="section-sub">The short answers. The <a href="/manual/">manual</a> has the long ones.</p>
+    </div>
+    <div class="faq-list">
+      <details class="faq-item" open>
+        <summary>What is senv?</summary>
+        <div class="faq-answer">senv is a <strong>security boundary for Python environments</strong>. It runs
+          uv and your code inside an OS-level sandbox with a different policy for each moment that carries
+          risk: installs reach package registries and nothing else and cannot write to your source tree, and
+          your code runs with no network by default, an environment it cannot modify, and no access to your
+          credentials. One Rust binary, Apache 2.0, and it adds no files to your project beyond an optional
+          <code>senv.toml</code>.</div>
+      </details>
+      <details class="faq-item">
+        <summary>How is this different from venv or uv?</summary>
+        <div class="faq-answer">venv and uv isolate dependencies, not code. A virtual environment is a
+          <code>PATH</code> convention: a package inside one can still read <code>~/.ssh</code>, take your
+          environment variables, open a socket to any destination, and execute build code during installation
+          with your full user permissions. senv keeps the uv workflow and puts an OS-level sandbox underneath
+          it. A senv project is still a uv project, so teammates without senv keep running plain uv against
+          the same repository.</div>
+      </details>
+      <details class="faq-item">
+        <summary>Does senv detect malicious packages?</summary>
+        <div class="faq-answer">No, and it does not try. senv contains what a package <em>can do</em> rather
+          than deciding what a package <em>is</em>. Lockfile hashes, pinned versions, and dependency review
+          remain exactly as important as before. What changes is the blast radius: a malicious sdist build
+          backend runs with no reach into your source tree, your credentials, or any network destination that
+          is not a package registry.</div>
+      </details>
+      <details class="faq-item">
+        <summary>What does senv block at run time?</summary>
+        <div class="faq-answer">Network access is denied by default, the installed environment is read-only,
+          credentials are unavailable unless declared as secrets in <code>senv.toml</code>, and CPU and
+          file-size limits apply everywhere with memory and process limits on Linux. Your project directory
+          stays read-write, because that is the point of running the code. When something is blocked, senv
+          prints what was blocked and the narrowest command that would permit it.</div>
+      </details>
+      <details class="faq-item">
+        <summary>My program needs to call an API. Do I have to give up the boundary?</summary>
+        <div class="faq-answer">No. You widen one host at a time. <code>senv allow api.stripe.com</code>
+          records the grant in <code>senv.toml</code>; <code>senv run --allow-net api.stripe.com</code>
+          applies it to a single command. <code>senv report --suggest</code> aggregates the denials recorded
+          across runs and prints a policy stanza to review &#8212; it never writes the policy for you. Some
+          denials are guarantees rather than defaults, and senv does not offer to bypass those: runtime code
+          cannot make the environment writable or read <code>~/.ssh</code>.</div>
+      </details>
+      <details class="faq-item">
+        <summary>Can a compromised dependency widen the policy?</summary>
+        <div class="faq-answer">It can edit <code>senv.toml</code>, because that file lives in your project
+          and your project is writable while your code runs. It cannot make the edit take effect. senv keeps
+          the last accepted policy snapshot <em>outside</em> the sandbox: an unchanged or narrower policy runs
+          normally, and a wider one is refused with a diff until you inspect it and run <code>senv
+          trust</code>. The same check covers the <code>pyproject.toml</code> sections that control install
+          behavior, <code>[build-system]</code> and <code>[tool.uv]</code>. This is tamper-evidence, not
+          tamper-prevention, and we do not claim more.</div>
+      </details>
+      <details class="faq-item">
+        <summary>What are the limits?</summary>
+        <div class="faq-answer">The default tiers share the host kernel: Landlock, seccomp, and Seatbelt are
+          OS-level isolation, not a hypervisor boundary, so <code>isolation = "microvm"</code> is the rung for
+          when a separate kernel is required. Installation must write packages, so the install sandbox
+          protects your source, credentials, and non-registry network but cannot make the environment
+          read-only during an install. Kernel-tier denial reports infer some denials from program output,
+          which untrusted code can influence, so review every suggested grant. And running
+          <code>.venv/bin/python</code> directly from an editor bypasses the run boundary entirely; use
+          <code>senv run</code> or <code>senv shell</code>. The
+          <a href="/manual/#limits">manual</a> keeps the full list.</div>
+      </details>
+      <details class="faq-item">
+        <summary>What does senv put in my repository?</summary>
+        <div class="faq-answer">An optional <code>senv.toml</code>, and nothing else. The environment, the
+          wheel cache, the receipts, and the trusted policy baseline all live outside the project tree,
+          because the run phase grants the project read-write and <strong>receipts a compromised package can
+          rewrite are not evidence</strong>. <code>.venv</code> stays as a symlink so editors and language
+          servers still resolve. senv refuses to run if <code>SENV_STATE_DIR</code> or
+          <code>SENV_CACHE_DIR</code> points inside the project.</div>
+      </details>
+      <details class="faq-item">
+        <summary>Which platforms does senv support?</summary>
+        <div class="faq-answer">Linux and macOS. On Linux, senv uses Landlock, seccomp-bpf, namespaces, and
+          rlimits or cgroups, and registry allowlisting during installs additionally needs
+          <code>slirp4netns</code> and <code>nftables</code>. On macOS it uses the built-in Seatbelt sandbox
+          with a DNS-pinned loopback proxy for allowed egress, and no extra runtime is required; macOS has no
+          seccomp and cannot enforce cgroup memory or process limits, which senv reports rather than silently
+          ignoring. On Windows, use WSL2. Run <code>senv doctor</code> to see what your host can actually
+          enforce.</div>
+      </details>
+      <details class="faq-item">
+        <summary>What happens if my host cannot enforce the policy?</summary>
+        <div class="faq-answer">senv refuses to run and explains what is missing. It never silently
+          downgrades to a weaker boundary, and there is no flag that runs your code on the host unconfined. An
+          explicit downgrade such as <code>install.net = "host"</code> is available for hosts that cannot
+          allowlist registries, but it is written in the config, warned about in <code>senv status</code>, and
+          stamped into every receipt.</div>
+      </details>
+      <details class="faq-item">
+        <summary>How does senv relate to h5i?</summary>
+        <div class="faq-answer">senv uses <a href="https://h5i.dev/">h5i-sandbox</a>, the confinement engine
+          behind h5i, as a linked Rust crate, and compiles the Python-shaped <code>senv.toml</code> into an
+          h5i policy. h5i gives a coding agent a whole disposable development environment; senv confines one
+          Python project's installs and runs. They share the enforcement layer, the receipt model, and the
+          rule that a boundary fails closed.</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ── Close ─────────────────────────────────────────────────── -->
+<section id="cta">
+  <div class="container">
+    <h2 class="cta-title">The uv workflow, with a boundary underneath.</h2>
+    <p class="cta-sub">Installs that cannot reach your source or your credentials. Code that runs with no
+      network and an environment it cannot rewrite. Apache 2.0, no SaaS, no lock-in.</p>
+    <div class="hero-install">
+      <code>curl -fsSL https://senv.h5i.dev/install.sh | sh</code>
+      <button class="copy-btn" type="button">copy</button>
+    </div>
+    <div class="hero-actions">
+      <a href="/manual/" class="btn btn-primary">Read the manual</a>
+      <a href="https://github.com/h5i-dev/senv" class="btn btn-ghost">Star on GitHub</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <img src="/_static/logo.png" alt="h5i">
+      <span>senv<span class="red"> / by h5i</span></span>
+    </div>
+    <nav class="footer-links">
+      <a href="/">Home</a>
+      <a href="/manual/">Manual</a>
+      <a href="/manual/#install">Install</a>
+      <a href="/manual/#limits">Limits</a>
+      <a href="https://h5i.dev/">h5i.dev</a>
+      <a href="https://github.com/h5i-dev/senv">GitHub</a>
+      <a href="https://github.com/h5i-dev/senv/blob/main/DESIGN.md">Design</a>
+      <a href="https://github.com/h5i-dev/senv/issues">Issues</a>
+    </nav>
+    <div class="footer-legal">Apache 2.0 · Built with Rust</div>
+  </div>
+</footer>
+
+<script src="/_static/blog.js" defer></script>
+<script src="/_static/highlight.js" defer></script>
+</body>
+</html>
