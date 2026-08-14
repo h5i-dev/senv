@@ -263,6 +263,15 @@ have:
 - Code that stays inside the policy — corrupting files in your own project,
   reaching a host you allowlisted — is within policy. That is what the policy
   is for.
+- **Running the environment from your host is outside the boundary.** The
+  install phase contains a dependency's build backend, but the environment it
+  produces is writable *during* that install — that is what installing is — so
+  a malicious backend can edit `.venv/bin/activate` or a console script.
+  `source .venv/bin/activate`, or your editor invoking `.venv/bin/python`, then
+  executes that unconfined. This is true of any virtualenv, senv's or uv's;
+  what senv adds is that the install could not reach your source, your
+  credentials, or the network beyond the registries. `senv run` and `senv shell`
+  are the ways to use the environment that keep the boundary.
 - The wall-clock limit applies to installs but **not** to `senv run` / `senv
   shell`: the interactive path hands the terminal to the child and waits
   without a deadline. CPU time and file size are rlimits and apply everywhere.

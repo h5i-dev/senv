@@ -88,7 +88,17 @@ egress, secret filtering, and resource limits, and sandboxes the install phase
   project write grant, or abuses an egress host the user allowlisted, is
   within policy.
 - **Artifacts leaving the boundary.** If `senv run` produces a wheel or script
-  and the user executes it *outside* senv, senv makes no claim about it.
+  and the user executes it *outside* senv, senv makes no claim about it. The
+  environment itself is such an artifact, and this is the case worth spelling
+  out because senv's own docs point at it: `.venv` stays a symlink so editors
+  and `source .venv/bin/activate` keep working, and both of those execute
+  environment contents **on the host**. The install phase grants the
+  environment read-write — that is what installing is — so a dependency's build
+  backend can edit `bin/activate` or a console script; verified. senv contains
+  that backend while it runs (registries-only egress, source read-only, no
+  secrets) and it does not make the result safe to execute unconfined
+  afterwards. No virtualenv is; `senv run` and `senv shell` are the ways to use
+  this one that keep the boundary.
 - **The registry itself.** senv trusts what uv verifies (lockfile hashes). It
   narrows the blast radius of a bad package; it cannot detect one.
 - **A complete record of what was attempted.** Denials are inferred from what a

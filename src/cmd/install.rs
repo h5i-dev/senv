@@ -822,7 +822,10 @@ fn finish(
     }
 
     // The resolved policy is written for inspection, never read back as input:
-    // senv recompiles it every time and compares digests.
+    // senv recompiles it from senv.toml every time, so editing this file
+    // changes nothing that is enforced. See `Project::policy_path` — no digest
+    // comparison happens anywhere, and claiming one did was worse than saying
+    // nothing.
     if let Ok(text) = plan.policy.to_toml() {
         let _ = fs::write(
             &project.policy_path(plan.phase.policy_name()),

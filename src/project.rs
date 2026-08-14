@@ -236,9 +236,21 @@ impl Project {
         self.state_dir.join("state.json")
     }
 
-    /// Where a phase's resolved policy is written for inspection. The file is
-    /// evidence, not input: senv recompiles the policy every run and compares
-    /// digests rather than trusting what is on disk.
+    /// Where a phase's resolved policy is written for inspection.
+    ///
+    /// The file is **output, never input**. senv recompiles the policy from
+    /// `senv.toml` on every command and never reads this back, so nothing that
+    /// edits it changes what is enforced — it exists so a reviewer can see the
+    /// full resolved profile without running anything.
+    ///
+    /// This used to say senv "compares digests" against it. It does not, and
+    /// nothing else did either: `state.json`'s `install_digest`/`run_digest`
+    /// are written and never read. Saying otherwise described a check that was
+    /// not there, in a file whose whole purpose is to be believed. What
+    /// actually detects a changed policy is [`crate::trust`], which compares
+    /// the *settings* rather than a digest — and gives an answer a person can
+    /// act on ("[run] net: deny → unrestricted") instead of two hex strings
+    /// that differ for every legitimate edit.
     pub fn policy_path(&self, phase: &str) -> PathBuf {
         self.state_dir.join(format!("policy.{phase}.toml"))
     }
