@@ -259,6 +259,40 @@ impl Project {
             })
     }
 
+    /// Read, modify and write `state.json` under a lock.
+    ///
+    /// `load_state` → mutate → `save_state` is a read-modify-write, and two
+    /// senv commands overlapping (a `senv run` during a `senv sync`, which the
+    /// design calls ordinary) could drop the other's `lock_hash` — after which
+    /// `status` reports "not yet synced" and every run warns about a stale
+    /// lockfile. `write_atomic` makes each write safe; it does not make the
+    /// pair atomic.
+    pub fn update_state(&self, edit: impl FnOnce(&mut State)) -> Result<()> {
+        use std::os::fd::AsRawFd;
+
+        let lock_path = self.state_dir.join(".state.lock");
+        let guard = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(&lock_path)
+            .ok();
+        if let Some(file) = &guard {
+            // Best-effort: a lock we cannot take costs the pre-existing race,
+            // which is worth less than refusing to record state at all.
+            // SAFETY: flock on a descriptor we own, released on drop.
+            unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
+        }
+        let mut state = self.load_state();
+        edit(&mut state);
+        let result = self.save_state(&state);
+        if let Some(file) = &guard {
+            // SAFETY: same descriptor, still open.
+            unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
+        }
+        result
+    }
+
     pub fn save_state(&self, state: &State) -> Result<()> {
         let path = self.state_path();
         let text = serde_json::to_string_pretty(state)
@@ -325,11 +359,13 @@ impl Project {
 
     /// Record the configuration on disk as the trusted baseline.
     pub fn record_trust(&self) -> Result<()> {
-        let mut state = self.load_state();
-        state.version = State::VERSION;
-        state.project_root = self.root.display().to_string();
-        state.trusted = Some(self.policy_snapshot());
-        self.save_state(&state)
+        let snapshot = self.policy_snapshot();
+        let root = self.root.display().to_string();
+        self.update_state(|state| {
+            state.version = State::VERSION;
+            state.project_root = root;
+            state.trusted = Some(snapshot);
+        })
     }
 
     /// Current on-disk truth about the environment, independent of `state.json`

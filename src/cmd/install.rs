@@ -109,13 +109,15 @@ pub fn init(ctx: &Ctx, args: &crate::cli::InitArgs) -> Result<i32> {
 
     // An adopted .venv holds packages that never passed through the install
     // boundary. Record that honestly; the next sync replaces it.
-    let mut state = project.load_state();
-    state.version = State::VERSION;
-    state.project_root = project.root.display().to_string();
-    if state.provenance == Provenance::Absent && matches!(link, VenvLink::Directory) {
-        state.provenance = Provenance::HostInstalled;
-    }
-    project.save_state(&state)?;
+    let root = project.root.display().to_string();
+    let adopted = matches!(link, VenvLink::Directory);
+    project.update_state(|state| {
+        state.version = State::VERSION;
+        state.project_root = root;
+        if state.provenance == Provenance::Absent && adopted {
+            state.provenance = Provenance::HostInstalled;
+        }
+    })?;
 
     let sync_output = if args.no_sync {
         None
@@ -740,15 +742,19 @@ fn finish(
         let _ = project.ensure_venv_link();
     }
     if run.succeeded() && record_sync {
-        let mut state = project.load_state();
-        state.version = State::VERSION;
-        state.project_root = project.root.display().to_string();
-        state.provenance = Provenance::Sandboxed;
-        state.lock_hash = util::sha256_file(&project.lock_path());
-        state.last_sync_ms = Some(util::now_ms());
-        state.install_digest = Some(plan.digest.clone());
-        state.python = read_venv_python(project);
-        project.save_state(&state)?;
+        let lock_hash = util::sha256_file(&project.lock_path());
+        let python = read_venv_python(project);
+        let root = project.root.display().to_string();
+        let digest = plan.digest.clone();
+        project.update_state(|state| {
+            state.version = State::VERSION;
+            state.project_root = root;
+            state.provenance = Provenance::Sandboxed;
+            state.lock_hash = lock_hash;
+            state.last_sync_ms = Some(util::now_ms());
+            state.install_digest = Some(digest);
+            state.python = python;
+        })?;
     }
 
     // The resolved policy is written for inspection, never read back as input:

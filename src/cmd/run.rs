@@ -181,7 +181,5 @@ fn warn_if_stale(ctx: &Ctx, project: &Project) {
 }
 
 fn persist_digest(project: &Project, digest: &str) {
-    let mut state = project.load_state();
-    state.run_digest = Some(digest.to_string());
-    let _ = project.save_state(&state);
+    let _ = project.update_state(|state| state.run_digest = Some(digest.to_string()));
 }
