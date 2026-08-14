@@ -1179,6 +1179,7 @@ dependencies = [
  "h5i-error",
  "h5i-sandbox",
  "libc",
+ "openssl",
  "serde",
  "serde_json",
  "sha2",
