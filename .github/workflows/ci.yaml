@@ -44,6 +44,18 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y slirp4netns nftables
 
+      # Ubuntu 24.04 — which these runners are — ships an AppArmor profile that
+      # forbids unprivileged user namespaces. Every senv tier is built on one,
+      # so without this `unshare(CLONE_NEWUSER)` fails, both kernel tiers report
+      # unavailable, and the whole boundary suite skips itself while the run
+      # stays green. That is the failure the guard at the end of this job
+      # exists to catch, and this is the line that prevents it.
+      - name: Allow unprivileged user namespaces
+        if: runner.os == 'Linux'
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo sysctl -w kernel.unprivileged_userns_clone=1 || true
+
       - name: What can this runner enforce?
         run: cargo run --locked -- doctor || true
 
@@ -52,7 +64,8 @@ jobs:
       # Integration tests skip themselves on a host that cannot confine, so a
       # green suite could mean "nothing ran". Fail loudly instead: this repo's
       # whole claim is that the boundary is real, and CI has to prove it on at
-      # least one platform.
+      # least one platform. This guard has already earned its place once, by
+      # catching a run in which all 102 boundary assertions were skipped.
       - name: The boundary was actually exercised
         if: runner.os == 'Linux'
         run: |

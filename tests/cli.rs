@@ -111,6 +111,26 @@ fn can_install() -> bool {
     can_confine() && h5i_sandbox::supervisor::probe().usable
 }
 
+/// Why this host cannot enforce the install boundary.
+///
+/// A skip that just says "cannot enforce" sends whoever reads the CI log off to
+/// reproduce it by hand. The probe already knows the answer, so the skip line
+/// should carry it — this is how the AppArmor restriction on GitHub's Ubuntu
+/// runners ("cannot unshare NEWNET") got diagnosed.
+fn why_no_install() -> String {
+    if !can_confine() {
+        let caps = h5i_sandbox::sandbox::capabilities_report();
+        return format!(
+            "this host cannot confine at all (mechanism: {}, strongest tier: {})",
+            caps.mechanism, caps.strongest_tier
+        );
+    }
+    format!(
+        "this host cannot enforce an egress allowlist: {}",
+        h5i_sandbox::supervisor::probe().missing().join("; ")
+    )
+}
+
 fn have_uv() -> bool {
     Command::new("uv")
         .arg("--version")
@@ -125,6 +145,16 @@ macro_rules! require {
     ($cond:expr, $why:expr) => {
         if !$cond {
             eprintln!("SKIP: {}", $why);
+            return;
+        }
+    };
+}
+
+/// Skip unless the install boundary is enforceable, saying why if not.
+macro_rules! require_install {
+    () => {
+        if !can_install() {
+            eprintln!("SKIP: {}", why_no_install());
             return;
         }
     };
@@ -156,10 +186,7 @@ fn a_directory_with_no_project_is_reported_clearly() {
 #[test]
 fn the_full_lifecycle_works_and_the_project_stays_a_uv_project() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
 
     let out = fixture.senv(&["sync"]);
@@ -194,10 +221,7 @@ fn the_full_lifecycle_works_and_the_project_stays_a_uv_project() {
 #[test]
 fn the_environment_cannot_be_modified_by_the_code_that_runs_in_it() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -222,10 +246,7 @@ fn the_environment_cannot_be_modified_by_the_code_that_runs_in_it() {
 #[test]
 fn the_network_is_denied_by_default_and_openable_on_purpose() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -268,10 +289,7 @@ fn the_network_is_denied_by_default_and_openable_on_purpose() {
 #[test]
 fn credentials_on_the_host_are_unreachable() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -294,10 +312,7 @@ fn credentials_on_the_host_are_unreachable() {
 #[test]
 fn the_exit_code_of_the_command_passes_through() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -315,10 +330,7 @@ fn the_exit_code_of_the_command_passes_through() {
 #[test]
 fn receipts_are_written_outside_everything_the_sandbox_can_write() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
     fixture.run_python("print('hello')");
@@ -365,10 +377,7 @@ fn receipts_are_written_outside_everything_the_sandbox_can_write() {
 #[test]
 fn status_and_report_describe_the_boundary_in_json() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -398,10 +407,7 @@ fn status_and_report_describe_the_boundary_in_json() {
 #[test]
 fn an_existing_uv_project_is_adopted_without_being_rewritten() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
 
     // Build an environment the way a user would have before finding senv.
@@ -506,10 +512,7 @@ fn the_unconfined_tier_cannot_be_configured() {
 #[test]
 fn a_command_that_is_not_installed_names_the_environment_and_the_fix() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -536,10 +539,7 @@ fn a_command_that_is_not_installed_names_the_environment_and_the_fix() {
 #[test]
 fn adding_a_dependency_resolves_away_from_the_source_tree() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(
         "[project]\nname = \"demo\"\nversion = \"0.1.0\"\n\
          requires-python = \">=3.9\"\ndependencies = []\n",
@@ -576,10 +576,7 @@ fn adding_a_dependency_resolves_away_from_the_source_tree() {
 #[test]
 fn a_project_that_cannot_be_staged_says_so_instead_of_widening_silently() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     // Dynamic metadata forces resolution against the real tree.
     let fixture = Fixture::new(Some(
         "[project]\nname = \"demo\"\ndynamic = [\"version\"]\n\
@@ -638,10 +635,7 @@ fn gc_reports_before_it_deletes() {
 #[test]
 fn the_enforced_policy_is_pinned_and_recorded() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -687,10 +681,7 @@ fn the_enforced_policy_is_pinned_and_recorded() {
 #[test]
 fn a_package_cannot_widen_the_policy_for_the_next_run() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -732,10 +723,7 @@ fn a_package_cannot_widen_the_policy_for_the_next_run() {
 #[test]
 fn a_package_cannot_obtain_host_execution_through_a_command_secret() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -794,10 +782,7 @@ fn a_package_cannot_obtain_host_execution_through_a_command_secret() {
 #[test]
 fn a_build_backend_cannot_edit_your_source_during_an_install() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -859,10 +844,7 @@ const HATCHLING: &str = "[project]\nname = \"hp\"\nversion = \"0.1.0\"\n\
 #[test]
 fn a_setuptools_project_installs_without_opening_the_source_to_dependencies() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(SETUPTOOLS));
     std::fs::create_dir_all(fixture.root.join("src/mypkg")).unwrap();
     std::fs::write(fixture.root.join("src/mypkg/__init__.py"), "VALUE = 42\n").unwrap();
@@ -891,10 +873,7 @@ fn a_setuptools_project_installs_without_opening_the_source_to_dependencies() {
 #[test]
 fn a_dependency_build_failure_never_widens_the_install() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
 
     // A local sdist whose build backend tries to write into the parent project
     // and reports the same "Permission denied" shape the retry looks for.
@@ -952,10 +931,7 @@ fn a_dependency_build_failure_never_widens_the_install() {
 #[test]
 fn a_hatchling_project_installs_with_the_source_read_only_throughout() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(HATCHLING));
     std::fs::create_dir_all(fixture.root.join("src/hp")).unwrap();
     std::fs::write(fixture.root.join("src/hp/__init__.py"), "X = 1\n").unwrap();
@@ -982,10 +958,7 @@ fn a_hatchling_project_installs_with_the_source_read_only_throughout() {
 #[test]
 fn status_does_not_claim_a_wall_clock_it_cannot_enforce() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -1024,10 +997,7 @@ fn status_does_not_claim_a_wall_clock_it_cannot_enforce() {
 #[test]
 fn a_cpu_limit_stops_a_runaway_command() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
     std::fs::write(
@@ -1057,10 +1027,7 @@ fn a_cpu_limit_stops_a_runaway_command() {
 #[test]
 fn a_workspace_member_uses_the_workspace_root() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
 
     let fixture = Fixture::new(Some(
         "[project]\nname = \"mono\"\nversion = \"0.1.0\"\n\
@@ -1106,10 +1073,7 @@ fn a_workspace_member_uses_the_workspace_root() {
 #[test]
 fn a_package_cannot_reach_the_environment_by_swapping_the_build_backend() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -1136,10 +1100,7 @@ fn a_package_cannot_reach_the_environment_by_swapping_the_build_backend() {
 #[test]
 fn adding_a_tool_uv_table_is_caught_even_when_there_was_none() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -1160,10 +1121,7 @@ fn adding_a_tool_uv_table_is_caught_even_when_there_was_none() {
 #[test]
 fn allow_records_what_it_wrote_not_a_re_read() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -1199,10 +1157,7 @@ fn allow_records_what_it_wrote_not_a_re_read() {
 #[test]
 fn a_package_cannot_persist_by_poisoning_the_bytecode_cache() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(
         "[project]\nname = \"demo\"\nversion = \"0.1.0\"\n\
          requires-python = \">=3.9\"\ndependencies = [\"idna\"]\n",
@@ -1246,10 +1201,7 @@ fn a_package_cannot_persist_by_poisoning_the_bytecode_cache() {
 #[test]
 fn the_environment_ships_precompiled_bytecode() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -1279,10 +1231,7 @@ fn the_environment_ships_precompiled_bytecode() {
 #[test]
 fn a_manufactured_nested_project_cannot_adopt_a_hostile_policy() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -1325,10 +1274,7 @@ fn a_manufactured_nested_project_cannot_adopt_a_hostile_policy() {
 #[test]
 fn staging_does_not_carry_host_secrets_across_the_boundary() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -1353,10 +1299,7 @@ fn staging_does_not_carry_host_secrets_across_the_boundary() {
 #[test]
 fn senv_never_writes_through_a_symlink_in_the_project() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -1383,10 +1326,7 @@ fn senv_never_writes_through_a_symlink_in_the_project() {
 #[test]
 fn no_command_accepts_a_widening_as_a_side_effect() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -1417,10 +1357,7 @@ fn no_command_accepts_a_widening_as_a_side_effect() {
 #[test]
 fn a_package_cannot_point_senvs_toolchain_at_its_own_binary() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -1459,10 +1396,7 @@ fn a_package_cannot_point_senvs_toolchain_at_its_own_binary() {
 #[test]
 fn program_output_cannot_forge_senvs_framing() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     fixture.sync();
 
@@ -1505,10 +1439,7 @@ fn program_output_cannot_forge_senvs_framing() {
 #[test]
 fn concurrent_commands_do_not_talk_each_other_out_of_a_tier() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
 
     let fixtures: Vec<Fixture> = (0..6).map(|_| Fixture::new(Some(DEMO))).collect();
     let results: Vec<String> = std::thread::scope(|scope| {
@@ -1536,10 +1467,7 @@ fn concurrent_commands_do_not_talk_each_other_out_of_a_tier() {
 #[test]
 fn writable_directories_exist_before_the_policy_is_enforced() {
     require!(have_uv(), "uv is not installed");
-    require!(
-        can_install(),
-        "this host cannot enforce an egress allowlist"
-    );
+    require_install!();
     let fixture = Fixture::new(Some(DEMO));
     let out = fixture.senv(&["sync"]);
     assert!(

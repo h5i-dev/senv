@@ -200,14 +200,32 @@ impl StderrTee {
     fn install() -> Option<StderrTee> {
         let _ = std::io::stderr().flush();
         let mut fds = [0 as libc::c_int; 2];
-        // `pipe2(O_CLOEXEC)`, not `pipe`: the confined child inherits every
-        // descriptor that is not close-on-exec, and it was inheriting the
-        // *read* end of this pipe as fd 3. That handed sandboxed code the
-        // stream senv is mirroring, and a child that simply read from it kept
-        // the pipe alive so senv blocked forever waiting for EOF. `dup2` clears
-        // the flag on fd 2 itself, which is the one the child is meant to have.
-        // SAFETY: `fds` is a two-element array, which is what pipe2(2) writes.
-        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+        // Close-on-exec on both ends. The confined child inherits every
+        // descriptor that is not, and it was inheriting the *read* end of this
+        // pipe as fd 3 — handing sandboxed code the stream senv is mirroring,
+        // and letting a child that simply read from it keep the pipe alive so
+        // senv blocked forever waiting for EOF. `dup2` clears the flag on fd 2
+        // itself, which is the one the child is meant to have.
+        //
+        // `pipe2` is Linux-only; macOS has to set the flag afterwards. That
+        // leaves a window in which another thread could fork and inherit the
+        // descriptors, which is exactly why `pipe2` exists — but senv has no
+        // other thread running here (the reader below is spawned after, and the
+        // child is spawned after that), so the window is empty.
+        // SAFETY: `fds` is a two-element array, which is what pipe(2) writes.
+        let created = unsafe {
+            #[cfg(target_os = "linux")]
+            {
+                libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) == 0
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                libc::pipe(fds.as_mut_ptr()) == 0
+                    && libc::fcntl(fds[0], libc::F_SETFD, libc::FD_CLOEXEC) != -1
+                    && libc::fcntl(fds[1], libc::F_SETFD, libc::FD_CLOEXEC) != -1
+            }
+        };
+        if !created {
             return None;
         }
         let (read_fd, write_fd) = (fds[0], fds[1]);
