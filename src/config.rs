@@ -249,11 +249,21 @@ pub const CONFIG_FILE: &str = "senv.toml";
 
 impl Config {
     /// Load `senv.toml`, or the fail-closed defaults when it is absent.
+    ///
+    /// `symlink_metadata`, not `is_file`: the latter follows a link, so a
+    /// `senv.toml` pointing at `~/.netrc` looked like an ordinary config and
+    /// senv read it. Only a genuinely absent path means "use the defaults";
+    /// anything that exists goes to the read below, which refuses a symlink by
+    /// name.
+    ///
+    /// A *dangling* link is refused too, rather than treated as absent. It is
+    /// not a config, and the target it names can appear later — refusing while
+    /// it is still harmless is the fail-closed order.
     pub fn load(path: &Path) -> Result<Config> {
-        if !path.is_file() {
+        if std::fs::symlink_metadata(path).is_err() {
             return Ok(Config::default());
         }
-        let text = fs::read_to_string_bounded(path)?;
+        let text = fs::read_to_string_no_follow(path)?;
         let cfg: Config = toml::from_str(&text).map_err(|e| {
             // toml's message already carries the line/column and a caret; the
             // path prefix from SenvError::Config completes it. Sanitized
@@ -506,6 +516,48 @@ mod tests {
         // A normal config of any realistic size still loads.
         std::fs::write(&path, "[run]\nnet = \"deny\"\n").unwrap();
         assert!(Config::load(&path).is_ok());
+    }
+
+    #[test]
+    fn a_config_that_is_a_symlink_is_refused_without_quoting_what_it_points_at() {
+        // A working arbitrary-file-read before this: a package replaces
+        // senv.toml with a link to ~/.netrc, senv follows it unconfined, and
+        // toml's parse error quotes the offending line — the whole credential —
+        // onto the terminal and into CI logs. senv already refuses to *write*
+        // its config through a link; reading through one was the same door.
+        let tmp = tempfile::tempdir().unwrap();
+        let secret = tmp.path().join("netrc");
+        std::fs::write(
+            &secret,
+            "machine api.example.com login deploy password S3cr3tT0ken\n",
+        )
+        .unwrap();
+        let config = tmp.path().join("senv.toml");
+        std::os::unix::fs::symlink(&secret, &config).unwrap();
+
+        let err = Config::load(&config).expect_err("must refuse a symlinked policy file");
+        let text = format!("{err} {:?}", err.fix());
+        assert!(text.contains("symbolic link"), "{text}");
+        assert!(
+            !text.contains("S3cr3tT0ken"),
+            "the refusal leaked the target's contents: {text}"
+        );
+
+        // A dangling link is refused as well: it is still not a config, and the
+        // file it names can be created later, so the refusal belongs now.
+        std::fs::remove_file(&secret).unwrap();
+        assert!(
+            Config::load(&config).is_err(),
+            "a symlink is refused whether or not it currently resolves"
+        );
+
+        // A genuinely absent file is the fail-closed default, unchanged.
+        std::fs::remove_file(&config).unwrap();
+        assert!(Config::load(&config).unwrap().run.net.is_deny());
+
+        // And an ordinary regular file still loads.
+        std::fs::write(&config, "[run]\nnet = \"host\"\n").unwrap();
+        assert!(Config::load(&config).unwrap().run.net.is_host());
     }
 
     #[test]

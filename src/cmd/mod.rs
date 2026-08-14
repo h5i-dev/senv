@@ -98,7 +98,28 @@ impl Ctx {
     /// directly (it creates the marker rather than finding it) and must not be
     /// the one command that skips the check — it ends by running a sync.
     pub fn guard_trust(&self, project: &Project) -> Result<()> {
-        let verdict = project.trust_verdict();
+        self.guard_trust_snapshot(project).map(|_| ())
+    }
+
+    /// [`Ctx::guard_trust`], returning the snapshot it checked and recorded.
+    ///
+    /// One read of `pyproject.toml`, compared and then stored. Reading it twice
+    /// — once to compare, once to record — let anything editing the file in
+    /// between have its `[build-system]` blessed without comparison. See
+    /// [`Project::record_snapshot`].
+    pub fn guard_trust_snapshot(&self, project: &Project) -> Result<crate::trust::PolicySnapshot> {
+        let current = project.policy_snapshot();
+        let verdict = project.verdict_against(&current);
+        self.apply_verdict(project, &current, verdict)?;
+        Ok(current)
+    }
+
+    fn apply_verdict(
+        &self,
+        project: &Project,
+        current: &crate::trust::PolicySnapshot,
+        verdict: crate::trust::Verdict,
+    ) -> Result<()> {
         match verdict {
             crate::trust::Verdict::Widened(widenings) => Err(widened_error(&widenings)),
             // A first sighting has no baseline to compare against, so a policy
@@ -118,11 +139,11 @@ impl Ctx {
             // before, and saying otherwise would read as senv losing track of
             // its own state.
             crate::trust::Verdict::FormatChanged | crate::trust::Verdict::FirstSight => {
-                let wide = project
-                    .policy_snapshot()
-                    .widenings(&crate::trust::PolicySnapshot::defaults());
+                // `current`, not a fresh read: the snapshot that gets recorded
+                // below must be the same one judged here.
+                let wide = current.widenings(&crate::trust::PolicySnapshot::defaults());
                 if wide.is_empty() {
-                    return project.record_trust();
+                    return project.record_snapshot(current);
                 }
                 Err(first_sight_error(
                     project,
@@ -132,7 +153,7 @@ impl Ctx {
             }
             // A change that only narrows becomes the new baseline, so the next
             // widening is measured against what is on disk now.
-            crate::trust::Verdict::Trusted => project.record_trust(),
+            crate::trust::Verdict::Trusted => project.record_snapshot(current),
         }
     }
 

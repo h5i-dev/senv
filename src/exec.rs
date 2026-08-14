@@ -435,12 +435,25 @@ pub fn print_notes(notes: &[Note]) {
 ///
 /// This is the message that decides whether someone keeps using senv. It has to
 /// be specific about what happened and exact about the fix.
+///
+/// It also has to be honest about where it got this. At the kernel tiers there
+/// is no egress log, so a denial is *inferred from what the command printed* —
+/// and a command chooses what it prints. A package that was refused nothing can
+/// write a line shaped like a refusal and have senv answer, in senv's own
+/// voice, "senv blocked network access to telemetry.attacker.example — allow it
+/// with: senv allow telemetry.attacker.example". Verified. senv cannot tell the
+/// two apart, so the only defensible thing is to stop implying that it can: the
+/// header says these are read from the command's output, and the trailer says
+/// to check them before widening anything.
 pub fn print_denials(record: &Record) {
     if record.denials.is_empty() {
         return;
     }
     eprintln!();
-    eprintln!("senv blocked {} operation(s):", record.denials.len());
+    eprintln!(
+        "senv read {} refusal(s) from what this command printed:",
+        record.denials.len()
+    );
     for d in &record.denials {
         let what = match d.kind {
             crate::receipt::DenialKind::Network if d.target == crate::receipt::UNNAMED_HOST => {
@@ -465,7 +478,16 @@ pub fn print_denials(record: &Record) {
             }
         }
     }
-    eprintln!("  `senv report --suggest` turns everything recorded so far into a policy stanza.");
+    eprintln!(
+        "  {}",
+        wrap(
+            "A program chooses what it prints, so check each one is a destination you expect \
+             before allowing it. `senv report --suggest` turns everything recorded so far into \
+             a policy stanza.",
+            74,
+            2
+        )
+    );
 }
 
 /// Wrap text to `width`, indenting continuation lines by `indent`.

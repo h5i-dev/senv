@@ -88,7 +88,17 @@ egress, secret filtering, and resource limits, and sandboxes the install phase
   project write grant, or abuses an egress host the user allowlisted, is
   within policy.
 - **Artifacts leaving the boundary.** If `senv run` produces a wheel or script
-  and the user executes it *outside* senv, senv makes no claim about it.
+  and the user executes it *outside* senv, senv makes no claim about it. The
+  environment itself is such an artifact, and this is the case worth spelling
+  out because senv's own docs point at it: `.venv` stays a symlink so editors
+  and `source .venv/bin/activate` keep working, and both of those execute
+  environment contents **on the host**. The install phase grants the
+  environment read-write — that is what installing is — so a dependency's build
+  backend can edit `bin/activate` or a console script; verified. senv contains
+  that backend while it runs (registries-only egress, source read-only, no
+  secrets) and it does not make the result safe to execute unconfined
+  afterwards. No virtualenv is; `senv run` and `senv shell` are the ways to use
+  this one that keep the boundary.
 - **The registry itself.** senv trusts what uv verifies (lockfile hashes). It
   narrows the blast radius of a bad package; it cannot detect one.
 - **A complete record of what was attempted.** Denials are inferred from what a
@@ -400,6 +410,15 @@ evidence plus a gate**:
 
 - senv keeps a normalized snapshot of the security-relevant settings in
   `state.json`, outside every grant. Before compiling a policy it compares.
+- **One read, compared and recorded.** The gate used to read `pyproject.toml`
+  to judge it and then read it *again* to record the baseline. Anything editing
+  the file between the two — a watcher or dev server under a concurrent `senv
+  run`, which this design calls ordinary — got its `[build-system]` written
+  down as trusted without ever being compared, and the next `senv sync` runs
+  that backend. The snapshot that is judged is now the snapshot that is stored.
+  `senv allow` carries the manifest half of its baseline across from the gate
+  for the same reason: it rewrites `senv.toml` and nothing else, so nothing
+  else may be re-read on the way to recording.
 - **Narrowed or unchanged** → proceed silently, and re-baseline. An attacker
   gains nothing by narrowing, and a prompt that fires on safe edits is a prompt
   people learn to click through.
@@ -555,14 +574,26 @@ tier cannot enforce a domain allowlist** — its network modes are all-or-nothin
 - `senv sync` needs `supervised` (requires `slirp4netns`, `nft`, cgroup-v2
   delegation) or `container` (Podman). On macOS, Seatbelt covers it at the base
   tier, so installs work out of the box.
-- **An allowlist means something weaker on macOS.** Linux pins nftables rules
-  to resolved addresses, so a program that ignores proxy variables still cannot
-  get out. macOS has no equivalent — h5i enforces an allowlist with a host
-  proxy, which constrains clients that honour it and nothing else. CI caught
-  senv claiming otherwise: a raw socket reached a host the allowlist excluded.
-  `senv status` now says so wherever it prints an allowlist, and the
-  integration test asserts what each platform actually delivers rather than the
-  stronger guarantee. `net = "deny"` is a real deny on both.
+- **An allowlist takes a different route on macOS, and the route is the whole
+  story.** Linux pins nftables rules to resolved addresses inside the box's own
+  network namespace. macOS has no namespace, so the box stays on the host's
+  stack and Seatbelt leaves it exactly one destination: the loopback port of
+  h5i's DNS-pinned allowlist proxy. Name resolution is denied outright — the
+  proxy resolves. The allowlist therefore holds against *any* client, including
+  one using a raw socket; what differs is that a client ignoring `HTTPS_PROXY`
+  reaches nothing at all instead of reaching its host directly.
+
+  This is worth spelling out because senv got it wrong for a while, and wrong
+  in the direction that matters. senv paired its host list with `net_mode =
+  host`. Linux and the image-backed tiers read the list and ignore the mode, so
+  it looked correct everywhere it was tested; Seatbelt reads the mode first,
+  and `host` there compiles to a bare `(allow network-outbound)`. Every macOS
+  install and every `--allow-net` run had unrestricted egress while `senv
+  status` printed an allowlist — the one failure mode this tool cannot have.
+  The fix is that an allowlist is now expressed as `deny` **plus** a host list,
+  which means the same thing on every backend, and the integration test asserts
+  the reachable/unreachable pair on both platforms rather than skipping the
+  question on one. `net = "deny"` is a real deny on both.
 - On hosts with neither (bare CI runners, some WSL2 setups), `senv sync` is
   **refused** with the `senv doctor` explanation. The user may explicitly
   configure `install.net = "host"` — accepted with a prominent warning in
@@ -573,8 +604,25 @@ tier cannot enforce a domain allowlist** — its network modes are all-or-nothin
 host can enforce, before anything fails mid-workflow.
 
 Platform support follows h5i: Linux and macOS at launch. Windows only via
-WSL2. macOS caveats surfaced by `status`: no seccomp equivalent, memory caps
-not enforceable under Seatbelt.
+WSL2. The macOS caveats, each surfaced where it bites rather than only in a
+document:
+
+- **No syscall filter.** Darwin has no seccomp; containment there is Seatbelt's
+  filesystem and network policy. `senv doctor` reports it.
+- **No memory or process ceiling.** No cgroups, `RLIMIT_AS` does not bind the
+  mmap'd heap CPython uses, and `RLIMIT_NPROC` is scoped to the uid rather than
+  to one command — so h5i applies neither, and `senv status` marks the
+  configured numbers `NOT enforced on this host` rather than printing them as
+  ceilings. CPU time, file size and the install wall clock do apply.
+- **The interpreter decides whether install-time bytecode is worth anything.**
+  The run phase has no writable bytecode cache by design, which is free only
+  because the install compiled into the environment. Apple's system Python is
+  built with `sys.pycache_prefix` preset to `~/Library/Caches/com.apple.python`,
+  so it caches outside the environment and the run phase finds nothing to use.
+  senv reports it in `status` and denies that directory outright — a writable
+  grant on it would hand a package an authoritative, writable copy of every
+  module in a read-only environment, which is the persistence hole dropping
+  `PYTHONPYCACHEPREFIX` closed in the first place.
 
 ---
 
@@ -690,6 +738,34 @@ the symlink gains nothing.
 The side effect is the best thing about it for adoption: **senv adds no files
 to your project tree**. A senv project is a uv project with an optional
 `senv.toml`.
+
+**And senv now refuses to run when that layout is violated.** For a long time
+this section described an invariant that nothing checked. `SENV_STATE_DIR` and
+`SENV_CACHE_DIR` were validated only for being absolute — with a comment
+explaining that a relative value "would put the venv and the receipts inside
+the run phase's write grant", which is exactly what an *absolute* path inside
+the project does. `SENV_STATE_DIR=$PWD/.senv-state` is not contrived; it is
+what you write in CI to keep senv's state in the workspace so it caches between
+jobs. Everything above then collapses at once, and it was verified in this
+order from inside one ordinary `senv run`:
+
+1. the environment `senv status` reports as read-only sits in `$WORK`, so a
+   package patched an installed module and persisted into the next run;
+2. `receipt.jsonl` — "outside every grant senv issues, by construction" — was
+   truncated to nothing;
+3. `state.json` was rewritten with a `trusted` snapshot matching a hostile
+   `senv.toml` the same script had just written, so the tamper-evidence check
+   saw no widening. The next ordinary `senv run` executed the attacker's shell
+   **on the host, outside the sandbox**, through a `command:` secret source.
+
+One environment variable re-opened the entire escalation chain §12 exists to
+stop, while senv went on reporting all three properties as enforced. The check
+lives where the project root and the state root are both known, it refuses
+rather than warns, and it is narrow in the other direction: a state root that
+merely *contains* the project (`SENV_STATE_DIR=/workspace` with the project at
+`/workspace/repo`) is fine and stays allowed, because senv's data lands beside
+the project rather than inside it. What is refused is senv's data inside the
+project, or the project inside senv's per-project data.
 
 - **Provenance.** `state.json` records whether the environment was built inside
   the boundary (`sandboxed`) or adopted from a `.venv` that already existed

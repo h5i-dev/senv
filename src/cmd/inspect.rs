@@ -63,7 +63,14 @@ pub struct PhaseStatus {
 pub fn status(ctx: &Ctx) -> Result<i32> {
     let project = ctx.project_unchecked()?;
     ctx.warn_if_untrusted(&project);
-    let state = project.load_state();
+    let mut state = project.load_state();
+    // `state.json` is senv's own file, outside every grant — but the interpreter
+    // string in it was copied out of the environment's `pyvenv.cfg`, which the
+    // install phase grants a build backend read-write. It is sanitized on the
+    // way in now; sanitizing on the way out as well is what protects a state
+    // file that was already poisoned before this senv was installed, since
+    // nothing rewrites it until the next successful sync.
+    state.python = state.python.as_deref().map(util::sanitize);
     let uv_bin = crate::uv::find(&project).ok();
 
     let lock = match project.lock_is_current(&state) {
@@ -83,6 +90,18 @@ pub fn status(ctx: &Ctx) -> Result<i32> {
              through the install boundary. `senv sync` rebuilds it inside the sandbox."
                 .to_string(),
         );
+    }
+    if state.provenance == project::Provenance::Sandboxed && !project.venv_has_bytecode() {
+        warnings.push(format!(
+            "this environment contains no compiled bytecode, so every import recompiles from \
+             source on each run. senv compiles it during the install precisely so the run phase \
+             does not need a writable cache — but this interpreter ({}) has sys.pycache_prefix \
+             preset and cached it outside the environment instead, where the boundary cannot \
+             use it. Apple's system Python does this. Build the environment on a managed \
+             interpreter to get it back: `senv init --python 3.13`, or [env] python in \
+             senv.toml.",
+            state.python.as_deref().unwrap_or("unknown version")
+        ));
     }
 
     let phases = [Phase::Install, Phase::Run]
@@ -110,7 +129,14 @@ pub fn status(ctx: &Ctx) -> Result<i32> {
                 project::VenvLink::Dangling => "linked, but nothing built yet".to_string(),
                 project::VenvLink::Absent => "absent".to_string(),
                 project::VenvLink::Directory => "a real directory (not senv's)".to_string(),
-                project::VenvLink::OtherLink(p) => format!("links elsewhere: {}", p.display()),
+                // The link target is whatever the run phase pointed `.venv` at,
+                // so it is attacker-chosen text on senv's own status line.
+                project::VenvLink::OtherLink(p) => {
+                    format!(
+                        "links elsewhere: {}",
+                        util::sanitize(&p.display().to_string())
+                    )
+                }
                 project::VenvLink::Foreign => "unreadable".to_string(),
             },
             size: util::human_bytes(util::dir_size(&project.venv())),
@@ -132,11 +158,25 @@ fn phase_status(project: &Project, phase: Phase, uv_bin: Option<&std::path::Path
         Ok(plan) => {
             let p = &plan.policy.profile;
             let mut resources = BTreeMap::new();
+            // Which of these the *host* actually applies is a separate question
+            // from what the profile asks for, and h5i answers it per tier.
+            // Darwin has no cgroups, does not enforce RLIMIT_AS against the
+            // mmap'd heap every Python runtime uses, and scopes RLIMIT_NPROC to
+            // the whole uid rather than to one command — so at the kernel tiers
+            // it applies neither, and senv printing a bare "mem 4.0 GiB" there
+            // stated a ceiling that does not exist.
+            let limits = h5i_sandbox::sandbox::limit_support(plan.tier());
             if let Some(mem) = p.mem_bytes {
-                resources.insert("mem".to_string(), util::human_bytes(mem));
+                resources.insert(
+                    "mem".to_string(),
+                    annotate(util::human_bytes(mem), limits.mem),
+                );
             }
             if let Some(procs) = p.max_procs {
-                resources.insert("procs".to_string(), procs.to_string());
+                resources.insert(
+                    "procs".to_string(),
+                    annotate(procs.to_string(), limits.procs),
+                );
             }
             // The wall clock is applied by the parent that waits for the
             // child, and the interactive path hands the terminal over and
@@ -178,32 +218,45 @@ fn phase_status(project: &Project, phase: Phase, uv_bin: Option<&std::path::Path
             policy_digest: None,
             secrets: Vec::new(),
             notes: Vec::new(),
-            unavailable: Some(e.to_string()),
+            // An engine refusal quotes the grant it refused, and that grant
+            // came from senv.toml. Multiline because these are rendered as a
+            // block, not spliced into one of senv's sentences.
+            unavailable: Some(util::sanitize_multiline(&e.to_string())),
         },
     }
 }
 
+/// The network line for a phase.
+///
+/// The allowlist is checked before `net_mode`, because an allowlist *is*
+/// expressed as `Deny` plus a host list — see [`policy::has_allowlist`]. Asking
+/// `net_mode` first would print "denied" for the install phase, which reaches
+/// PyPI on every sync.
 fn describe_net(p: &h5i_sandbox::sandbox_policy::Profile) -> String {
-    if p.net_mode == h5i_sandbox::sandbox_policy::NetMode::Deny {
-        "denied".to_string()
-    } else if p.net_egress.is_empty() {
+    if policy::has_allowlist(p) {
+        let hosts: Vec<String> = p.net_egress.iter().map(|h| util::sanitize(h)).collect();
+        format!("{}{}", hosts.join(", "), egress_caveat())
+    } else if policy::is_unrestricted(p) {
         "UNRESTRICTED".to_string()
     } else {
-        format!("{}{}", p.net_egress.join(", "), egress_caveat())
+        "denied".to_string()
     }
 }
 
 /// How an allowlist is enforced, when that is not obvious.
 ///
-/// On Linux it is nftables rules pinned to resolved addresses, so a program
-/// that ignores proxy variables still cannot get out. macOS has no equivalent:
-/// h5i enforces it with a host allowlist proxy, and a raw socket goes straight
-/// past. Printing the same "allowlist: pypi.org" on both would claim a
-/// containment macOS does not provide — CI caught exactly that, with a raw
-/// socket reaching a host the allowlist excluded.
+/// On Linux it is nftables rules pinned to resolved addresses inside the box's
+/// own network namespace, so the allowlist holds for any client. macOS has no
+/// namespace: h5i leaves the box on the host's stack and Seatbelt permits one
+/// destination, the loopback port of h5i's DNS-pinned allowlist proxy. The
+/// allowlist itself is enforced by the kernel either way — what differs is that
+/// a Mac box has no DNS and no direct socket, so a client that ignores
+/// `HTTPS_PROXY` reaches nothing at all rather than reaching its host directly.
+/// Saying so is the difference between a confusing failure and an expected one.
 fn egress_caveat() -> &'static str {
     if cfg!(target_os = "macos") {
-        " (enforced by a proxy — a program using a raw socket can bypass it)"
+        " (reached through senv's allowlist proxy — a client that ignores \
+         HTTPS_PROXY gets no network at all)"
     } else {
         ""
     }
@@ -215,6 +268,9 @@ fn egress_caveat() -> &'static str {
 /// has to be added here from the enforcement mode rather than inferred from the
 /// grant lists. Inferring it was how `status` came to report the project as
 /// read-only during installs while it was in fact writable.
+///
+/// Every grant string here came out of `senv.toml`, which the run phase can
+/// write — see [`sanitized_grants`].
 fn writable_summary(
     project: &Project,
     p: &h5i_sandbox::sandbox_policy::Profile,
@@ -224,13 +280,30 @@ fn writable_summary(
     if !work_readonly {
         out.push(format!("{} (the project)", project.root.display()));
     }
-    out.extend(
-        p.fs_write
-            .iter()
-            .filter(|w| !matches!(w.as_str(), "$WORK" | "/dev/null" | "/dev/zero"))
-            .cloned(),
-    );
+    out.extend(sanitized_grants(p.fs_write.iter().filter(|w| {
+        !matches!(w.as_str(), "$WORK" | "/dev/null" | "/dev/zero")
+    })));
     out
+}
+
+/// Strip terminal control sequences from grant paths before they are displayed.
+///
+/// `[run.fs] read`, `[run.fs] write` and `[run] net` are copied verbatim out of
+/// `senv.toml` into the compiled policy, and `senv.toml` lives in the project —
+/// which the run phase grants read-write. So these strings are chosen by the
+/// code the boundary contains, and `senv status` prints them.
+///
+/// That made `status` forgeable by the one thing it is supposed to expose. A
+/// package writing `read = ["/data[2K\rnetwork    denied"]` had its own
+/// text erase and repaint senv's lines; verified before this change, with the
+/// raw `ESC[2K` and `\r` reaching the terminal. `status` is what a user runs
+/// *after* senv warns that a policy was widened behind their back, so it is
+/// precisely the output that must not be writable by the suspect.
+///
+/// The same reasoning `crate::trust` already applies to the widenings it
+/// reports — that code sanitizes, and this did not.
+fn sanitized_grants<'a>(items: impl Iterator<Item = &'a String>) -> Vec<String> {
+    items.map(|s| util::sanitize(s)).collect()
 }
 
 fn readable_summary(project: &Project, p: &h5i_sandbox::sandbox_policy::Profile) -> Vec<String> {
@@ -251,19 +324,37 @@ fn readable_summary(project: &Project, p: &h5i_sandbox::sandbox_policy::Profile)
     ];
     let venv = project.venv().display().to_string();
     let root = project.root.display().to_string();
+    // Compared before sanitizing, rendered after: the comparison must be
+    // against the grant the policy actually carries, and only the rendering is
+    // a place a control sequence could do harm. See `sanitized_grants`.
     p.fs_read
         .iter()
         .filter(|r| !BASELINE.contains(&r.as_str()))
         .map(|r| {
+            let shown = util::sanitize(r);
             if *r == venv {
-                format!("{r} (the environment, read-only)")
+                format!("{shown} (the environment, read-only)")
             } else if *r == root {
-                format!("{r} (the project, read-only)")
+                format!("{shown} (the project, read-only)")
             } else {
-                r.clone()
+                shown
             }
         })
         .collect()
+}
+
+/// Mark a configured limit that this host does not actually apply.
+///
+/// The value is still shown: it is what the policy asks for, it is in the
+/// digest, and it becomes real the moment the same project runs on a host that
+/// can enforce it. What must not happen is showing it as though it were a
+/// ceiling here.
+fn annotate(value: String, enforced: bool) -> String {
+    if enforced {
+        value
+    } else {
+        format!("{value} (NOT enforced on this host)")
+    }
 }
 
 fn format_duration(secs: u64) -> String {
@@ -475,9 +566,16 @@ fn suggest_stanza(hosts: &[String], paths: &[String]) -> String {
     if hosts.is_empty() && paths.is_empty() {
         return "# nothing was blocked that senv would suggest allowing\n".to_string();
     }
+    // "Reviewed" was not true of anything here, and it is the wrong word on the
+    // one screen that invites a user to widen their policy. senv infers these
+    // from what commands printed; a package that was refused nothing can print
+    // a refusal and land its own host in this stanza. Say so where it is read.
     let mut out = String::from(
-        "# Reviewed suggestions from recorded denials. Nothing is applied until you\n\
-         # paste it into senv.toml yourself.\n",
+        "# Inferred from what your commands printed when they were refused — senv has\n\
+         # no egress log at the kernel tiers, so this is a lead, not a record. A\n\
+         # package chooses what it prints and can put entries here it was never\n\
+         # denied. Review every line; nothing is applied until you paste it into\n\
+         # senv.toml yourself.\n",
     );
     if !hosts.is_empty() {
         out.push_str("\n[run]\nnet = [\n");
@@ -579,7 +677,7 @@ pub fn allow(ctx: &Ctx, args: &crate::cli::AllowArgs) -> Result<i32> {
     // added to the file since — laundering an attacker's edit through a
     // legitimate one.
     let project = ctx.project_unchecked()?;
-    ctx.guard_trust(&project)?;
+    let guarded = ctx.guard_trust_snapshot(&project)?;
     for host in &args.hosts {
         crate::config::validate_host_pattern(host).map_err(|e| {
             SenvError::refused(
@@ -591,8 +689,13 @@ pub fn allow(ctx: &Ctx, args: &crate::cli::AllowArgs) -> Result<i32> {
     }
 
     let path = project.config_path.clone();
-    let text = if path.is_file() {
-        fs::read_to_string(&path)?
+    // The same guarded read `Config::load` uses, not a bare one. This is the
+    // second time senv opens this file in one command and it is about to write
+    // it back, so it must not be the weaker of the two reads: `senv.toml` is in
+    // the project, and between the load at startup and here it can have become
+    // a symlink, a fifo, or a gigabyte.
+    let text = if std::fs::symlink_metadata(&path).is_ok() {
+        fs::read_to_string_no_follow(&path)?
     } else {
         String::new()
     };
@@ -674,13 +777,22 @@ pub fn allow(ctx: &Ctx, args: &crate::cli::AllowArgs) -> Result<i32> {
     // carried `allow-command-secrets` and a `command:` secret, which is
     // unconfined host execution, after which `senv trust` reported nothing to
     // accept, forever.
+    //
+    // The manifest half is carried over from the snapshot `guard_trust` checked
+    // rather than re-read, for the same reason and against the same window:
+    // `record_trust` would read `pyproject.toml` again here, and a concurrent
+    // writer flipping `[build-system]` between the gate and this line would get
+    // its build backend recorded as trusted without it ever being compared.
+    // Only `senv.toml` changed in this command, so only `senv.toml` is
+    // re-snapshotted.
     let written: crate::config::Config = toml::from_str(&rendered).map_err(|e| {
         SenvError::config(&path, format!("senv wrote a config it cannot parse: {e}"))
     })?;
     written.validate(&path)?;
     let mut baselined = project.clone();
     baselined.config = written;
-    baselined.record_trust()?;
+    let snapshot = crate::trust::PolicySnapshot::of(&baselined.config).with_manifest_from(&guarded);
+    baselined.record_snapshot(&snapshot)?;
 
     let out = AllowOutput {
         config: path.display().to_string(),
@@ -719,8 +831,15 @@ pub struct TrustOutput {
 /// Accept the configuration on disk as the baseline.
 pub fn trust(ctx: &Ctx) -> Result<i32> {
     let project = ctx.project_unchecked()?;
-    let accepted = project.trust_verdict().widenings().to_vec();
-    project.record_trust()?;
+    // One snapshot: the widenings printed for the user to accept and the
+    // baseline written down have to be the same bytes. Computing the list from
+    // one read of `pyproject.toml` and then recording a second read let a
+    // concurrent writer show an innocuous list and store a hostile baseline —
+    // in the one command whose entire contract is "what I show you is what I
+    // accept". Same window as the trust gate's; see `Project::record_snapshot`.
+    let current = project.policy_snapshot();
+    let accepted = project.verdict_against(&current).widenings().to_vec();
+    project.record_snapshot(&current)?;
     let out = TrustOutput {
         config: project.config_path.display().to_string(),
         accepted,
@@ -750,6 +869,7 @@ pub struct DoctorOutput {
     pub strongest_tier: String,
     pub syscall_filter: bool,
     pub memory_limit: bool,
+    pub process_limit: bool,
     pub egress_allowlist: bool,
     pub tiers: Vec<TierStatus>,
     pub supervised_missing: Vec<String>,
@@ -801,12 +921,14 @@ pub fn doctor(ctx: &Ctx) -> Result<i32> {
     let uv_version = if project_specified {
         match project.as_ref().map(crate::uv::find) {
             // Reported, not executed: running a configured path to read its
-            // version is running an attacker-chosen binary unconfined.
+            // version is running an attacker-chosen binary unconfined. And
+            // since it is attacker-chosen, it is sanitized before it is
+            // printed — `[env] uv` comes from senv.toml.
             Some(Ok(path)) => Some(format!(
                 "{} (configured; not executed here)",
-                path.display()
+                util::sanitize(&path.display().to_string())
             )),
-            Some(Err(e)) => Some(format!("REFUSED — {e}")),
+            Some(Err(e)) => Some(format!("REFUSED — {}", util::sanitize(&e.to_string()))),
             None => None,
         }
     } else {
@@ -842,12 +964,25 @@ pub fn doctor(ctx: &Ctx) -> Result<i32> {
         }
     }
 
+    // Against the tiers senv actually runs, not against the host's best.
+    //
+    // h5i's `memory_limit` answers "can anything on this machine cap memory",
+    // and it is true as soon as a container or microVM runtime is installed.
+    // senv never uses those tiers — its phases are `process` and `supervised` —
+    // so on a Mac with `msb` on PATH, `senv doctor` printed "memory limits yes"
+    // directly above a tier line reading "no memory cap". Ask the same question
+    // senv's own phases will be answered by.
+    let limits = h5i_sandbox::sandbox::limit_support(
+        h5i_sandbox::sandbox_policy::IsolationClaim::Supervised,
+    );
+
     let out = DoctorOutput {
         os: caps.os.clone(),
         mechanism: caps.mechanism.to_string(),
         strongest_tier: caps.strongest_tier.to_string(),
         syscall_filter: caps.syscall_filter,
-        memory_limit: caps.memory_limit,
+        memory_limit: limits.mem,
+        process_limit: limits.procs,
         egress_allowlist: missing.is_empty() || caps.egress_enforced,
         tiers,
         supervised_missing: missing,
@@ -869,6 +1004,7 @@ fn render_doctor(o: &DoctorOutput) {
     println!("enforcement");
     println!("  syscall filter    {}", yes_no(o.syscall_filter));
     println!("  memory limits     {}", yes_no(o.memory_limit));
+    println!("  process limits    {}", yes_no(o.process_limit));
     println!("  egress allowlist  {}", yes_no(o.egress_allowlist));
     println!();
     println!("isolation tiers");
@@ -888,9 +1024,12 @@ fn render_doctor(o: &DoctorOutput) {
         println!(
             "  {}",
             exec::wrap(
-                "Installs need it to restrict egress to package registries. On Debian/Ubuntu: \
-                 sudo apt install slirp4netns nftables. Without it, set [install] net = \
-                 \"host\" to install with unrestricted network access — warned and recorded.",
+                &format!(
+                    "Installs need it to restrict egress to package registries. {} Without it, \
+                     set [install] net = \"host\" to install with unrestricted network access — \
+                     warned and recorded.",
+                    policy::supervisor_remedy()
+                ),
                 74,
                 2
             )
