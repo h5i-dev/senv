@@ -261,6 +261,21 @@ impl PolicySnapshot {
         snapshot
     }
 
+    /// This snapshot's config half, with `other`'s view of the manifest.
+    ///
+    /// For a command that rewrites `senv.toml` and nothing else: it must
+    /// re-snapshot the config it just produced, but re-reading
+    /// `pyproject.toml` to complete the record would bless whatever a
+    /// concurrent writer had put there since the trust gate looked. Carrying
+    /// the manifest fields across keeps the recorded baseline made of bytes
+    /// that were actually checked.
+    pub fn with_manifest_from(mut self, other: &PolicySnapshot) -> PolicySnapshot {
+        self.manifest_seen = other.manifest_seen;
+        self.build_system = other.build_system.clone();
+        self.tool_uv = other.tool_uv.clone();
+        self
+    }
+
     /// Reduce a configuration to what a reviewer would care about.
     pub fn of(config: &Config) -> PolicySnapshot {
         let run_net = if config.run.net.is_host() {

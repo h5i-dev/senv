@@ -400,6 +400,15 @@ evidence plus a gate**:
 
 - senv keeps a normalized snapshot of the security-relevant settings in
   `state.json`, outside every grant. Before compiling a policy it compares.
+- **One read, compared and recorded.** The gate used to read `pyproject.toml`
+  to judge it and then read it *again* to record the baseline. Anything editing
+  the file between the two — a watcher or dev server under a concurrent `senv
+  run`, which this design calls ordinary — got its `[build-system]` written
+  down as trusted without ever being compared, and the next `senv sync` runs
+  that backend. The snapshot that is judged is now the snapshot that is stored.
+  `senv allow` carries the manifest half of its baseline across from the gate
+  for the same reason: it rewrites `senv.toml` and nothing else, so nothing
+  else may be re-read on the way to recording.
 - **Narrowed or unchanged** → proceed silently, and re-baseline. An attacker
   gains nothing by narrowing, and a prompt that fires on safe edits is a prompt
   people learn to click through.
@@ -719,6 +728,34 @@ the symlink gains nothing.
 The side effect is the best thing about it for adoption: **senv adds no files
 to your project tree**. A senv project is a uv project with an optional
 `senv.toml`.
+
+**And senv now refuses to run when that layout is violated.** For a long time
+this section described an invariant that nothing checked. `SENV_STATE_DIR` and
+`SENV_CACHE_DIR` were validated only for being absolute — with a comment
+explaining that a relative value "would put the venv and the receipts inside
+the run phase's write grant", which is exactly what an *absolute* path inside
+the project does. `SENV_STATE_DIR=$PWD/.senv-state` is not contrived; it is
+what you write in CI to keep senv's state in the workspace so it caches between
+jobs. Everything above then collapses at once, and it was verified in this
+order from inside one ordinary `senv run`:
+
+1. the environment `senv status` reports as read-only sits in `$WORK`, so a
+   package patched an installed module and persisted into the next run;
+2. `receipt.jsonl` — "outside every grant senv issues, by construction" — was
+   truncated to nothing;
+3. `state.json` was rewritten with a `trusted` snapshot matching a hostile
+   `senv.toml` the same script had just written, so the tamper-evidence check
+   saw no widening. The next ordinary `senv run` executed the attacker's shell
+   **on the host, outside the sandbox**, through a `command:` secret source.
+
+One environment variable re-opened the entire escalation chain §12 exists to
+stop, while senv went on reporting all three properties as enforced. The check
+lives where the project root and the state root are both known, it refuses
+rather than warns, and it is narrow in the other direction: a state root that
+merely *contains* the project (`SENV_STATE_DIR=/workspace` with the project at
+`/workspace/repo`) is fine and stays allowed, because senv's data lands beside
+the project rather than inside it. What is refused is senv's data inside the
+project, or the project inside senv's per-project data.
 
 - **Provenance.** `state.json` records whether the environment was built inside
   the boundary (`sandboxed`) or adopted from a `.venv` that already existed

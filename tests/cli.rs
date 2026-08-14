@@ -1546,6 +1546,68 @@ fn a_package_cannot_point_senvs_toolchain_at_its_own_binary() {
     );
 }
 
+/// senv must refuse to keep its state inside the project it is confining.
+///
+/// The full escape, reproduced before the fix. `SENV_STATE_DIR=$PWD/.senv-state`
+/// — an ordinary way to keep state in a CI workspace so it caches — puts the
+/// environment, the receipts and the recorded policy baseline inside the run
+/// phase's own write grant. From one `senv run`, a package patched an installed
+/// module, truncated `receipt.jsonl`, and rewrote `state.json` with a `trusted`
+/// snapshot matching a hostile `senv.toml` it had just written; the next
+/// ordinary `senv run` then executed its shell on the host through a `command:`
+/// secret source. senv reported the environment as read-only throughout.
+///
+/// No confinement is involved in the fix, so this test needs none either — the
+/// refusal happens while the project is being constructed.
+#[test]
+fn senv_refuses_to_keep_its_state_inside_the_project() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().join("proj");
+    std::fs::create_dir_all(&root).expect("mkdir");
+    std::fs::write(root.join("pyproject.toml"), DEMO).expect("manifest");
+
+    let run = |state: &std::path::Path, cache: &std::path::Path| -> Output {
+        Command::new(BIN)
+            .args(["status"])
+            .current_dir(&root)
+            .env("SENV_STATE_DIR", state)
+            .env("SENV_CACHE_DIR", cache)
+            .env("NO_COLOR", "1")
+            .env_remove("VIRTUAL_ENV")
+            .output()
+            .expect("senv should be runnable")
+    };
+
+    let inside = run(&root.join(".senv-state"), &root.join(".senv-cache"));
+    let text = combined(&inside);
+    assert!(
+        !inside.status.success(),
+        "senv accepted a state directory inside the project: {text}"
+    );
+    assert!(text.contains("inside the project"), "{text}");
+    assert!(text.contains("SENV_STATE_DIR"), "{text}");
+
+    // The cache alone is enough: it holds the interpreters every phase runs.
+    let cache_only = run(&tmp.path().join("state"), &root.join(".senv-cache"));
+    assert!(
+        !cache_only.status.success(),
+        "a cache root inside the project must be refused too: {}",
+        combined(&cache_only)
+    );
+
+    // And a sibling that merely shares a name prefix is fine — the check is
+    // component-wise, not a string prefix.
+    let beside = run(
+        &tmp.path().join("proj-state"),
+        &tmp.path().join("proj-cache"),
+    );
+    assert!(
+        beside.status.success(),
+        "an ordinary layout beside the project was refused: {}",
+        combined(&beside)
+    );
+}
+
 /// Output from a program must not be able to forge or repaint senv's own
 /// messages.
 #[test]
@@ -1561,9 +1623,12 @@ fn program_output_cannot_forge_senvs_framing() {
     );
     // The program's own line is passed through untouched, as it would be
     // without senv. What must be clean is senv's quotation of it.
+    // Anchored on the header senv prints above its quotation of the program's
+    // line — which deliberately says these were *read from what the command
+    // printed*, because senv cannot tell a real refusal from a fabricated one.
     let framed: Vec<&str> = text
         .lines()
-        .skip_while(|l| !l.contains("senv blocked"))
+        .skip_while(|l| !l.contains("refusal(s) from what this command printed"))
         .collect();
     assert!(
         !framed.is_empty(),

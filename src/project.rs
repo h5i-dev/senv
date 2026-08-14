@@ -137,8 +137,33 @@ impl Project {
     pub fn at(root: &Path) -> Result<Project> {
         let root = fs::canonicalize(root)?;
         let key = project_key(&root);
-        let state_dir = state_root()?.join("projects").join(&key);
-        let cache_root = cache_root()?;
+        // Normalized before they are used, not just before they are compared.
+        // Every path here becomes a *grant* handed to Landlock or Seatbelt, and
+        // the kernel resolves `..` and symlinks before matching — so a
+        // `SENV_STATE_DIR` of `$PWD/../state` produced a grant string that
+        // matched nothing the child actually touched, and uv failed with
+        // "Operation not permitted" on senv's own cache directory. Fail-closed,
+        // but broken; resolving here means the grant names what the kernel will
+        // see.
+        let state = canonical_ancestor(&state_root()?);
+        let cache_root = canonical_ancestor(&cache_root()?);
+        // The invariant this whole module rests on, finally checked. See
+        // `refuse_root_inside_project`.
+        refuse_root_inside_project(
+            &root,
+            &state,
+            &state.join("projects"),
+            "SENV_STATE_DIR",
+            "XDG_STATE_HOME",
+        )?;
+        refuse_root_inside_project(
+            &root,
+            &cache_root,
+            &cache_root,
+            "SENV_CACHE_DIR",
+            "XDG_CACHE_HOME",
+        )?;
+        let state_dir = state.join("projects").join(&key);
         let config_path = config::config_path(&root);
         let config = Config::load(&config_path)?;
         Ok(Project {
@@ -336,8 +361,17 @@ impl Project {
     }
 
     /// Compare the configuration on disk with the snapshot senv recorded.
+    ///
+    /// Convenience for callers that only *report* — `status`, `report`,
+    /// `doctor`. Anything that gates execution must use
+    /// [`Project::verdict_against`] with a snapshot it also records, so the
+    /// bytes it checked are the bytes it blesses.
     pub fn trust_verdict(&self) -> crate::trust::Verdict {
-        let current = self.policy_snapshot();
+        self.verdict_against(&self.policy_snapshot())
+    }
+
+    /// The verdict for a snapshot the caller already took.
+    pub fn verdict_against(&self, current: &crate::trust::PolicySnapshot) -> crate::trust::Verdict {
         match self.load_state().trusted {
             None => crate::trust::Verdict::FirstSight,
             // A snapshot written by a different senv cannot be compared field
@@ -359,7 +393,28 @@ impl Project {
 
     /// Record the configuration on disk as the trusted baseline.
     pub fn record_trust(&self) -> Result<()> {
-        let snapshot = self.policy_snapshot();
+        self.record_snapshot(&self.policy_snapshot())
+    }
+
+    /// Record a snapshot the caller already took as the trusted baseline.
+    ///
+    /// The point of taking the snapshot separately is that comparing one read
+    /// of `pyproject.toml` and then storing a *second* read of it is a
+    /// laundering window. `guard_trust` did exactly that: `trust_verdict()`
+    /// read the manifest, found no widening, and `record_trust()` then read it
+    /// again and blessed whatever was there by that point. Anything editing the
+    /// file in between — a dev server or watcher left running under a
+    /// concurrent `senv run`, which this design calls ordinary — got its
+    /// `[build-system]` recorded as trusted without it ever being compared,
+    /// and the next `senv sync` runs that backend with the environment
+    /// writable.
+    ///
+    /// The `senv allow` path already carries this reasoning for `senv.toml`,
+    /// where it was fixed by baselining the document senv itself produced. This
+    /// is the same fix for the manifest half, and it applies to every command
+    /// that executes, not just `allow`.
+    pub fn record_snapshot(&self, snapshot: &crate::trust::PolicySnapshot) -> Result<()> {
+        let snapshot = snapshot.clone();
         let root = self.root.display().to_string();
         self.update_state(|state| {
             state.version = State::VERSION;
@@ -601,6 +656,101 @@ fn absolute_root(var: &str, value: std::ffi::OsString) -> Result<PathBuf> {
         ));
     }
     Ok(path)
+}
+
+/// Refuse a state or cache root that overlaps the project tree.
+///
+/// This is the invariant in this module's own header — "everything senv writes
+/// lives under a per-project state directory **outside the project tree** …
+/// this is a security property, not tidiness" — and until now nothing enforced
+/// it. [`absolute_root`] rejects a *relative* value and says why: "if it
+/// resolved inside a project, senv's state would land inside the sandbox's own
+/// write grant". An absolute value inside the project does exactly that and was
+/// accepted.
+///
+/// `SENV_STATE_DIR=$PWD/.senv-state` is not a contrived setting. It is what
+/// someone writes in CI to keep senv's state in the workspace so it caches
+/// between jobs, and it collapses every guarantee senv makes. Verified, in this
+/// order, from inside an ordinary `senv run`:
+///
+/// 1. the environment `senv status` calls read-only is inside `$WORK`, so a
+///    package patched an installed module and persisted into the next run;
+/// 2. `receipt.jsonl` — "outside every grant senv issues, by construction" —
+///    was truncated to nothing;
+/// 3. `state.json` was rewritten with a `trusted` snapshot matching a hostile
+///    `senv.toml` the same script had just written, so [`crate::trust`] saw no
+///    widening. The next ordinary `senv run` executed the attacker's shell
+///    **on the host, outside the sandbox**, via a `command:` secret source.
+///
+/// The whole escalation chain that `trust.rs` exists to stop, re-opened by one
+/// environment variable. So the check is here, at the one place that knows both
+/// paths, and it refuses rather than warns: there is no version of this that is
+/// safe to continue past.
+///
+/// The other direction is refused too, but narrowly: a project sitting inside
+/// the directory where senv keeps *other* projects' data would put their venvs,
+/// receipts and trust baselines inside this project's write grant. That is
+/// `data_area` — `<state>/projects` and the cache root — not the whole state
+/// root. Refusing the whole root would reject `SENV_STATE_DIR=/workspace` with
+/// a project at `/workspace/repo`, which is an ordinary container layout and
+/// perfectly safe: senv's data lands in `/workspace/projects/…`, beside the
+/// project rather than inside it.
+fn refuse_root_inside_project(
+    root: &Path,
+    dir: &Path,
+    data_area: &Path,
+    var: &str,
+    xdg: &str,
+) -> Result<()> {
+    // Every path here is already resolved by the caller. `Path::starts_with` is
+    // component-wise, not textual, so a sibling named `proj-state` beside
+    // `proj` is correctly not "inside" it.
+    if !dir.starts_with(root) && !root.starts_with(data_area) {
+        return Ok(());
+    }
+    Err(SenvError::refused(
+        format!(
+            "senv's state directory ({}) is inside the project ({})",
+            dir.display(),
+            root.display()
+        ),
+        "the run phase grants your project read-write — that is what it is for — so state \
+         kept in there is writable by the very code the boundary contains. It would make the \
+         environment patchable between runs, the receipts erasable, and the recorded policy \
+         baseline forgeable, while senv went on reporting all three as protected."
+            .to_string(),
+        format!(
+            "point {var} (or {xdg}) at a directory outside this project — somewhere like \
+             ~/.local/state/senv, or a path outside the workspace in CI — or unset it to use \
+             the default"
+        ),
+    ))
+}
+
+/// The canonical form of `path`, resolving as much of it as exists.
+///
+/// `canonicalize` fails outright on a path that is not there yet, and senv's
+/// state directory routinely is not on a first run — but the comparison above
+/// still has to see through a symlinked ancestor (`/tmp` on macOS is one, and
+/// CI puts workspaces under it), or it compares two spellings of the same
+/// directory and finds them different.
+fn canonical_ancestor(path: &Path) -> PathBuf {
+    let mut trailing = Vec::new();
+    let mut current = path.to_path_buf();
+    loop {
+        if let Ok(resolved) = std::fs::canonicalize(&current) {
+            let mut out = resolved;
+            out.extend(trailing.iter().rev());
+            return out;
+        }
+        match (current.parent().map(Path::to_path_buf), current.file_name()) {
+            (Some(parent), Some(name)) => {
+                trailing.push(name.to_os_string());
+                current = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
 }
 
 pub fn home() -> Result<PathBuf> {
@@ -855,6 +1005,146 @@ mod tests {
         let err = Project::discover(tmp.path()).expect_err("no markers here");
         assert!(matches!(err, SenvError::NoProject { .. }));
         assert!(err.to_string().contains("pyproject.toml"), "{err}");
+    }
+
+    #[test]
+    fn senvs_state_is_refused_when_it_would_land_inside_the_project() {
+        // The escape this closes, reproduced end to end before the fix: with
+        // `SENV_STATE_DIR=$PWD/.senv-state` — an ordinary way to keep state in a
+        // CI workspace — everything senv writes lands in the run phase's own
+        // write grant. A package patched an installed module, truncated
+        // receipt.jsonl, and rewrote state.json with a `trusted` snapshot
+        // matching a hostile senv.toml it had just written; the next ordinary
+        // `senv run` then executed its shell on the host through a `command:`
+        // secret. `absolute_root` rejected a *relative* value for exactly this
+        // reason and let the absolute form through.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().join("proj");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("pyproject.toml"), "[project]\nname='x'\n").unwrap();
+
+        let _roots = redirect_roots(&root);
+        let err = Project::at(&root).expect_err("state inside the project must be refused");
+        let text = format!("{err} {}", err.fix().unwrap_or_default());
+        assert!(text.contains("inside the project"), "{text}");
+        assert!(text.contains("SENV_STATE_DIR"), "{text}");
+    }
+
+    #[test]
+    fn a_state_root_that_merely_contains_the_project_is_allowed() {
+        // `SENV_STATE_DIR=/workspace` with the project at `/workspace/repo` is
+        // an ordinary container layout and is safe: senv's data lands in
+        // `/workspace/projects/…`, beside the project rather than inside it.
+        // Refusing "either path contains the other" would have rejected it.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().join("workspace").join("repo");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("pyproject.toml"), "[project]\nname='x'\n").unwrap();
+
+        let _roots = redirect_roots(&tmp.path().join("workspace"));
+        let project = Project::at(&root).expect("a state root above the project is fine");
+        assert!(
+            !project.state_dir.starts_with(&project.root),
+            "and its data is still outside the project: {}",
+            project.state_dir.display()
+        );
+    }
+
+    #[test]
+    fn a_project_inside_another_projects_state_is_refused() {
+        // The narrow half of the second direction: a project living where senv
+        // keeps other projects' data would put their venvs, receipts and trust
+        // baselines inside this project's write grant.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp
+            .path()
+            .join("state")
+            .join("projects")
+            .join("someone-else");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("pyproject.toml"), "[project]\nname='x'\n").unwrap();
+
+        let _roots = redirect_roots(tmp.path());
+        assert!(
+            Project::at(&root).is_err(),
+            "a project inside senv's own per-project data must be refused"
+        );
+    }
+
+    #[test]
+    fn a_sibling_that_merely_shares_a_name_prefix_is_not_inside_the_project() {
+        // The check must be component-wise, or `…/proj-state` beside `…/proj`
+        // reads as "inside" and senv refuses a perfectly ordinary layout.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().join("proj");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("pyproject.toml"), "[project]\nname='x'\n").unwrap();
+
+        let _roots = redirect_roots(&tmp.path().join("proj-elsewhere"));
+        let project = Project::at(&root).expect("a sibling root is fine");
+        assert!(!project.state_dir.starts_with(&project.root));
+    }
+
+    #[test]
+    fn a_state_root_is_normalized_before_it_becomes_a_grant() {
+        // `..` in the path produced a grant string the kernel resolved
+        // differently from what senv wrote down, so uv was denied its own cache
+        // directory. Fail-closed, but broken.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().join("proj");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("pyproject.toml"), "[project]\nname='x'\n").unwrap();
+        std::fs::create_dir_all(tmp.path().join("outside")).unwrap();
+
+        let _roots = redirect_roots(&root.join("..").join("outside"));
+        let project = Project::at(&root).expect("a normalized sibling is fine");
+        assert!(
+            !project.state_dir.to_string_lossy().contains(".."),
+            "the grant must name the path the kernel will see: {}",
+            project.state_dir.display()
+        );
+        assert!(!project.state_dir.starts_with(&project.root));
+    }
+
+    #[test]
+    fn the_baseline_records_the_manifest_that_was_checked_not_a_later_one() {
+        // The laundering window: the trust gate compared one read of
+        // pyproject.toml and then recorded a *second* read of it. Anything
+        // editing the file in between — a watcher or dev server under a
+        // concurrent `senv run` — got its `[build-system]` blessed without ever
+        // being compared, and the next `senv sync` runs that backend.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().join("proj");
+        std::fs::create_dir_all(&root).unwrap();
+        let honest = "[project]\nname='x'\nversion='0'\n\
+                      [build-system]\nrequires=['hatchling']\nbuild-backend='hatchling.build'\n";
+        std::fs::write(root.join("pyproject.toml"), honest).unwrap();
+        let _roots = redirect_roots(tmp.path());
+        let project = Project::at(&root).unwrap();
+        project.ensure_dirs().unwrap();
+
+        let checked = project.policy_snapshot();
+
+        // The attacker wins the race and swaps the backend.
+        std::fs::write(
+            root.join("pyproject.toml"),
+            "[project]\nname='x'\nversion='0'\n\
+             [build-system]\nrequires=[]\nbuild-backend='evil'\nbackend-path=['.']\n",
+        )
+        .unwrap();
+
+        project.record_snapshot(&checked).unwrap();
+        let stored = project.load_state().trusted.expect("a baseline was stored");
+        assert_eq!(
+            stored.build_system, checked.build_system,
+            "senv recorded a manifest it never compared"
+        );
+
+        // …and the swap is therefore still caught on the next command.
+        assert!(
+            project.trust_verdict().is_widened(),
+            "the substituted build backend must still be reported"
+        );
     }
 
     #[test]

@@ -341,13 +341,20 @@ impl Receipts {
         }
         // Granting a credential directory is the request senv should never
         // help with, even when a program genuinely wants it.
-        const NEVER: [&str; 6] = [
+        const NEVER: [&str; 9] = [
             ".ssh",
             ".aws",
             ".gnupg",
             ".netrc",
             ".git-credentials",
             ".pypirc",
+            // System credential stores. These reach the list the same way any
+            // other path does — a package printing a refusal it never suffered
+            // — and "add /etc/shadow to [run.fs] read" is not a sentence senv
+            // should ever put in front of someone.
+            "/etc/shadow",
+            "/etc/gshadow",
+            "/etc/sudoers",
         ];
         if NEVER.iter().any(|c| path.contains(c)) {
             return Verdict::by_design(
@@ -734,6 +741,21 @@ mod tests {
         assert!(!d[0].verdict.is_suggestable());
         let reason = d[0].verdict.reason().expect("a by-design verdict");
         assert!(reason.contains("credential"), "{reason}");
+
+        // Including the system stores. A package that was refused nothing can
+        // print a refusal, so this list is what stops senv recommending
+        // `add "/etc/shadow" to [run.fs] read` in its own voice.
+        for store in ["/etc/shadow", "/etc/gshadow", "/etc/sudoers"] {
+            let d = r.analyze(&format!(
+                "PermissionError: [Errno 13] Permission denied: '{store}'"
+            ));
+            assert_eq!(d.len(), 1, "{store}: {d:?}");
+            assert!(
+                !d[0].verdict.is_suggestable(),
+                "{store}: {:?}",
+                d[0].verdict
+            );
+        }
     }
 
     #[test]

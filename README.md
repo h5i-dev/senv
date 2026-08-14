@@ -251,7 +251,15 @@ have:
   Verifying what you install is uv's lockfile hashes and your own judgement.
 - Denials are inferred from what a program printed when it was refused, so
   `senv report` is a strong lead and not an audit log. Container-tier runs get a
-  real per-request egress tally; the kernel tiers do not.
+  real per-request egress tally; the kernel tiers do not. A program chooses what
+  it prints, so a package that was refused nothing can put a host or a path in
+  that list and have senv suggest allowing it — read each suggestion before you
+  paste it, the same way you would read a diff.
+- senv's state must live outside your project, and senv refuses to run if you
+  point `SENV_STATE_DIR` or `SENV_CACHE_DIR` inside it. The run phase grants
+  your project read-write, so state kept there is writable by the code the
+  boundary contains — which would make the environment patchable between runs,
+  the receipts erasable, and the recorded policy baseline forgeable.
 - Code that stays inside the policy — corrupting files in your own project,
   reaching a host you allowlisted — is within policy. That is what the policy
   is for.

@@ -566,9 +566,16 @@ fn suggest_stanza(hosts: &[String], paths: &[String]) -> String {
     if hosts.is_empty() && paths.is_empty() {
         return "# nothing was blocked that senv would suggest allowing\n".to_string();
     }
+    // "Reviewed" was not true of anything here, and it is the wrong word on the
+    // one screen that invites a user to widen their policy. senv infers these
+    // from what commands printed; a package that was refused nothing can print
+    // a refusal and land its own host in this stanza. Say so where it is read.
     let mut out = String::from(
-        "# Reviewed suggestions from recorded denials. Nothing is applied until you\n\
-         # paste it into senv.toml yourself.\n",
+        "# Inferred from what your commands printed when they were refused — senv has\n\
+         # no egress log at the kernel tiers, so this is a lead, not a record. A\n\
+         # package chooses what it prints and can put entries here it was never\n\
+         # denied. Review every line; nothing is applied until you paste it into\n\
+         # senv.toml yourself.\n",
     );
     if !hosts.is_empty() {
         out.push_str("\n[run]\nnet = [\n");
@@ -670,7 +677,7 @@ pub fn allow(ctx: &Ctx, args: &crate::cli::AllowArgs) -> Result<i32> {
     // added to the file since — laundering an attacker's edit through a
     // legitimate one.
     let project = ctx.project_unchecked()?;
-    ctx.guard_trust(&project)?;
+    let guarded = ctx.guard_trust_snapshot(&project)?;
     for host in &args.hosts {
         crate::config::validate_host_pattern(host).map_err(|e| {
             SenvError::refused(
@@ -770,13 +777,22 @@ pub fn allow(ctx: &Ctx, args: &crate::cli::AllowArgs) -> Result<i32> {
     // carried `allow-command-secrets` and a `command:` secret, which is
     // unconfined host execution, after which `senv trust` reported nothing to
     // accept, forever.
+    //
+    // The manifest half is carried over from the snapshot `guard_trust` checked
+    // rather than re-read, for the same reason and against the same window:
+    // `record_trust` would read `pyproject.toml` again here, and a concurrent
+    // writer flipping `[build-system]` between the gate and this line would get
+    // its build backend recorded as trusted without it ever being compared.
+    // Only `senv.toml` changed in this command, so only `senv.toml` is
+    // re-snapshotted.
     let written: crate::config::Config = toml::from_str(&rendered).map_err(|e| {
         SenvError::config(&path, format!("senv wrote a config it cannot parse: {e}"))
     })?;
     written.validate(&path)?;
     let mut baselined = project.clone();
     baselined.config = written;
-    baselined.record_trust()?;
+    let snapshot = crate::trust::PolicySnapshot::of(&baselined.config).with_manifest_from(&guarded);
+    baselined.record_snapshot(&snapshot)?;
 
     let out = AllowOutput {
         config: path.display().to_string(),
