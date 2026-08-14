@@ -1,0 +1,84 @@
+# Supply-chain gates for senv's dependency tree.
+#
+# senv's whole claim is that it is a security boundary. A boundary assembled
+# from crates nobody checked is a boundary with an unexamined bottom half, and
+# the graph here is not small: `h5i-sandbox` pulls in git2 → libgit2-sys →
+# libssh2-sys → openssl-sys, so senv links a TLS stack and a git implementation
+# whether or not it ever calls them.
+#
+# Run locally with `cargo deny check`; CI runs the same thing on every PR.
+
+[advisories]
+# Fail on anything RUSTSEC has an advisory for. Exceptions belong in `ignore`
+# below, each with the reason it is tolerable and what would retire it — not as
+# a lowered severity threshold, which would hide the next one too.
+yanked = "deny"
+ignore = []
+
+[licenses]
+# Permissive licenses only. senv ships as a prebuilt binary through install.sh
+# and as a wheel, so anything copyleft here becomes a distribution obligation on
+# every user who curls it.
+#
+# This is exactly the set the current tree resolves to, not a wishlist — an
+# allowlist wider than the tree is an allowlist nobody has read. A new dependency
+# under some other permissive license should fail here once and be added
+# deliberately. MPL-2.0 and the other weak-copyleft licenses are deliberately
+# absent: nothing needs them today, and per-file source obligations are not
+# something to acquire by accident in a binary people curl.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",
+]
+# A crate whose license cannot be determined with high confidence is a crate
+# whose license has not been checked.
+confidence-threshold = 0.9
+
+# h5i's crate manifests carry no `license` field, so cargo-deny reads them as
+# unlicensed. The repository does ship an Apache-2.0 LICENSE at its root — the
+# same license as senv — and these entries record that as the evidence rather
+# than waving the crates through.
+#
+# The real fix is upstream: `license = "Apache-2.0"` in the h5i workspace
+# manifest. Until that lands and senv's pin moves past it, anyone vendoring senv
+# has to open the h5i tree by hand to answer a question a manifest should have
+# answered. Delete these two entries once the pin includes it.
+[[licenses.clarify]]
+name = "h5i-sandbox"
+expression = "Apache-2.0"
+license-files = []
+
+[[licenses.clarify]]
+name = "h5i-error"
+expression = "Apache-2.0"
+license-files = []
+
+[bans]
+# Two versions of the same crate is usually harmless. It is not harmless for
+# anything that parses or enforces: `toml` is pinned to 0.8 precisely because
+# the policy digest is taken over TOML bytes, and a second copy in the graph is
+# how those bytes start differing across a crate boundary.
+multiple-versions = "warn"
+# The two h5i crates are git dependencies with no semver requirement, which this
+# lint reads as a wildcard. A `rev` pin is stricter than any version range —
+# it names one commit — and `[sources]` below is what actually gates where they
+# may come from, so the lint has nothing left to catch here.
+wildcards = "allow"
+deny = [
+    # The digest story depends on one serializer. See the `toml` pin in
+    # Cargo.toml.
+    { name = "toml", deny-multiple-versions = true },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+# h5i is senv's confinement engine and is not published to crates.io. It is
+# pinned by commit in Cargo.toml rather than by branch: the policy digest is
+# only meaningful if the enforcement code is the code that was reviewed.
+allow-git = ["https://github.com/h5i-dev/h5i"]

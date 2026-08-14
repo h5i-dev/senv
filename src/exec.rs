@@ -163,12 +163,27 @@ pub fn run_streaming(
 /// being run is echoed at the beginning.
 fn bounded(bytes: &[u8]) -> String {
     const KEEP: usize = 512 * 1024;
-    if bytes.len() <= KEEP * 2 {
+    // Anything that fits in both halves is returned whole — no truncation, and
+    // no risk of the two halves overlapping.
+    let Some(skipped) = bytes
+        .len()
+        .checked_sub(KEEP.saturating_mul(2))
+        .filter(|&s| s > 0)
+    else {
         return String::from_utf8_lossy(bytes).into_owned();
-    }
-    let head = String::from_utf8_lossy(&bytes[..KEEP]).into_owned();
-    let tail = String::from_utf8_lossy(&bytes[bytes.len() - KEEP..]).into_owned();
-    let skipped = bytes.len() - KEEP * 2;
+    };
+    // Both ends are then taken fallibly, sharing that same fallback. The check
+    // above rules the failure out already, but this is output chosen by the code
+    // the boundary exists to contain, so it does not get to decide whether senv
+    // panics.
+    let (Some(head), Some(tail)) = (
+        bytes.get(..KEEP),
+        bytes.get(bytes.len().saturating_sub(KEEP)..),
+    ) else {
+        return String::from_utf8_lossy(bytes).into_owned();
+    };
+    let head = String::from_utf8_lossy(head).into_owned();
+    let tail = String::from_utf8_lossy(tail).into_owned();
     format!("{head}\n… senv omitted {skipped} bytes of output …\n{tail}")
 }
 
@@ -281,31 +296,34 @@ impl StderrTee {
                 if n <= 0 {
                     break;
                 }
+                // `read` returns at most `buf.len()`, so this slice is the whole
+                // of what was filled. Fallible anyway: a short read is data, a
+                // panic in the tee thread would take the receipt with it.
                 let n = n as usize;
+                let Some(filled) = buf.get(..n) else { break };
                 // Write through to the terminal first: the user's output must
                 // never be delayed or dropped by senv's bookkeeping.
-                let mut written = 0;
-                while written < n {
+                let mut rest = filled;
+                while !rest.is_empty() {
                     // SAFETY: writing a slice of `buf` that was just filled.
                     let w = unsafe {
-                        libc::write(
-                            saved,
-                            buf[written..n].as_ptr() as *const libc::c_void,
-                            n - written,
-                        )
+                        libc::write(saved, rest.as_ptr() as *const libc::c_void, rest.len())
                     };
-                    if w <= 0 {
+                    let Ok(w) = usize::try_from(w) else { break };
+                    let Some(remaining) = rest.get(w..) else {
+                        break;
+                    };
+                    if w == 0 {
                         break;
                     }
-                    written += w as usize;
+                    rest = remaining;
                 }
                 // A ring, not a prefix. Keeping the first 256 KB meant a
                 // denial at the end of a noisy test run was never recorded —
                 // and the end is exactly where a command explains why it
                 // failed.
-                collected.extend_from_slice(&buf[..n]);
-                if collected.len() > MAX_OBSERVED {
-                    let drop = collected.len() - MAX_OBSERVED;
+                collected.extend_from_slice(filled);
+                if let Some(drop) = collected.len().checked_sub(MAX_OBSERVED) {
                     collected.drain(..drop);
                 }
             }
@@ -494,18 +512,21 @@ pub fn print_denials(record: &Record) {
 pub fn wrap(text: &str, width: usize, indent: usize) -> String {
     let pad = " ".repeat(indent);
     let mut out = String::new();
-    let mut line = 0;
+    let mut line = 0usize;
     for word in text.split_whitespace() {
-        if line > 0 && line + 1 + word.len() > width {
+        // Saturating throughout: `text` here can be a message senv is quoting
+        // from a contained program, so the word lengths are not senv's to
+        // bound. A saturated column just forces an early wrap.
+        if line > 0 && line.saturating_add(1).saturating_add(word.len()) > width {
             out.push('\n');
             out.push_str(&pad);
             line = 0;
         } else if line > 0 {
             out.push(' ');
-            line += 1;
+            line = line.saturating_add(1);
         }
         out.push_str(word);
-        line += word.len();
+        line = line.saturating_add(word.len());
     }
     out
 }
@@ -561,6 +582,18 @@ pub fn venv_program(project: &Project, program: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    // Tests assert; an assertion failing *is* a panic, and a test that
+    // carefully propagated errors instead would report a pass on a broken
+    // invariant. The panic discipline in `Cargo.toml` is about `senv` the
+    // process, not about the suite that interrogates it.
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::string_slice,
+        clippy::arithmetic_side_effects
+    )]
     use super::*;
 
     #[test]

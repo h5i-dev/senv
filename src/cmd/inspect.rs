@@ -433,7 +433,7 @@ fn render_status(o: &StatusOutput) {
             println!("  secrets    {}", phase.secrets.join(", "));
         }
         if let Some(d) = &phase.policy_digest {
-            println!("  digest     {}", &d[..16.min(d.len())]);
+            println!("  digest     {}", d.get(..16).unwrap_or(d));
         }
         for note in &phase.notes {
             println!("  note       {}", exec::wrap(note, 62, 13));
@@ -487,7 +487,7 @@ pub fn report(ctx: &Ctx, args: &crate::cli::ReportArgs) -> Result<i32> {
             match (&d.verdict, d.kind) {
                 (Verdict::Suggestable, DenialKind::Network) => push_once(&mut hosts, &d.target),
                 (Verdict::Suggestable, DenialKind::Filesystem) => push_once(&mut paths, &d.target),
-                (Verdict::Unnamed, _) => unnamed += 1,
+                (Verdict::Unnamed, _) => unnamed = unnamed.saturating_add(1),
                 (Verdict::ByDesign(_), _) => push_once(&mut by_design, &d.target),
             }
         }
@@ -1073,7 +1073,7 @@ pub struct GcEntry {
 pub fn gc(ctx: &Ctx, args: &crate::cli::GcArgs) -> Result<i32> {
     let root = project::state_root()?.join("projects");
     let mut removable = Vec::new();
-    let mut scanned = 0;
+    let mut scanned = 0usize;
     let mut freed_bytes = 0u64;
     let mut removed = Vec::new();
 
@@ -1083,7 +1083,7 @@ pub fn gc(ctx: &Ctx, args: &crate::cli::GcArgs) -> Result<i32> {
             if !dir.is_dir() {
                 continue;
             }
-            scanned += 1;
+            scanned = scanned.saturating_add(1);
             // Three cases, and conflating them cost a live project both its
             // environment and its receipts: an unreadable `state.json` is not
             // evidence that a project is gone, it is evidence that senv cannot
@@ -1124,7 +1124,7 @@ pub fn gc(ctx: &Ctx, args: &crate::cli::GcArgs) -> Result<i32> {
             if args.prune {
                 fs::remove_dir_all(&dir)?;
                 removed.push(dir.display().to_string());
-                freed_bytes += size;
+                freed_bytes = freed_bytes.saturating_add(size);
             }
         }
     }
@@ -1139,7 +1139,7 @@ pub fn gc(ctx: &Ctx, args: &crate::cli::GcArgs) -> Result<i32> {
                 fs::remove_dir_all(&cache)?;
             }
             removed.push(cache.display().to_string());
-            freed_bytes += size;
+            freed_bytes = freed_bytes.saturating_add(size);
         } else {
             removable.push(GcEntry {
                 key: "cache".to_string(),
@@ -1182,6 +1182,18 @@ pub fn gc(ctx: &Ctx, args: &crate::cli::GcArgs) -> Result<i32> {
 
 #[cfg(test)]
 mod tests {
+    // Tests assert; an assertion failing *is* a panic, and a test that
+    // carefully propagated errors instead would report a pass on a broken
+    // invariant. The panic discipline in `Cargo.toml` is about `senv` the
+    // process, not about the suite that interrogates it.
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::string_slice,
+        clippy::arithmetic_side_effects
+    )]
     use super::*;
 
     #[test]

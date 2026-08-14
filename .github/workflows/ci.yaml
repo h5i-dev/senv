@@ -22,6 +22,35 @@ jobs:
       # machine curl'ing it, which on Debian and Ubuntu is dash.
       - run: shellcheck --shell=sh install.sh
 
+  # senv links a TLS stack and a git implementation it never calls, by way of
+  # h5i-sandbox → git2 → libgit2-sys → libssh2-sys → openssl-sys. A security
+  # boundary assembled from crates nobody vetted has an unexamined bottom half,
+  # so the graph is gated on advisories, licenses, and — because the confinement
+  # engine is a git dependency — on where the code is allowed to come from at
+  # all. See deny.toml for what each gate is for.
+  supply-chain:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+  # An MSRV nothing builds against is a number in a manifest, and the way it
+  # breaks is the unhelpful one: a contributor on current stable uses a newer
+  # API, and the first person to find out is someone on an older toolchain
+  # getting a compile error from inside senv's source. Pinned rather than read
+  # from Cargo.toml so that raising the floor is a deliberate edit to both.
+  msrv:
+    name: rust 1.88 (MSRV)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --locked --all-targets
+
   check:
     name: fmt + clippy (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

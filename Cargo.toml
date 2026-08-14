@@ -2,6 +2,10 @@
 name = "senv"
 version = "0.1.0"
 edition = "2024"
+# Let-chains (`if cond && let Some(x) = ...`) are used throughout and are only
+# stable from 1.88 on edition 2024. Without this, an older toolchain fails deep
+# in a parse error rather than saying which toolchain it wanted.
+rust-version = "1.88"
 description = "senv — a security boundary for Python environments. Persistent, sandboxed Python environments powered by uv and h5i."
 license = "Apache-2.0"
 repository = "https://github.com/h5i-dev/senv"
@@ -46,3 +50,46 @@ vendored-openssl = ["dep:openssl"]
 
 [dev-dependencies]
 tempfile = "3.8"
+
+# senv is a security boundary, and a panic is the one way a boundary tool fails
+# without deciding anything: the process dies between the check and the
+# enforcement, and the user gets a backtrace instead of a verdict. The rule is
+# that senv's own code never terminates itself — every failure travels as a
+# `SenvError` that names what happened and what would fix it.
+#
+# That rule already held when these lints were added; not one of them found a
+# violation in `src/`. They are here so it keeps holding. Anywhere a panicking
+# operation really is unreachable, the site carries `#[expect(..., reason)]`
+# spelling out the invariant, which turns a reviewer's "I checked this" into
+# something the compiler rechecks on every build — and fails if the invariant
+# is ever refactored away.
+#
+# Test code opts back out: an assertion is how a test reports failure, and
+# `#[cfg(test)]` modules and `tests/` allow these individually.
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unreachable = "deny"
+todo = "deny"
+unimplemented = "deny"
+# Indexing, slicing and `str` byte ranges panic on a bad bound. senv indexes
+# into program output, argv, and lock files — all attacker-influenced.
+indexing_slicing = "deny"
+string_slice = "deny"
+# Silent wraparound in a size, budget or limit computation is a boundary bug,
+# not a rounding error: a bound that wraps to a small number is a bound that
+# stops bounding. Sites use checked/saturating math and say which they mean.
+arithmetic_side_effects = "deny"
+
+[lints.rust]
+# `unsafe` in this crate is libc FFI only. Requiring the block makes each call
+# an explicit, individually-justified site rather than one blanket waiver.
+unsafe_op_in_unsafe_fn = "deny"
+
+[profile.release]
+# Keep the arithmetic lint's guarantee at runtime. Debug builds check overflow
+# and release builds do not, so without this the one build users actually get
+# is the one where a wrapped bound is silent. senv would rather abort than
+# enforce a policy computed from a number that wrapped.
+overflow-checks = true

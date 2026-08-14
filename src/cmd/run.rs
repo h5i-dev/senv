@@ -53,19 +53,30 @@ pub fn run(ctx: &Ctx, args: &crate::cli::RunArgs) -> Result<i32> {
     // that is not installed should produce senv's message naming the
     // environment, not a bare `command not found` from the sandbox.
     let mut argv = args.argv.clone();
-    if let Some(resolved) = exec::venv_program(&project, &argv[0]) {
-        argv[0] = resolved;
-    } else if !argv[0].contains('/') && !on_system_path(&argv[0]) {
+    // clap declares this argument `required = true`, so an empty vector cannot
+    // arrive from the CLI. Named rather than indexed so that if the declaration
+    // ever changes, `senv run` says what is missing instead of panicking.
+    let Some(program) = argv.first().cloned() else {
         return Err(SenvError::refused(
-            format!("`{}` is not available in this environment", argv[0]),
+            "no command given".to_string(),
+            "`senv run` needs a program to run inside the boundary".to_string(),
+            "try `senv run python -c 'print(1)'`".to_string(),
+        ));
+    };
+    if let Some(resolved) = exec::venv_program(&project, &program) {
+        if let Some(first) = argv.first_mut() {
+            *first = resolved;
+        }
+    } else if !program.contains('/') && !on_system_path(&program) {
+        return Err(SenvError::refused(
+            format!("`{program}` is not available in this environment"),
             format!(
                 "looked in {} and on the sandbox's PATH",
                 project.venv().join("bin").display()
             ),
             format!(
-                "if it is a Python package, `senv add {}`; if it is a system tool, give its \
-                 absolute path (senv run /usr/bin/{}) and grant what it needs",
-                argv[0], argv[0]
+                "if it is a Python package, `senv add {program}`; if it is a system tool, give \
+                 its absolute path (senv run /usr/bin/{program}) and grant what it needs"
             ),
         ));
     }

@@ -26,6 +26,7 @@ use cmd::Ctx;
 use error::EXIT_SENV_ERROR;
 
 fn main() -> std::process::ExitCode {
+    install_panic_hook();
     let cli = Cli::parse();
     // Before anything asks what this host can enforce. See the function's docs:
     // concurrent senv processes can otherwise talk each other out of a tier
@@ -62,6 +63,38 @@ fn main() -> std::process::ExitCode {
             std::process::ExitCode::from(EXIT_SENV_ERROR as u8)
         }
     }
+}
+
+/// Say what a panic in senv means, and make sure it cannot be read as success.
+///
+/// senv's own code is not supposed to panic — `Cargo.toml` denies the operations
+/// that would, and every failure it expects travels as a [`error::SenvError`].
+/// But "not supposed to" is not "cannot", and the default hook is the wrong
+/// thing to show if it ever happens here: a boundary tool dying with a backtrace
+/// and no verdict leaves the user unsure whether the command ran confined, ran
+/// unconfined, or ran at all.
+///
+/// So the hook answers that question first. The one guarantee senv can still
+/// make while unwinding is the important one — a panic happens *inside* this
+/// process, and the sandbox is applied by the kernel to the child, so nothing
+/// escaped a policy that had already been installed. What is genuinely unknown
+/// is whether the command ran, which is what the message says and why it points
+/// at the receipts, the only record that survives this process.
+///
+/// The default hook's location and backtrace still print underneath: this is a
+/// bug report worth making, and stripping the detail would make it a worse one.
+fn install_panic_hook() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        eprintln!("senv: internal error — senv itself failed, not the command you ran.");
+        eprintln!(
+            "  → no policy was weakened: the boundary is enforced by the kernel against the \
+             child process, so a crash here cannot have unconfined anything that was already \
+             running. Whether your command ran at all is unknown — check `senv report`, which \
+             is written outside every grant, and please report this with the detail below."
+        );
+        default(info);
+    }));
 }
 
 /// Exit codes are a byte. A child killed by a signal, or one returning

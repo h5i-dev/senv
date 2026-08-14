@@ -468,23 +468,25 @@ impl Project {
                 return false;
             };
             for entry in entries.flatten() {
-                if *budget == 0 {
+                // The exhaustion check and the decrement in one step. This budget
+                // is what stops a hostile environment tree turning `senv status`
+                // into a full disk walk, so it must count down on every entry
+                // and can never wrap back up to a large number.
+                let Some(left) = budget.checked_sub(1) else {
                     return false;
-                }
-                *budget -= 1;
+                };
+                *budget = left;
                 let path = entry.path();
-                match entry.file_type() {
-                    // Symlinks are not followed: an environment is full of them
-                    // and a cycle would hang the command this feeds.
-                    Ok(t) if t.is_dir() => {
-                        if search(&path, budget) {
-                            return true;
-                        }
-                    }
-                    Ok(t) if t.is_file() && path.extension().is_some_and(|e| e == "pyc") => {
-                        return true;
-                    }
-                    _ => {}
+                // Symlinks are not followed: an environment is full of them and
+                // a cycle would hang the command this feeds. `DirEntry`'s file
+                // type does not traverse them, so a symlink is neither a dir nor
+                // a file here and falls through both arms.
+                let Ok(t) = entry.file_type() else { continue };
+                if t.is_dir() && search(&path, budget) {
+                    return true;
+                }
+                if t.is_file() && path.extension().is_some_and(|e| e == "pyc") {
+                    return true;
                 }
             }
             false
@@ -805,7 +807,11 @@ pub fn project_key(root: &Path) -> String {
         sanitized
     };
     let hash = util::sha256_hex(root.as_os_str().as_encoded_bytes());
-    format!("{sanitized}-{}", &hash[..12])
+    // sha256 hex is 64 ASCII characters, so the prefix is always there. Falling
+    // back to the whole digest rather than slicing keeps this key — which names
+    // the state directory every other path is built from — impossible to panic
+    // on if `sha256_hex` ever returns something shorter.
+    format!("{sanitized}-{}", hash.get(..12).unwrap_or(&hash))
 }
 
 // ── filesystem helpers ──────────────────────────────────────────────────────
@@ -918,6 +924,18 @@ fn restrict_to_owner(path: &Path) -> Result<()> {
 /// Test-only support for redirecting senv's roots.
 #[cfg(test)]
 pub mod testing {
+    // Tests assert; an assertion failing *is* a panic, and a test that
+    // carefully propagated errors instead would report a pass on a broken
+    // invariant. The panic discipline in `Cargo.toml` is about `senv` the
+    // process, not about the suite that interrogates it.
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::string_slice,
+        clippy::arithmetic_side_effects
+    )]
     use std::path::Path;
     use std::sync::{Mutex, MutexGuard};
 
@@ -977,6 +995,18 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
+    // Tests assert; an assertion failing *is* a panic, and a test that
+    // carefully propagated errors instead would report a pass on a broken
+    // invariant. The panic discipline in `Cargo.toml` is about `senv` the
+    // process, not about the suite that interrogates it.
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::string_slice,
+        clippy::arithmetic_side_effects
+    )]
     use super::*;
     use crate::project::testing::redirect_roots;
 
