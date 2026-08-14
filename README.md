@@ -212,7 +212,7 @@ Two settings receive additional protection:
 
 - a `command:` secret source requires `allow-command-secrets = true`, because
   the command executes on the host;
-- the configured uv binary is rejected if it lives inside the project or senv
+- the configured uv is rejected if it lives inside the project or senv
   state, where sandboxed code could rewrite it.
 
 ---
@@ -247,9 +247,6 @@ wall = "30m"                    # use "none" for a dev server
 source = "env:OPENAI_API_KEY"   # env:… | file:… | command:…
 phases = ["run"]                # secrets are never exposed to install-time build code
 ```
-
-Unknown keys are errors. A misspelled security setting must not look as though
-it is being enforced.
 
 ---
 
