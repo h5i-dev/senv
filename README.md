@@ -1,61 +1,62 @@
 <h1 align="center">senv</h1>
 
-<p align="center"><strong>A security boundary for Python environments.</strong></p>
+<p align="center"><strong>Sandboxed Python environments, with the workflow of uv.</strong></p>
 
 <p align="center">
-  Persistent, sandboxed Python environments powered by
-  <a href="https://github.com/astral-sh/uv">uv</a> and
-  <a href="https://github.com/h5i-dev/h5i">h5i</a>.
+  <a href="https://github.com/h5i-dev/senv/blob/main/LICENSE"><img alt="Apache-2.0" src="https://img.shields.io/github/license/h5i-dev/senv?color=blue"></a>
+  <a href="https://github.com/h5i-dev/senv/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/h5i-dev/senv?style=social"></a>
 </p>
+
+**senv** adds an OS-level security boundary to Python environments. It keeps
+the familiar [`uv`](https://github.com/astral-sh/uv) workflow while isolating
+dependency installation and application execution from your credentials,
+network, and the rest of your machine.
+
+<table align="center">
+<tr>
+<td>📦 Install packages with registry-only network access</td>
+<td>🔒 Run Python with no network by default</td>
+</tr>
+<tr>
+<td>🧊 Keep the environment read-only while code runs</td>
+<td>🧾 Review policy, denials, and execution receipts</td>
+</tr>
+</table>
+
+```bash
+senv sync                 # install dependencies inside the install sandbox
+senv run pytest           # run code with no network and a read-only environment
+senv shell                # enter the same boundary interactively
+senv status               # see exactly what is enforced on this machine
+```
+
+A senv project is still a uv project. It uses the same `pyproject.toml` and
+`uv.lock`, and teammates without senv can continue using `uv` directly.
+
+**Local-first. No hosted environment. No account required.**
 
 ---
 
-`venv` and `uv` isolate *dependencies*. They do not isolate *code*. A package
-installed in a virtualenv can still read your SSH keys, upload your environment
-variables, and run arbitrary code from a `setup.py` at install time — a
-virtualenv is a `PATH` convention, not a security boundary.
+## Why senv?
 
-senv keeps uv's workflow and puts an OS-level boundary underneath it:
+`venv` and `uv` isolate dependencies, but they do not isolate code. A package
+inside a virtual environment can still:
 
-```bash
-senv sync                 # installs reach PyPI and nothing else
-senv run pytest           # your code runs with no network and a read-only environment
-senv shell                # same boundary, interactive
-senv status               # exactly what is enforced right now
-```
+- read files such as `~/.ssh`;
+- access environment variables and credentials;
+- connect to arbitrary network destinations; and
+- execute build code during installation.
 
-Nothing about your project changes. A senv project **is** a uv project:
-`pyproject.toml` and `uv.lock` stay where they are, teammates without senv keep
-running `uv sync`, and opting out means typing `uv` again.
+A virtual environment is a `PATH` convention, not a security boundary. senv
+puts a sandbox underneath the Python workflow, with separate policies for the
+two moments that carry different risks:
 
-## What it actually enforces
+- **Install:** package build code can reach approved registries, but not your
+  source tree or credentials.
+- **Run:** your project is writable, but the installed environment is
+  read-only and network access is denied by default.
 
-Installing and running are different trust problems, so they get different
-policies.
-
-| | `senv sync` / `add` / `lock` | `senv run` / `shell` |
-|---|---|---|
-| **Network** | PyPI + your extra indexes, nothing else | denied by default |
-| **Your source** | read-only — a build backend cannot edit it | read-write, it's your code |
-| **The environment** | writable (this is what installs it) | **read-only** |
-| **Credentials** | none; secrets can never be scoped here | only what you declare |
-| **Limits** | CPU, file size, wall clock; memory and processes on Linux | same, minus the wall clock (see below) |
-
-Two of those deserve a note.
-
-**Installs are sandboxed too.** Supply-chain attacks fire at install time — a
-malicious sdist's build backend runs as you, during `pip install`, before
-anyone imports anything. senv resolves dependencies in a staging copy holding
-your manifests and none of your source, with egress pinned to package
-registries at the packet level.
-
-**The environment is read-only while your code runs.** A compromised package
-cannot patch itself on disk to survive into the next run. It lives outside your
-project tree with `.venv` symlinked to it, so there is no writable parent to
-reach it through — and there is no writable bytecode cache either, since a
-`.pyc` CPython prefers over the source would be a writable copy of the very
-code being protected. Bytecode is compiled during installation, inside the
-environment, where your code cannot rewrite it.
+---
 
 ## Install
 
@@ -65,236 +66,268 @@ cargo install --git https://github.com/h5i-dev/senv
 
 Or download a binary from [Releases](https://github.com/h5i-dev/senv/releases).
 
-senv needs [uv](https://docs.astral.sh/uv/) on `PATH`. On Linux, enforcing the
-install boundary's registry allowlist also needs `slirp4netns` and `nftables`
-(`sudo apt install slirp4netns nftables` on Debian/Ubuntu). On macOS there is
-nothing to install: the boundary is Seatbelt, which ships with the OS. Run
-`senv doctor` — it reports exactly what this machine can enforce and what to
-install if something is missing.
+senv requires [`uv`](https://docs.astral.sh/uv/) on `PATH`.
 
-## Use it
+- **Linux:** registry allowlisting during installation also requires
+  `slirp4netns` and `nftables` (`sudo apt install slirp4netns nftables` on
+  Debian/Ubuntu).
+- **macOS:** no additional sandbox runtime is required; senv uses the built-in
+  Seatbelt sandbox.
+- **Windows:** use WSL2.
 
-### Start, or adopt what you have
+Check what your machine can enforce:
 
 ```bash
-senv init                 # in an existing uv project: adopts pyproject.toml as-is
-senv init --python 3.13   # in an empty directory: creates one
+senv doctor
 ```
 
-In a project that already has a `.venv`, senv leaves it alone — those packages
-were installed outside the boundary, so senv will not pretend otherwise. It
-builds its own environment and tells you; `senv init --replace-venv` swaps the
-link over when you're ready.
+---
 
-### Day to day
+## Quick start
 
-| habit | senv |
-|---|---|
-| `uv sync` / `uv lock` | `senv sync` / `senv lock` |
+### Start a new project
+
+```bash
+mkdir my-project && cd my-project
+senv init --python 3.13
+senv add requests
+senv run python -c 'import requests; print(requests.__version__)'
+```
+
+### Adopt an existing uv project
+
+```bash
+cd my-project
+senv init                 # keeps pyproject.toml and uv.lock as-is
+senv sync
+senv run pytest
+```
+
+If the project already has a `.venv`, senv leaves it untouched because those
+packages were installed outside its boundary. It creates a separate managed
+environment and explains how to switch. Use `senv init --replace-venv` when
+you are ready to replace the existing link.
+
+---
+
+## Everyday commands
+
+| What you normally do | With senv |
+| --- | --- |
+| `uv sync` | `senv sync` |
+| `uv lock` | `senv lock` |
 | `uv add requests` | `senv add requests` |
 | `uv run pytest` | `senv run pytest` |
 | `source .venv/bin/activate` | `senv shell` |
-| any other uv command | `senv uv -- <args>` |
+| another uv command | `senv uv -- <args>` |
 
-Flags pass through to uv, and the command's exit code passes back out — `senv
-run pytest` is a drop-in for `uv run pytest` in CI.
+Flags are passed through to uv, and command exit codes pass back to the caller.
+This makes commands such as `senv run pytest` suitable for CI as well as local
+development.
 
-### When something is blocked
+---
 
-The first week of any sandbox is denials. senv answers each one with the exact
-change that would allow it:
+## What senv enforces
 
-```
+Installing dependencies and running your code use different policies:
+
+| | `senv sync` / `add` / `lock` | `senv run` / `shell` |
+| --- | --- | --- |
+| **Network** | PyPI and configured indexes only | denied by default |
+| **Project source** | read-only | read-write |
+| **Python environment** | writable for installation | **read-only** |
+| **Credentials** | unavailable | only explicitly declared secrets |
+| **Resource limits** | CPU, file size, wall clock; memory and processes on Linux | CPU and file size; memory and processes on Linux |
+
+### Sandboxed installs
+
+Supply-chain attacks can execute before a package is ever imported. For
+example, an sdist build backend runs during installation with the user's
+permissions.
+
+senv resolves and installs dependencies in a staging area containing the
+project manifests but none of the project source. Network access is restricted
+to package registries and pinned at the network layer.
+
+### A read-only runtime environment
+
+While your code runs, installed packages cannot rewrite the environment to
+persist into the next run. The managed environment lives outside the project,
+and `.venv` points to it without exposing a writable parent directory.
+
+senv also compiles bytecode during installation and disables writable bytecode
+caches at runtime. This prevents a package from leaving behind a modified
+`.pyc` file that Python could prefer over the protected source.
+
+---
+
+## Allow only what your program needs
+
+When senv blocks an operation, it shows what happened and the narrowest command
+that would permit it:
+
+```text
 senv blocked 1 operation(s):
   • network access to api.stripe.com
     allow it with: senv allow api.stripe.com
 ```
 
+You can make the grant persistent or apply it to one command:
+
 ```bash
-senv allow api.stripe.com        # records it in senv.toml
-senv run --allow-net api.stripe.com pytest   # just this once
-senv report --suggest            # a policy stanza covering everything blocked so far
+senv allow api.stripe.com
+senv run --allow-net api.stripe.com pytest
+senv report --suggest
 ```
 
-`report --suggest` prints; it never writes. Widening a boundary stays a
-decision you make and commit.
+`senv allow` records the change in `senv.toml`. `senv report --suggest` only
+prints a proposed policy stanza; it never changes the policy for you.
 
-Some denials are deliberate, and senv says so rather than offering to undo
-them — writing to the environment at run time, or reading `~/.ssh`, are the
-guarantees, not bugs.
+Some denials are intentional guarantees, so senv does not suggest bypassing
+them. Runtime code cannot make the environment writable or read `~/.ssh`.
 
-## The policy lives in your project, so senv watches it
+---
 
-`senv.toml` sits in your project directory — which the run phase grants
-read-write, because that is the point of the run phase. So the policy file is
-writable by exactly the code it governs. A package that runs once could
-otherwise rewrite it and own every later command.
+## Policy changes require trust
 
-senv keeps a snapshot of the policy you accepted **outside** the sandbox, and
-compares before it runs anything:
+The policy file, `senv.toml`, lives inside the project. Because runtime code can
+write the project, a compromised dependency could try to widen that policy for
+future commands.
 
-- narrowed, or unchanged → nothing to say, it just runs;
-- **widened** → refused, with the change named:
+senv therefore keeps the last accepted policy snapshot outside the sandbox:
 
-```
+- an unchanged or narrower policy runs normally;
+- a wider policy is refused until you inspect and accept it with `senv trust`.
+
+```text
 senv: senv.toml grants more than senv recorded, so nothing was run
   the policy on disk is wider than the one you last accepted:
     + [run] net: deny → unrestricted
     + [run.env] pass: added AWS_SECRET_ACCESS_KEY
-  senv.toml lives in your project, which your code can write — so a change it
-  did not make is a change worth looking at before running anything.
-  → if you made this change, run `senv trust` to accept it; if you did not,
+  → if you made this change, run `senv trust`; if you did not,
     inspect senv.toml and your recent dependencies first
 ```
 
-`senv trust` accepts the current file as the baseline. Editing your own policy
-costs one extra command; a package editing it for you costs the attack.
+The same check applies when senv first sees a project whose policy is wider
+than the defaults. Changes to `pyproject.toml` sections that control install
+behavior—`[build-system]` and `[tool.uv]`—also require trust.
 
-The same applies the first time senv sees a project: if its `senv.toml` already
-grants more than the defaults, senv shows you what and waits for `senv trust`.
-That is the right moment to read a policy that arrived with someone else's
-code — and it is what stops a package from manufacturing a fresh project in a
-subdirectory to escape its own baseline.
+Two settings receive additional protection:
 
-Two settings get extra treatment because they reach outside the sandbox:
-a secret with a `command:` source needs `[env] allow-command-secrets = true`
-(the command runs on the host), and `[env] uv` is refused outright if it points
-inside your project or senv's state — a binary the sandbox can rewrite must
-never become senv's own toolchain.
+- a `command:` secret source requires `allow-command-secrets = true`, because
+  the command executes on the host;
+- the configured uv binary is rejected if it lives inside the project or senv
+  state, where sandboxed code could rewrite it.
+
+---
 
 ## Configuration
 
-`senv.toml` is optional. With no config you get the fail-closed defaults above;
-the file appears the first time you widen something.
+`senv.toml` is optional. Without it, senv uses fail-closed defaults. The file is
+created when you first add a grant.
 
 ```toml
 [env]
 python = "3.13"
 isolation = "auto"              # auto | process | supervised | container | microvm
-allow-command-secrets = false   # true lets a secret source run host code OUTSIDE the sandbox
+allow-command-secrets = false   # permit command: secret sources on the host
 
 [install]
 extra-indexes = ["download.pytorch.org"]
-cache = "project"               # per-project by default; "shared" trades isolation for disk
+cache = "project"               # "shared" saves disk but trades away isolation
 
 [run]
 net = "deny"                    # "deny" | "host" | ["api.example.com", "*.s3.amazonaws.com"]
 
 [run.fs]
-read = ["~/datasets"]           # extra read-only grants
-write = []                      # the project and a scratch dir are already writable
+read = ["~/datasets"]           # additional read-only paths
+write = []                      # project and scratch space are already writable
 
 [run.resources]
 mem = "4G"
-wall = "30m"                    # "none" for a dev server
+wall = "30m"                    # use "none" for a dev server
 
 [secrets.OPENAI_API_KEY]
-source = "env:OPENAI_API_KEY"   # or file:… / command:… (command: needs the gate below)
-phases = ["run"]                # never the install phase — that runs build backends
+source = "env:OPENAI_API_KEY"   # env:… | file:… | command:…
+phases = ["run"]                # secrets are never exposed to install-time build code
 ```
 
-Unknown keys are an error, not a shrug: a misspelled key in a security policy
-would otherwise read as enforced while enforcing nothing.
+Unknown keys are errors. A misspelled security setting must not look as though
+it is being enforced.
 
-## Inspecting the boundary
+---
+
+## Inspect the boundary
 
 ```bash
-senv status      # tier, network, grants, limits, and the policy digest per phase
-senv report      # what ran, what was denied, what was redacted
-senv trust       # accept the current senv.toml as the baseline
-senv doctor      # what this host can enforce
-senv gc          # state for projects that no longer exist (dry run unless --prune)
+senv status      # resolved policy, isolation tier, grants, limits, and digest
+senv report      # commands, denials, and redactions
+senv trust       # accept the current policy as the new baseline
+senv doctor      # enforcement available on this host
+senv gc          # find stale project state; add --prune to remove it
 ```
 
-Every command's execution is appended to a receipt log in senv's state
-directory — outside every grant senv issues, so the code it records cannot
-rewrite it. Declared secret values are stripped before anything is written, and
-h5i's credential scanner takes a second pass for keys nobody declared.
+Every command appends a receipt outside the sandbox. Declared secret values are
+redacted, and h5i's credential scanner checks for additional keys. Each receipt
+includes a digest of the policy that was actually enforced.
 
-Each phase's resolved policy is hashed, and that digest is stamped into every
-receipt: "which policy was actually enforced when this ran" stays answerable
-afterwards.
+---
 
 ## How it works
 
-senv links [`h5i-sandbox`](https://github.com/h5i-dev/h5i) as a library and
-compiles `senv.toml` into its policy model. h5i supplies the confinement; senv
-supplies the Python-shaped policy on top of it.
+senv uses [`h5i-sandbox`](https://github.com/h5i-dev/h5i) as its confinement
+engine and compiles the Python-focused `senv.toml` into an h5i policy.
 
-- **Linux**: Landlock (filesystem allowlist), seccomp-bpf (syscall deny-list),
-  namespaces, rlimits/cgroups. Egress allowlists use a private network
-  namespace with nftables rules pinned to resolved addresses — enforced by
-  address, so a program that ignores `HTTPS_PROXY` still cannot get out.
-- **macOS**: Seatbelt, with the differences reported honestly by `senv doctor`
-  and `senv status`. There is no syscall filter (Darwin has no seccomp) and no
-  enforceable memory or process cap (no cgroups, and `RLIMIT_AS` does not bind
-  the mmap'd heap CPython uses). Egress allowlists take a different route:
-  Seatbelt leaves the box exactly one destination, the loopback port of senv's
-  DNS-pinned allowlist proxy, and denies name resolution outright. So the
-  allowlist holds against any client — but a client that ignores `HTTPS_PROXY`
-  reaches *nothing* rather than reaching its host directly. `net = "deny"` is a
-  real deny on both platforms.
-- Stronger tiers (rootless Podman containers, microVMs with their own kernel)
-  are available by setting `[env] isolation`.
+| Platform / tier | Enforcement |
+| --- | --- |
+| **Linux** | Landlock filesystem allowlists, seccomp-bpf syscall filtering, namespaces, and rlimits/cgroups. Network allowlists use a private namespace and nftables rules pinned to resolved addresses. |
+| **macOS** | Seatbelt filesystem and network confinement. Allowed egress passes through a DNS-pinned loopback proxy; other name resolution is denied. |
+| **Container** | Optional rootless Podman isolation. |
+| **MicroVM** | Optional VM-grade isolation with a separate kernel. |
 
-senv never downgrades silently. If a host cannot enforce what a policy asks
-for, the command is refused and told what would fix it.
+senv never silently downgrades. If the host cannot enforce the requested
+policy, it refuses to run and explains what is missing. `senv doctor` and
+`senv status` report platform-specific gaps—for example, macOS has no seccomp
+and cannot enforce Linux cgroup memory or process limits.
 
-## Limits
+---
 
-Stated plainly, because a boundary you misjudge is worse than one you don't
-have:
+## Security boundaries and limitations
 
-- The default tiers share your kernel. Landlock and seccomp are a real
-  boundary, not a hypervisor — for VM-grade isolation, use `isolation = "microvm"`.
-- senv narrows the blast radius of a malicious package; it does not detect one.
-  Verifying what you install is uv's lockfile hashes and your own judgement.
-- Denials are inferred from what a program printed when it was refused, so
-  `senv report` is a strong lead and not an audit log. Container-tier runs get a
-  real per-request egress tally; the kernel tiers do not. A program chooses what
-  it prints, so a package that was refused nothing can put a host or a path in
-  that list and have senv suggest allowing it — read each suggestion before you
-  paste it, the same way you would read a diff.
-- senv's state must live outside your project, and senv refuses to run if you
-  point `SENV_STATE_DIR` or `SENV_CACHE_DIR` inside it. The run phase grants
-  your project read-write, so state kept there is writable by the code the
-  boundary contains — which would make the environment patchable between runs,
-  the receipts erasable, and the recorded policy baseline forgeable.
-- Code that stays inside the policy — corrupting files in your own project,
-  reaching a host you allowlisted — is within policy. That is what the policy
-  is for.
-- **Running the environment from your host is outside the boundary.** The
-  install phase contains a dependency's build backend, but the environment it
-  produces is writable *during* that install — that is what installing is — so
-  a malicious backend can edit `.venv/bin/activate` or a console script.
-  `source .venv/bin/activate`, or your editor invoking `.venv/bin/python`, then
-  executes that unconfined. This is true of any virtualenv, senv's or uv's;
-  what senv adds is that the install could not reach your source, your
-  credentials, or the network beyond the registries. `senv run` and `senv shell`
-  are the ways to use the environment that keep the boundary.
-- The wall-clock limit applies to installs but **not** to `senv run` / `senv
-  shell`: the interactive path hands the terminal to the child and waits
-  without a deadline. CPU time and file size are rlimits and apply everywhere.
-  Memory and process count are a per-run cgroup, so they apply on Linux and
-  **not on macOS**, which has none. `senv status` marks every limit this host
-  does not actually enforce, and `senv doctor` answers it for the machine.
-- On macOS, `senv run` startup depends on which interpreter built the
-  environment. senv compiles bytecode during the install so the run phase needs
-  no writable cache; Apple's system Python ships with `sys.pycache_prefix`
-  preset to `~/Library/Caches/com.apple.python` and caches outside the
-  environment instead, so imports recompile every run. `senv status` says so
-  when it happens — `senv init --python 3.13` builds on a managed interpreter
-  that does not.
-- senv detects a policy widened behind your back; it cannot prevent the write.
-  "Policy" includes `pyproject.toml`'s `[build-system]` and `[tool.uv]` tables,
-  which decide what code an install runs — changing either needs `senv trust`.
-  A package can still edit the rest of your project, so review dependency
-  changes you did not make.
-- Linux and macOS. Windows via WSL2.
+- **The default tiers share the host kernel.** Landlock, seccomp, and Seatbelt
+  provide OS-level isolation, not a hypervisor boundary. Use
+  `isolation = "microvm"` when a separate kernel is required.
+- **senv limits impact; it does not identify malicious packages.** Lockfile
+  hashes and dependency review remain important.
+- **Allowed actions remain allowed.** Code can modify files in the writable
+  project and contact destinations you explicitly permit.
+- **Run the environment through senv.** `source .venv/bin/activate`, an editor
+  invoking `.venv/bin/python`, or any other host-side execution bypasses the
+  runtime boundary. Use `senv run` or `senv shell`.
+- **Install-time code can modify the environment.** Installation must write
+  packages and scripts. The install sandbox protects your source, credentials,
+  and non-registry network, but it cannot make the environment itself read-only.
+- **Denial suggestions are hints, not proof.** Kernel-tier reports infer some
+  denials from program output, which untrusted code can influence. Review every
+  suggested grant before accepting it. Container-tier network requests have a
+  direct per-request tally.
+- **State must remain outside the project.** senv refuses
+  `SENV_STATE_DIR` or `SENV_CACHE_DIR` locations inside the project because
+  runtime code could then alter environments, receipts, or trusted baselines.
+- **Runtime wall-clock limits are not currently enforced.** CPU and file-size
+  rlimits apply everywhere; memory and process limits use Linux cgroups and do
+  not apply on macOS.
+- **macOS Python startup can vary by interpreter.** Apple's system Python may
+  recompile imports on each run because its bytecode cache is outside the
+  managed environment. `senv init --python 3.13` selects a managed interpreter
+  without that behavior.
+- **Policy tampering is detected, not prevented.** A dependency can edit files
+  in the writable project; senv refuses a widened policy until you trust it.
 
-See [DESIGN.md](DESIGN.md) for the threat model and the reasoning behind each
-decision.
+For the full threat model and design rationale, see [DESIGN.md](DESIGN.md).
+
+---
 
 ## License
 
-Apache-2.0.
+Apache-2.0. See [LICENSE](LICENSE).
