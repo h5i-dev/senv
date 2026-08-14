@@ -290,9 +290,7 @@ engine and compiles the Python-focused `senv.toml` into an h5i policy.
 | **MicroVM** | Optional VM-grade isolation with a separate kernel. |
 
 senv never silently downgrades. If the host cannot enforce the requested
-policy, it refuses to run and explains what is missing. `senv doctor` and
-`senv status` report platform-specific gaps—for example, macOS has no seccomp
-and cannot enforce Linux cgroup memory or process limits.
+policy, it refuses to run and explains what is missing.
 
 ---
 
