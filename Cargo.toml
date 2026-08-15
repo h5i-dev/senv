@@ -93,3 +93,6 @@ unsafe_op_in_unsafe_fn = "deny"
 # is the one where a wrapped bound is silent. senv would rather abort than
 # enforce a policy computed from a number that wrapped.
 overflow-checks = true
+
+[profile.dev]
+debug = false
