@@ -1,29 +1,19 @@
-# senv is a Rust binary, and this is not a Python package: there is no Python
-# source here, and senv neither imports nor links against the interpreter that
-# installs it. The file exists so `pip install h5i-senv` can be one of the ways
-# to *obtain* the binary — maturin compiles `src/main.rs` and drops the
-# resulting `senv` executable into the environment's scripts directory.
-#
-# Installing senv with pip therefore puts it on PATH exactly as the tarball or
-# `cargo install` would. It does not put senv inside the environments it
-# confines; a boundary that lived in the environment it was bounding would be
-# writable by the code on the other side of it. Prefer a tool-scoped install
-# (`uv tool install h5i-senv`, `pipx install h5i-senv`) over dropping it into a
-# project venv.
+# senv is a Rust binary. This file exists so `pip install h5i-senv` can install
+# that binary. maturin compiles `src/main.rs` and puts `senv` on PATH. It does
+# not install a Python library. The OpenEnv client used to talk to the server
+# comes from the OpenEnv checkout named in README.md, not from this wheel.
 [build-system]
 requires = ["maturin>=1.9,<2"]
 build-backend = "maturin"
 
 [project]
 name = "h5i-senv"
-description = "A security boundary for Python environments — persistent, sandboxed Python environments powered by uv and h5i."
+description = "OpenEnv-compatible Echo environment server. Each session runs on an h5i-app MemoryEngine."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-# Nothing here runs on the interpreter, so this bound is about what pip itself
-# understands (PEP 639 metadata, modern wheel tags), not about senv.
 requires-python = ">=3.9"
-keywords = ["sandbox", "security", "uv", "virtualenv", "supply-chain"]
+keywords = ["openenv", "reinforcement-learning", "echo", "h5i"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
@@ -32,8 +22,7 @@ classifiers = [
   "Operating System :: POSIX :: Linux",
   "Operating System :: MacOS :: MacOS X",
   "Programming Language :: Rust",
-  "Topic :: Security",
-  "Topic :: Software Development :: Build Tools",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 # The single source of truth for the version is Cargo.toml, which the release
 # workflow already checks against the tag. Duplicating it here would give the

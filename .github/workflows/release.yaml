@@ -8,14 +8,8 @@ name: Release
 #                            not a Python package (see pyproject.toml)
 #   cargo install --git    → no artifact at all; cargo builds this tag itself
 #
-# The tarball stays the path the README leads with, because it is the only one
-# that carries no prerequisite of its own: a tool whose job is to bound what a
-# Python install can do should not *require* a Python install to obtain. pip is
-# offered because for a great many people it is the shortest path to a CLI they
-# already trust, not because senv is Python.
-#
-# Every published artifact is built with --features vendored-openssl. See the
-# comment on that feature in Cargo.toml.
+# The tarball is a static binary. The wheel packages that same binary.
+# senv does not link OpenSSL; there is no vendored-openssl feature.
 on:
   push:
     tags: ["v*"]
@@ -86,7 +80,7 @@ jobs:
         if: contains(matrix.target, 'musl')
         run: sudo apt-get update -q && sudo apt-get install -y musl-tools
 
-      - run: cargo build --release --locked --features vendored-openssl --target ${{ matrix.target }}
+      - run: cargo build --release --locked --target ${{ matrix.target }}
 
       # A binary that reaches for a library the downloader does not have fails
       # at exec, long after this workflow is green and with an error message
@@ -169,17 +163,7 @@ jobs:
           # the oldest policy the build actually satisfies rather than letting
           # us assert one it does not.
           manylinux: auto
-          args: --release --locked --features vendored-openssl --out dist
-          # manylinux2014 is CentOS 7, whose bare `perl` is stripped down far
-          # enough that openssl-src cannot run OpenSSL's ./Configure — it dies
-          # on a missing IPC::Cmd, then on Time::Piece, before compiling a
-          # line. `perl-core` is the whole standard distribution and ends the
-          # game rather than playing another round of it. Only runs for the
-          # containerised Linux builds; macOS never sees it.
-          before-script-linux: |
-            if command -v dnf >/dev/null 2>&1; then dnf install -y perl-core
-            elif command -v yum >/dev/null 2>&1; then yum install -y perl-core
-            else apt-get update && apt-get install -y perl; fi
+          args: --release --locked --out dist
 
       # maturin will happily produce a wheel whose only tag is `linux_x86_64`
       # if the manylinux policy is turned off or silently downgraded; PyPI then
@@ -261,16 +245,14 @@ jobs:
             ```
 
             ```bash
-            uv tool install h5i-senv        # or: pipx install h5i-senv, pip install h5i-senv
+            pip install h5i-senv            # or: pipx install h5i-senv
             ```
 
             ```bash
             cargo install --git https://github.com/${{ github.repository }} --tag ${{ github.ref_name }}
             ```
 
-            senv also needs [`uv`](https://docs.astral.sh/uv/) on `PATH`, and on
-            Linux `slirp4netns` and `nftables` for registry allowlisting during
-            installs. Run `senv doctor` to see what your machine can enforce.
+            `senv serve` listens on `127.0.0.1:8000` and speaks the OpenEnv Echo protocol.
 
             ### Published builds
 

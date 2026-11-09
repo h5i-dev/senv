@@ -7,27 +7,21 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Keep these two revisions aligned with src/lib.rs. The Echo client imported
+  # by scripts/echo_compat.sh is the OpenEnv tree at the first one. The h5i
+  # crate is pinned in Cargo.toml and Cargo.lock.
+  OPENENV_REVISION: 58d0344011fe961342706c90288f7e842b15b1c9
 
 jobs:
-  # install.sh is the path most people will take to get senv, and nothing else
-  # in CI executes it. A syntax error in it is invisible until it is being
-  # piped into someone's shell.
   packaging:
     name: install.sh
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - run: sh -n install.sh
-      # POSIX sh, not bash: the script is run by whatever /bin/sh is on the
-      # machine curl'ing it, which on Debian and Ubuntu is dash.
       - run: shellcheck --shell=sh install.sh
+      - run: shellcheck --shell=bash scripts/echo_compat.sh
 
-  # senv links a TLS stack and a git implementation it never calls, by way of
-  # h5i-sandbox → git2 → libgit2-sys → libssh2-sys → openssl-sys. A security
-  # boundary assembled from crates nobody vetted has an unexamined bottom half,
-  # so the graph is gated on advisories, licenses, and — because the confinement
-  # engine is a git dependency — on where the code is allowed to come from at
-  # all. See deny.toml for what each gate is for.
   supply-chain:
     name: cargo-deny
     runs-on: ubuntu-latest
@@ -37,11 +31,6 @@ jobs:
         with:
           command: check
 
-  # An MSRV nothing builds against is a number in a manifest, and the way it
-  # breaks is the unhelpful one: a contributor on current stable uses a newer
-  # API, and the first person to find out is someone on an older toolchain
-  # getting a compile error from inside senv's source. Pinned rather than read
-  # from Cargo.toml so that raising the floor is a deliberate edit to both.
   msrv:
     name: rust 1.88 (MSRV)
     runs-on: ubuntu-latest
@@ -57,9 +46,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Both platforms, because a good deal of this code is behind
-        # `cfg(target_os)` and a lint that only ever runs on Linux cannot see
-        # the macOS half of it at all.
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v5
@@ -69,7 +55,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - if: runner.os == 'Linux'
         run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --locked --all-targets -- -D warnings
 
   test:
     name: test (${{ matrix.os }})
@@ -82,58 +68,31 @@ jobs:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-
-      # The integration suite drives a real `uv`. Without it those tests skip,
-      # which would quietly hide every end-to-end assertion.
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          # senv is a Rust project that *drives* uv; there is no Python
-          # dependency file here for uv's cache key to hash.
-          enable-cache: false
-
-      # The install boundary needs a tier that can enforce an egress
-      # allowlist. On Linux that is the supervised tier, which needs these.
-      - name: Install sandbox prerequisites
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y slirp4netns nftables
-
-      # Ubuntu 24.04 — which these runners are — ships an AppArmor profile that
-      # forbids unprivileged user namespaces. Every senv tier is built on one,
-      # so without this `unshare(CLONE_NEWUSER)` fails, both kernel tiers report
-      # unavailable, and the whole boundary suite skips itself while the run
-      # stays green. That is the failure the guard at the end of this job
-      # exists to catch, and this is the line that prevents it.
-      - name: Allow unprivileged user namespaces
-        if: runner.os == 'Linux'
-        run: |
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          sudo sysctl -w kernel.unprivileged_userns_clone=1 || true
-
-      - name: What can this runner enforce?
-        run: cargo run --locked -- doctor || true
-
       - run: cargo test --locked -- --nocapture
 
-      # Integration tests skip themselves on a host that cannot confine, so a
-      # green suite could mean "nothing ran". Fail loudly instead: this repo's
-      # whole claim is that the boundary is real, and CI has to prove it.
-      # This guard has already earned its place once, by catching a run in
-      # which all 102 boundary assertions were skipped.
-      #
-      # It runs on both platforms now. Restricting it to Linux left macOS with
-      # the exact hole it exists to close, and macOS is where the holes were:
-      # the egress allowlist was enforcing nothing there, and a suite that had
-      # silently skipped itself would have reported that as green. There is
-      # nothing to install for it either — Seatbelt ships with the OS, so a
-      # macOS runner that cannot enforce the boundary is a real regression and
-      # deserves a red build rather than a skip.
-      - name: The boundary was actually exercised
-        run: |
-          out="$(cargo test --locked --test cli -- --nocapture 2>&1)"
-          echo "$out"
-          if echo "$out" | grep -q "SKIP:"; then
-            echo "::error::integration tests skipped on Linux — the sandbox was not exercised"
-            echo "$out" | grep "SKIP:"
-            exit 1
-          fi
+  echo-client:
+    name: official EchoEnv client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          repository: meta-pytorch/OpenEnv
+          ref: ${{ env.OPENENV_REVISION }}
+          path: OpenEnv
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/echo-client-requirements.txt
+      - run: python -m pip install -r scripts/echo-client-requirements.txt
+      - name: Confirm the checkout is the pinned revision
+        working-directory: OpenEnv
+        run: test "$(git rev-parse HEAD)" = "${{ env.OPENENV_REVISION }}"
+      - run: bash scripts/echo_compat.sh
+        env:
+          OPENENV_SRC: ${{ github.workspace }}/OpenEnv
+          SENV_PYTHON: python
+          SENV_BIND: 127.0.0.1:8765

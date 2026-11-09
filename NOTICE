@@ -1,0 +1,39 @@
+senv is licensed under the Apache License, Version 2.0. See LICENSE.
+
+The OpenEnv wire protocol and the Echo environment's behavior were derived
+from meta-pytorch/OpenEnv at commit 58d0344011fe961342706c90288f7e842b15b1c9.
+That project is licensed under the BSD 3-Clause License:
+
+Copyright (c) 2026 Hugging Face
+Copyright (c) Meta Platforms, Inc. and affiliates
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+3. Neither the name of the copyright holder nor the names of its contributors
+   may be used to endorse or promote products derived from this software
+   without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+senv does not copy OpenEnv source. The Python compatibility test imports the
+unmodified EchoEnv client from a checkout of that commit.
+
+The session kernel executes on h5i-app from https://github.com/h5i-dev/h5i
+at commit 5e0f8a929c57bb12a321090d98a14b3a2714b849, which is licensed under
+the Apache License, Version 2.0.

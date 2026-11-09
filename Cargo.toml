@@ -1,12 +1,9 @@
 [package]
 name = "senv"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
-# Let-chains (`if cond && let Some(x) = ...`) are used throughout and are only
-# stable from 1.88 on edition 2024. Without this, an older toolchain fails deep
-# in a parse error rather than saying which toolchain it wanted.
 rust-version = "1.88"
-description = "senv — a security boundary for Python environments. Persistent, sandboxed Python environments powered by uv and h5i."
+description = "senv — OpenEnv-compatible RL environments in Rust, executed on h5i-app."
 license = "Apache-2.0"
 repository = "https://github.com/h5i-dev/senv"
 
@@ -15,83 +12,36 @@ name = "senv"
 path = "src/main.rs"
 
 [dependencies]
-# The confinement engine. Pinned to a commit, not a branch: the policy digest
-# story depends on the enforcement code being the code we reviewed.
-h5i-sandbox = { git = "https://github.com/h5i-dev/h5i", rev = "d83af8f44015c09581460e9e5c07266a7867105c" }
-h5i-error = { git = "https://github.com/h5i-dev/h5i", rev = "d83af8f44015c09581460e9e5c07266a7867105c" }
+# Pinned to the h5i commit whose Kernel, MemoryEngine and H5iApp APIs this
+# server is written against. The `http` feature is the Axum shell; Echo
+# sessions run on MemoryEngine, not on PostgreSQL.
+h5i-app = { git = "https://github.com/h5i-dev/h5i", rev = "5e0f8a929c57bb12a321090d98a14b3a2714b849", features = ["http"] }
 
-clap = { version = "4", features = ["derive", "wrap_help"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-# 0.8 matches the h5i workspace: Profile/ResolvedPolicy serialization must not
-# skew across the crate boundary (the digest is over the TOML bytes).
-toml = { version = "0.8", features = ["parse", "display"] }
-# `senv allow` edits the user's senv.toml in place; toml_edit preserves their
-# comments and formatting where a round-trip through `toml` would not.
-toml_edit = "0.22"
-sha2 = "0.10"
-thiserror = "2.0"
-libc = "0.2"
-
-# senv never calls OpenSSL. It is here only to reach the `vendored` feature of
-# the openssl-sys that h5i-sandbox drags in through git2 → libgit2-sys →
-# libssh2-sys, because Cargo unifies that feature across the whole graph.
-#
-# Off by default, so `cargo install --git` links the system libssl like any
-# other build. The release workflow turns it on for every published artifact:
-# a downloaded binary has to run on a machine that never agreed to install
-# libssl-dev, and a wheel or tarball built against the runner's OpenSSL would
-# instead fail at exec time with a missing .so — or, on macOS, with a path
-# under /opt/homebrew that only the runner had.
-openssl = { version = "0.10", features = ["vendored"], optional = true }
-
-[features]
-vendored-openssl = ["dep:openssl"]
+axum = { version = "0.8", features = ["json", "ws", "query"] }
+clap = { version = "4", features = ["derive", "env", "wrap_help"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
-tempfile = "3.8"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 
-# senv is a security boundary, and a panic is the one way a boundary tool fails
-# without deciding anything: the process dies between the check and the
-# enforcement, and the user gets a backtrace instead of a verdict. The rule is
-# that senv's own code never terminates itself — every failure travels as a
-# `SenvError` that names what happened and what would fix it.
-#
-# That rule already held when these lints were added; not one of them found a
-# violation in `src/`. They are here so it keeps holding. Anywhere a panicking
-# operation really is unreachable, the site carries `#[expect(..., reason)]`
-# spelling out the invariant, which turns a reviewer's "I checked this" into
-# something the compiler rechecks on every build — and fails if the invariant
-# is ever refactored away.
-#
-# Test code opts back out: an assertion is how a test reports failure, and
-# `#[cfg(test)]` modules and `tests/` allow these individually.
+# The server reports failures as values. A panic in request handling would
+# drop a session without a protocol error.
 [lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
-unreachable = "deny"
 todo = "deny"
 unimplemented = "deny"
-# Indexing, slicing and `str` byte ranges panic on a bad bound. senv indexes
-# into program output, argv, and lock files — all attacker-influenced.
-indexing_slicing = "deny"
-string_slice = "deny"
-# Silent wraparound in a size, budget or limit computation is a boundary bug,
-# not a rounding error: a bound that wraps to a small number is a bound that
-# stops bounding. Sites use checked/saturating math and say which they mean.
-arithmetic_side_effects = "deny"
-
-[lints.rust]
-# `unsafe` in this crate is libc FFI only. Requiring the block makes each call
-# an explicit, individually-justified site rather than one blanket waiver.
-unsafe_op_in_unsafe_fn = "deny"
 
 [profile.release]
-# Keep the arithmetic lint's guarantee at runtime. Debug builds check overflow
-# and release builds do not, so without this the one build users actually get
-# is the one where a wrapped bound is silent. senv would rather abort than
-# enforce a policy computed from a number that wrapped.
 overflow-checks = true
 
 [profile.dev]

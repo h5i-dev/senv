@@ -1,129 +1,107 @@
-//! senv — a security boundary for Python environments.
-//!
-//! See `DESIGN.md` for the architecture and threat model. In short: `uv` and
-//! your code run inside an h5i sandbox, with different policies for installing
-//! (registries only, no secrets, your source read-only) and for running (no
-//! network, environment read-only, credentials unreachable).
+//! `senv serve` — the Echo environment on the OpenEnv WebSocket protocol.
 
-#[cfg(test)]
-mod adversarial;
-mod cli;
-mod cmd;
-mod config;
-mod error;
-mod exec;
-mod policy;
-mod project;
-mod receipt;
-mod trust;
-mod util;
-mod uv;
+use std::process::ExitCode;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
-use cli::{Cli, Command};
-use cmd::Ctx;
-use error::EXIT_SENV_ERROR;
+use senv::{AppState, H5I_GIT_REVISION, OPENENV_GIT_REVISION, ServerConfig, serve};
 
-fn main() -> std::process::ExitCode {
-    install_panic_hook();
-    let cli = Cli::parse();
-    // Before anything asks what this host can enforce. See the function's docs:
-    // concurrent senv processes can otherwise talk each other out of a tier
-    // the host actually supports.
-    policy::warm_host_probes();
-    let ctx = Ctx {
-        json: cli.json,
-        project_dir: cli.project.clone(),
-    };
+#[derive(Parser)]
+#[command(
+    name = "senv",
+    version,
+    about = "OpenEnv-compatible RL environments in Rust, executed on h5i-app."
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
 
-    let result = match &cli.command {
-        Command::Init(args) => cmd::install::init(&ctx, args),
-        Command::Add(args) => cmd::install::add(&ctx, args),
-        Command::Remove(args) => cmd::install::remove(&ctx, args),
-        Command::Sync(args) => cmd::install::sync(&ctx, args),
-        Command::Lock(args) => cmd::install::lock(&ctx, args),
-        Command::Run(args) => cmd::run::run(&ctx, args),
-        Command::Shell(args) => cmd::run::shell(&ctx, args),
-        Command::Status => cmd::inspect::status(&ctx),
-        Command::Report(args) => cmd::inspect::report(&ctx, args),
-        Command::Allow(args) => cmd::inspect::allow(&ctx, args),
-        Command::Trust => cmd::inspect::trust(&ctx),
-        Command::Doctor => cmd::inspect::doctor(&ctx),
-        Command::Gc(args) => cmd::inspect::gc(&ctx, args),
-        Command::UvPassthrough(args) => cmd::install::passthrough(&ctx, args),
-    };
+#[derive(Subcommand)]
+enum Command {
+    /// Serve the Echo environment.
+    Serve {
+        /// Address to listen on.
+        #[arg(long, default_value = "127.0.0.1:8000", env = "SENV_BIND")]
+        bind: String,
+        /// Maximum live sessions, including sockets and not-yet-attached HTTP sessions.
+        #[arg(long, default_value_t = 8, env = "MAX_CONCURRENT_ENVS")]
+        max_sessions: usize,
+        /// Largest accepted WebSocket message, in bytes.
+        #[arg(long, default_value_t = 16 * 1024 * 1024)]
+        max_message_bytes: usize,
+        /// Drop an unattached session after this many seconds. 0 keeps it until close.
+        #[arg(long, default_value_t = 120)]
+        idle_timeout_secs: u64,
+    },
+}
 
-    match result {
-        // A confined command's own exit code passes through untouched, so
-        // `senv run pytest` is a drop-in for `uv run pytest` in a CI script.
-        Ok(code) => std::process::ExitCode::from(clamp_exit(code)),
-        Err(e) => {
-            report_error(&e, cli.json);
-            std::process::ExitCode::from(EXIT_SENV_ERROR as u8)
+fn main() -> ExitCode {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("senv=info")),
+        )
+        .init();
+    match Cli::parse().command {
+        Command::Serve {
+            bind,
+            max_sessions,
+            max_message_bytes,
+            idle_timeout_secs,
+        } => {
+            if let Err(error) = run_serve(bind, max_sessions, max_message_bytes, idle_timeout_secs)
+            {
+                eprintln!("senv: {error}");
+                ExitCode::from(1)
+            } else {
+                ExitCode::SUCCESS
+            }
         }
     }
 }
 
-/// Say what a panic in senv means, and make sure it cannot be read as success.
-///
-/// senv's own code is not supposed to panic — `Cargo.toml` denies the operations
-/// that would, and every failure it expects travels as a [`error::SenvError`].
-/// But "not supposed to" is not "cannot", and the default hook is the wrong
-/// thing to show if it ever happens here: a boundary tool dying with a backtrace
-/// and no verdict leaves the user unsure whether the command ran confined, ran
-/// unconfined, or ran at all.
-///
-/// So the hook answers that question first. The one guarantee senv can still
-/// make while unwinding is the important one — a panic happens *inside* this
-/// process, and the sandbox is applied by the kernel to the child, so nothing
-/// escaped a policy that had already been installed. What is genuinely unknown
-/// is whether the command ran, which is what the message says and why it points
-/// at the receipts, the only record that survives this process.
-///
-/// The default hook's location and backtrace still print underneath: this is a
-/// bug report worth making, and stripping the detail would make it a worse one.
-fn install_panic_hook() {
-    let default = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        eprintln!("senv: internal error — senv itself failed, not the command you ran.");
-        eprintln!(
-            "  → no policy was weakened: the boundary is enforced by the kernel against the \
-             child process, so a crash here cannot have unconfined anything that was already \
-             running. Whether your command ran at all is unknown — check `senv report`, which \
-             is written outside every grant, and please report this with the detail below."
+fn run_serve(
+    bind: String,
+    max_sessions: usize,
+    max_message_bytes: usize,
+    idle_timeout_secs: u64,
+) -> Result<(), String> {
+    if max_sessions == 0 {
+        return Err("max sessions must be at least 1".into());
+    }
+    if max_message_bytes == 0 {
+        return Err("max message size must be at least 1 byte".into());
+    }
+    let idle_timeout = if idle_timeout_secs == 0 {
+        None
+    } else {
+        Some(std::time::Duration::from_secs(idle_timeout_secs))
+    };
+    let config = ServerConfig {
+        max_sessions,
+        max_message_bytes,
+        idle_timeout,
+    };
+    let state = AppState::new(config);
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| error.to_string())?;
+    runtime.block_on(async move {
+        let listener = tokio::net::TcpListener::bind(&bind)
+            .await
+            .map_err(|error| error.to_string())?;
+        let local = listener.local_addr().map_err(|error| error.to_string())?;
+        tracing::info!(
+            %local,
+            openenv = OPENENV_GIT_REVISION,
+            h5i = H5I_GIT_REVISION,
+            max_sessions,
+            "echo environment listening"
         );
-        default(info);
-    }));
-}
-
-/// Exit codes are a byte. A child killed by a signal, or one returning
-/// something out of range, must still produce a non-zero code rather than
-/// wrapping around to 0 and reporting success.
-fn clamp_exit(code: i32) -> u8 {
-    match u8::try_from(code) {
-        Ok(0) => 0,
-        Ok(c) => c,
-        Err(_) => 1,
-    }
-}
-
-/// Print a senv error: what happened, why, and the one change that would fix
-/// it.
-fn report_error(e: &error::SenvError, json: bool) {
-    if json {
-        let payload = serde_json::json!({
-            "error": e.to_string(),
-            "fix": e.fix(),
-        });
-        eprintln!(
-            "{}",
-            serde_json::to_string_pretty(&payload).unwrap_or_default()
-        );
-        return;
-    }
-    eprintln!("senv: {e}");
-    if let Some(fix) = e.fix() {
-        eprintln!("  → {}", exec::wrap(fix, 74, 4));
-    }
+        serve(listener, state)
+            .await
+            .map_err(|error| error.to_string())
+    })
 }

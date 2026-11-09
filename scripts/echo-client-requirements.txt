@@ -1,0 +1,10 @@
+# Modules the pinned OpenEnv tree imports while loading the unmodified
+# EchoEnv client (meta-pytorch/OpenEnv 58d0344011fe961342706c90288f7e842b15b1c9).
+# This is not `pip install openenv`: that distribution also pulls Gradio.
+pydantic>=2
+websockets>=15
+httpx>=0.28.1
+fastapi>=0.116
+fastmcp>=3,<4
+openai>=2.7.2
+requests>=2.25

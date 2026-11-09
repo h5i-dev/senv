@@ -1,53 +1,31 @@
 # senv
 
-> senv is an open-source security boundary for Python environments. It keeps the uv workflow and runs uv and your code inside an OS-level sandbox: dependency installation reaches package registries and nothing else and cannot write to your source tree, and your code runs with no network by default, an environment it cannot modify, and no access to your credentials. A senv project stays a valid uv project.
+> senv is an OpenEnv-compatible Echo environment server written in Rust. Each WebSocket session runs reset, step, and state on its own h5i-app MemoryEngine. It is not a Python environment manager and it is not an OS sandbox.
 
 ## Start here
 
-- [Overview](https://senv.h5i.dev/): What the boundary is, why install and run need different policies, and the honest limits.
-- [Manual](https://senv.h5i.dev/manual/): Authoritative command, senv.toml, policy, receipt, and limitation reference.
-- [Install](https://senv.h5i.dev/#install): One binary, then `senv doctor` to see what the host can enforce.
-- [DESIGN.md](https://github.com/h5i-dev/senv/blob/main/DESIGN.md): Full threat model and design rationale.
+- [Overview](https://senv.h5i.dev/): what the server is, and the 2026-11-09 client result.
+- [Manual](https://senv.h5i.dev/manual/): `senv serve` flags, the Python EchoEnv snippet, limits.
+- [Protocol](https://github.com/h5i-dev/senv/blob/main/PROTOCOL.md): the supported OpenEnv subset.
+- [Design](https://github.com/h5i-dev/senv/blob/main/DESIGN.md): shell, kernel, and what a kernel proof would not establish.
+- [Notice](https://github.com/h5i-dev/senv/blob/main/NOTICE): Apache-2.0 for senv and h5i-app; BSD-3-Clause for the OpenEnv behavior this server follows.
 
-## Core model
+## Pins
 
-- Three phases: provisioning (no third-party code), install (`sync`/`add`/`remove`/`lock`/`uv`), run (`run`/`shell`).
-- Install phase: egress limited to package registries, project source read-only via a staging copy, no credentials at all.
-- Run phase: network denied by default, project read-write, Python environment read-only, only declared secrets present.
-- The environment lives outside the project tree; `.venv` is a symlink to it, so no writable grant contains it.
-- Bytecode is compiled at install time and writable bytecode caches are denied at run time, closing the `.pyc` persistence path.
-- Isolation tiers: process, supervised, container, microvm. `workspace` is rejected — senv has no unconfined execution path.
-- An explicitly requested policy the host cannot enforce fails closed; senv never silently downgrades.
-- An allowlist is expressed as `deny` plus a host list, which means the same thing on every backend.
-- `senv.toml` is optional, checked in, and rejects unknown keys. Defaults are fail-closed.
-- Widening `senv.toml` beyond the last accepted snapshot refuses the command until `senv trust` accepts it. The same check covers `[build-system]` and `[tool.uv]` in pyproject.toml.
-- Receipts are append-only JSONL outside every sandbox grant, with declared secrets stripped and a sha256 digest of the enforced policy.
-- senv links h5i-sandbox (the engine behind https://h5i.dev/) as a Rust crate and compiles senv.toml into an h5i policy.
+- OpenEnv: `58d0344011fe961342706c90288f7e842b15b1c9` (meta-pytorch/OpenEnv).
+- h5i-app: `5e0f8a929c57bb12a321090d98a14b3a2714b849`.
 
-## Command mapping
+## Behavior that callers hit
 
-- `uv sync` → `senv sync`; `uv lock` → `senv lock`; `uv add X` → `senv add X`
-- `uv run pytest` → `senv run pytest`; `source .venv/bin/activate` → `senv shell`
-- any other uv command → `senv uv -- <args>`
-- Inspection: `senv status`, `senv report [--suggest]`, `senv doctor`, `senv gc`, `senv trust`, `senv allow <host>`
-- `--json` and `--project DIR` are global. Confined exit codes pass through; senv's own failures use exit code 2.
+- `senv serve` listens on `127.0.0.1:8000` unless `--bind` or `SENV_BIND` is set.
+- `EchoEnv` (production mode) posts `openenv/session/create` to `/mcp`, then opens `/ws?session_id=`.
+- `reset`, `step`, and `state` are WebSocket messages. `list_tools` and `call_tool` are HTTP JSON-RPC and do not increment `step_count`.
+- Reset reward is `0.0`, done is false, metadata message is `Echo environment ready!`.
+- `echo_message` returns the message. `echo_with_length` returns `{message, length}` where length counts Unicode scalars.
+- A WebSocket disconnect destroys that session. The official client ignores the following `session/close` error.
+- Default cap is 8 sessions. Default max WebSocket message is 16 MiB. Unattached sessions idle out after 120 seconds.
+- There is no `/reset`, `/step`, or `/state` HTTP API, no CORS, and no Gradio UI.
 
-## Honest limits
+## Checked
 
-- senv does not identify malicious packages; it bounds what a package can do.
-- Every tier below microvm shares the host kernel — OS-level isolation, not a hypervisor boundary.
-- Installation must write the environment, so the install phase cannot keep the environment read-only.
-- Kernel-tier denial reports infer some denials from program output, which untrusted code can influence; only the container tier has a direct per-request egress tally.
-- Host-side execution (`.venv/bin/python` from an editor, `source .venv/bin/activate`) bypasses the run boundary.
-- Runtime wall-clock limits are not currently enforced; memory and process limits need Linux cgroups and do not apply on macOS.
-- Policy tampering is detected, not prevented.
-
-## Platforms
-
-- Linux: Landlock, seccomp-bpf, namespaces, rlimits/cgroups; registry allowlisting also needs slirp4netns and nftables.
-- macOS: Seatbelt, with a DNS-pinned loopback proxy for allowed egress and name resolution denied otherwise. No seccomp, no cgroups.
-- Windows: WSL2.
-
-## License
-
-Apache-2.0. Source: https://github.com/h5i-dev/senv
+On 2026-11-09, `scripts/echo_compat.sh` against the pinned unmodified client printed `PASS official EchoEnv reset/step/state, isolation, reconnect`. `cargo test --locked --offline` passed 10 unit tests and 3 protocol tests. `cargo clippy --all-targets --locked --offline -- -D warnings` was clean. No speedup is claimed. No Lean proof is claimed.
