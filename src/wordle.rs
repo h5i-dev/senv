@@ -3,8 +3,9 @@
 //! `mark` and `step_core` are deterministic. They do not read the clock, the
 //! dictionary file, or another session. The shell picks the secret, parses
 //! the client's text into a [`Move`], and renders the TextArena-shaped
-//! observation. Proofs of these functions do not establish WebSocket
-//! isolation or anything about the session table.
+//! observation. `proofs/SenvWordle.lean` follows `mark` and `step_core`.
+//! Those proofs do not establish WebSocket isolation or anything about the
+//! session table. See `proofs/CORRESPONDENCE.md`.
 //!
 //! Letters are `0..26` for `a..z`. Marks follow the TextArena Wordle rule:
 //! greens consume a secret letter, then a later yellow consumes one remaining

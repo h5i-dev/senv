@@ -143,7 +143,13 @@ list is `assets/wordle/words.txt` (15,034 words from a system spelling list).
 It is not NLTK, not the New York Times list, and not CPython's RNG. `PROTOCOL.md`
 lists the other differences, including that `state()` reveals the secret.
 
-No latency or throughput numbers are claimed. No Lean proof is claimed.
+`proofs/SenvWordle.lean` (Lean 4.31, `lake build` in `proofs/`) proves the
+pure Wordle reset, the green-before-yellow marker, win and six-miss rewards,
+and the one-invalid allowance. It has no `sorry` or `admit`. It does not
+prove WebSocket isolation or that sessions have separate engines.
+`proofs/CORRESPONDENCE.md` maps the Lean names to `mark` and `step_core`.
+
+No latency or throughput numbers are claimed.
 
 ## Limits
 
