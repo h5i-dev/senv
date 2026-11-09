@@ -1,0 +1,1649 @@
+{
+  "base_url": "http://127.0.0.1:8780",
+  "held_out_seeds": [
+    10000,
+    10001,
+    10002,
+    10003,
+    10004,
+    10005,
+    10006,
+    10007,
+    10008,
+    10009,
+    10010,
+    10011,
+    10012,
+    10013,
+    10014,
+    10015,
+    10016,
+    10017,
+    10018,
+    10019,
+    10020,
+    10021,
+    10022,
+    10023,
+    10024,
+    10025,
+    10026,
+    10027,
+    10028,
+    10029,
+    10030,
+    10031,
+    10032,
+    10033,
+    10034,
+    10035,
+    10036,
+    10037,
+    10038,
+    10039
+  ],
+  "language_model": {
+    "cuda": true,
+    "device": "NVIDIA A10G",
+    "dtype": "float32",
+    "inference_only_before_training": true,
+    "model_id": "HuggingFaceTB/SmolLM2-135M-Instruct",
+    "parameters": 134515008,
+    "peak_memory_allocated_bytes": 2732257792,
+    "peak_memory_reserved_bytes": 3166699520,
+    "pretrained_eval": {
+      "episodes": 40,
+      "mean_reward": 0.1825,
+      "mean_steps": 3.1,
+      "records": [
+        {
+          "reward": 0.2,
+          "seed": 10000,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10001,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10002,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10003,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10004,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10005,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10006,
+          "steps": 4,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10007,
+          "steps": 4,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10008,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10009,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.0,
+          "seed": 10010,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10011,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10012,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10013,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10014,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.0,
+          "seed": 10015,
+          "steps": 2,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10016,
+          "steps": 4,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10017,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10018,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10019,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10020,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10021,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10022,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.5,
+          "seed": 10023,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10024,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.5,
+          "seed": 10025,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10026,
+          "steps": 4,
+          "success": false
+        },
+        {
+          "reward": 0.0,
+          "seed": 10027,
+          "steps": 4,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10028,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10029,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10030,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10031,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10032,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10033,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10034,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10035,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10036,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10037,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10038,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10039,
+          "steps": 3,
+          "success": false
+        }
+      ],
+      "success_rate": 0.0,
+      "successes": 0
+    },
+    "reinforce": {
+      "algorithm": "REINFORCE on sampled completion tokens, terminal env reward",
+      "baseline_beta": 0.1,
+      "episodes": 32,
+      "first_8_mean_reward": 0.225,
+      "first_8_wins": 0,
+      "grad_clip": 1.0,
+      "last_8_mean_reward": 0.325,
+      "last_8_wins": 0,
+      "lr": 1e-05,
+      "max_new_tokens": 24,
+      "mean_reward": 0.278125,
+      "optimizer": "AdamW",
+      "seeds": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ],
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "wins": 0
+    },
+    "revision": null,
+    "torch": "2.15.0+cu132",
+    "trained_eval": {
+      "episodes": 40,
+      "mean_reward": 0.20249999999999999,
+      "mean_steps": 3.0,
+      "records": [
+        {
+          "reward": 0.2,
+          "seed": 10000,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10001,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10002,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10003,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10004,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10005,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10006,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10007,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10008,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10009,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10010,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10011,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10012,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10013,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10014,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10015,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10016,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10017,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10018,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10019,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10020,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10021,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10022,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.5,
+          "seed": 10023,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10024,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.5,
+          "seed": 10025,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10026,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10027,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10028,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10029,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10030,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10031,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10032,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10033,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10034,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10035,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10036,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10037,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10038,
+          "steps": 3,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10039,
+          "steps": 3,
+          "success": false
+        }
+      ],
+      "success_rate": 0.0,
+      "successes": 0
+    },
+    "transformers": "5.22.2",
+    "wall_s": 86.08849363698391
+  },
+  "linear_policy_theta": {
+    "bias": -1.1028140409630358e-12,
+    "consistent": 2.4093590313707116,
+    "green_hits": 6.68323442694785,
+    "novel": 0.10145106670498376
+  },
+  "linear_policy_train": {
+    "algorithm": "one-step REINFORCE; shaped reward is wordle.greens + 0.5*wordle.yellows when reward_signals is present, otherwise the client step reward",
+    "baseline_beta": 0.1,
+    "episodes": 240,
+    "features": [
+      "bias",
+      "consistent",
+      "green_hits",
+      "novel"
+    ],
+    "first_40_mean_reward": 0.14750000000000002,
+    "first_40_mean_shaped": 0.905,
+    "first_40_wins": 0,
+    "last_40_mean_reward": 0.2975,
+    "last_40_mean_shaped": 1.4825000000000002,
+    "last_40_wins": 1,
+    "lr": 0.4,
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73,
+      74,
+      75,
+      76,
+      77,
+      78,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      92,
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100,
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      107,
+      108,
+      109,
+      110,
+      111,
+      112,
+      113,
+      114,
+      115,
+      116,
+      117,
+      118,
+      119,
+      120,
+      121,
+      122,
+      123,
+      124,
+      125,
+      126,
+      127,
+      128,
+      129,
+      130,
+      131,
+      132,
+      133,
+      134,
+      135,
+      136,
+      137,
+      138,
+      139,
+      140,
+      141,
+      142,
+      143,
+      144,
+      145,
+      146,
+      147,
+      148,
+      149,
+      150,
+      151,
+      152,
+      153,
+      154,
+      155,
+      156,
+      157,
+      158,
+      159,
+      160,
+      161,
+      162,
+      163,
+      164,
+      165,
+      166,
+      167,
+      168,
+      169,
+      170,
+      171,
+      172,
+      173,
+      174,
+      175,
+      176,
+      177,
+      178,
+      179,
+      180,
+      181,
+      182,
+      183,
+      184,
+      185,
+      186,
+      187,
+      188,
+      189,
+      190,
+      191,
+      192,
+      193,
+      194,
+      195,
+      196,
+      197,
+      198,
+      199,
+      200,
+      201,
+      202,
+      203,
+      204,
+      205,
+      206,
+      207,
+      208,
+      209,
+      210,
+      211,
+      212,
+      213,
+      214,
+      215,
+      216,
+      217,
+      218,
+      219,
+      220,
+      221,
+      222,
+      223,
+      224,
+      225,
+      226,
+      227,
+      228,
+      229,
+      230,
+      231,
+      232,
+      233,
+      234,
+      235,
+      236,
+      237,
+      238,
+      239
+    ],
+    "theta": [
+      -1.1028140409630358e-12,
+      2.4093590313707116,
+      6.68323442694785,
+      0.10145106670498376
+    ],
+    "wall_s": 119.08962674497161
+  },
+  "lm_lr": 1e-05,
+  "lm_max_new_tokens": 24,
+  "lm_temperature": 0.7,
+  "lm_top_p": 0.95,
+  "lm_train_episodes": 32,
+  "model_id": "HuggingFaceTB/SmolLM2-135M-Instruct",
+  "notes": [
+    "Agents do not call state() and do not read secret_word.",
+    "linear-policy is not a language model.",
+    "linear-policy trains with one-step REINFORCE on wordle.greens + 0.5*wordle.yellows when that signal is present, otherwise the client step reward. Held-out mean_reward is the client reward only.",
+    "lm-pretrained is inference only and runs before any optimizer step.",
+    "lm-reinforce is gradient updates on that same model.",
+    "Success means the episode ended with reward >= 0.999."
+  ],
+  "phases": {
+    "linear-greedy": {
+      "episodes": 40,
+      "mean_reward": 0.8550000000000001,
+      "mean_steps": 5.8,
+      "records": [
+        {
+          "reward": 0.8,
+          "seed": 10000,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 1.0,
+          "seed": 10001,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10002,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10003,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10004,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "reward": 0.6,
+          "seed": 10005,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.8,
+          "seed": 10006,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 1.0,
+          "seed": 10007,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 0.8,
+          "seed": 10008,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.8,
+          "seed": 10009,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 1.0,
+          "seed": 10010,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10011,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10012,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10013,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10014,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10015,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10016,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 0.8,
+          "seed": 10017,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.6,
+          "seed": 10018,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 1.0,
+          "seed": 10019,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10020,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10021,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "reward": 0.4,
+          "seed": 10022,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.6,
+          "seed": 10023,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.6,
+          "seed": 10024,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 1.0,
+          "seed": 10025,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 0.4,
+          "seed": 10026,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10027,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.8,
+          "seed": 10028,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.8,
+          "seed": 10029,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 1.0,
+          "seed": 10030,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 0.8,
+          "seed": 10031,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.6,
+          "seed": 10032,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 1.0,
+          "seed": 10033,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10034,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10035,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10036,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10037,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10038,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 0.6,
+          "seed": 10039,
+          "steps": 6,
+          "success": false
+        }
+      ],
+      "success_rate": 0.575,
+      "successes": 23,
+      "wall_s": 17.37330140802078
+    },
+    "linear-sample": {
+      "episodes": 40,
+      "mean_reward": 0.485,
+      "mean_steps": 5.875,
+      "records": [
+        {
+          "reward": 1.0,
+          "seed": 10000,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "reward": 0.3,
+          "seed": 10001,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10002,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10003,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10004,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.6,
+          "seed": 10005,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10006,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.6,
+          "seed": 10007,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10008,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10009,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.8,
+          "seed": 10010,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.6,
+          "seed": 10011,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.6,
+          "seed": 10012,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.6,
+          "seed": 10013,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10014,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10015,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10016,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10017,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.8,
+          "seed": 10018,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10019,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10020,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.6,
+          "seed": 10021,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10022,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10023,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 1.0,
+          "seed": 10024,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10025,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "reward": 0.2,
+          "seed": 10026,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10027,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.0,
+          "seed": 10028,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10029,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10030,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10031,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 1.0,
+          "seed": 10032,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 1.0,
+          "seed": 10033,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "reward": 0.1,
+          "seed": 10034,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.8,
+          "seed": 10035,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 1.0,
+          "seed": 10036,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "reward": 0.4,
+          "seed": 10037,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10038,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10039,
+          "steps": 6,
+          "success": false
+        }
+      ],
+      "success_rate": 0.15,
+      "successes": 6,
+      "wall_s": 19.393929756013677
+    },
+    "random": {
+      "episodes": 40,
+      "mean_reward": 0.165,
+      "mean_steps": 6.0,
+      "records": [
+        {
+          "reward": 0.4,
+          "seed": 10000,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.0,
+          "seed": 10001,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10002,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10003,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.0,
+          "seed": 10004,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10005,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10006,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10007,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10008,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.0,
+          "seed": 10009,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.0,
+          "seed": 10010,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10011,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10012,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.5,
+          "seed": 10013,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.0,
+          "seed": 10014,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10015,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10016,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10017,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10018,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10019,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.0,
+          "seed": 10020,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.0,
+          "seed": 10021,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10022,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10023,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10024,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.0,
+          "seed": 10025,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10026,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10027,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.0,
+          "seed": 10028,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10029,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10030,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.4,
+          "seed": 10031,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.0,
+          "seed": 10032,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10033,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10034,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.3,
+          "seed": 10035,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10036,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.2,
+          "seed": 10037,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.6,
+          "seed": 10038,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "reward": 0.1,
+          "seed": 10039,
+          "steps": 6,
+          "success": false
+        }
+      ],
+      "success_rate": 0.0,
+      "successes": 0,
+      "wall_s": 0.10434750898275524
+    }
+  },
+  "policy_lr": 0.4,
+  "policy_train_episodes": 240
+}

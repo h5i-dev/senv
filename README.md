@@ -151,6 +151,8 @@ prove WebSocket isolation or that sessions have separate engines.
 
 `docs/BENCHMARKS.md` records one 2026-11-09 run of `scripts/bench.sh` on a 4 vCPU host. The client was `scripts/bench.py`. On one WebSocket, 400 Echo steps averaged 0.121 ms on senv and 2.097 ms on the pinned Python Echo server. Rust Wordle steps averaged 0.223 ms (n=240). The GPU was idle. That page is the whole claim.
 
+`docs/EXPERIMENT.md` is a Wordle run through the unmodified `TextArenaEnv` client on the same date. Held-out seeds 10000..10039: uniform random won 0/40 (mean reward 0.165), a trained four-feature linear policy won 6/40 when sampled and 23/40 when greedy, and SmolLM2-135M-Instruct won 0/40 both before and after 32 REINFORCE episodes. The language-model update is not evidence of learning. The linear policy is a softmax over the word list, not a language model.
+
 ## Limits
 
 The full list is `PROTOCOL.md`. The ones that surprise people who know
