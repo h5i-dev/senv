@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
-use senv::{AppState, ServerConfig};
+use senv::{AppState, EnvKind, ServerConfig};
 use serde_json::{Value, json};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
@@ -223,6 +223,7 @@ async fn spawn(max_sessions: usize, idle: Option<Duration>) -> String {
         max_sessions,
         max_message_bytes: 1024 * 1024,
         idle_timeout: idle,
+        kind: EnvKind::Echo,
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

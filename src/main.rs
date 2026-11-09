@@ -4,7 +4,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-use senv::{AppState, H5I_GIT_REVISION, OPENENV_GIT_REVISION, ServerConfig, serve};
+use senv::{AppState, EnvKind, H5I_GIT_REVISION, OPENENV_GIT_REVISION, ServerConfig, serve};
 
 #[derive(Parser)]
 #[command(
@@ -19,11 +19,14 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Serve the Echo environment.
+    /// Serve an OpenEnv environment.
     Serve {
         /// Address to listen on.
         #[arg(long, default_value = "127.0.0.1:8000", env = "SENV_BIND")]
         bind: String,
+        /// `echo` (default) or `wordle`.
+        #[arg(long, default_value = "echo", env = "SENV_ENV")]
+        env: String,
         /// Maximum live sessions, including sockets and not-yet-attached HTTP sessions.
         #[arg(long, default_value_t = 8, env = "MAX_CONCURRENT_ENVS")]
         max_sessions: usize,
@@ -46,12 +49,18 @@ fn main() -> ExitCode {
     match Cli::parse().command {
         Command::Serve {
             bind,
+            env,
             max_sessions,
             max_message_bytes,
             idle_timeout_secs,
         } => {
-            if let Err(error) = run_serve(bind, max_sessions, max_message_bytes, idle_timeout_secs)
-            {
+            if let Err(error) = run_serve(
+                bind,
+                env,
+                max_sessions,
+                max_message_bytes,
+                idle_timeout_secs,
+            ) {
                 eprintln!("senv: {error}");
                 ExitCode::from(1)
             } else {
@@ -63,6 +72,7 @@ fn main() -> ExitCode {
 
 fn run_serve(
     bind: String,
+    env: String,
     max_sessions: usize,
     max_message_bytes: usize,
     idle_timeout_secs: u64,
@@ -73,6 +83,15 @@ fn run_serve(
     if max_message_bytes == 0 {
         return Err("max message size must be at least 1 byte".into());
     }
+    let kind = match env.as_str() {
+        "echo" => EnvKind::Echo,
+        "wordle" => EnvKind::Wordle,
+        other => {
+            return Err(format!(
+                "unknown environment '{other}', expected echo or wordle"
+            ));
+        }
+    };
     let idle_timeout = if idle_timeout_secs == 0 {
         None
     } else {
@@ -82,6 +101,7 @@ fn run_serve(
         max_sessions,
         max_message_bytes,
         idle_timeout,
+        kind,
     };
     let state = AppState::new(config);
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -97,8 +117,9 @@ fn run_serve(
             %local,
             openenv = OPENENV_GIT_REVISION,
             h5i = H5I_GIT_REVISION,
+            env = kind.as_str(),
             max_sessions,
-            "echo environment listening"
+            "environment listening"
         );
         serve(listener, state)
             .await

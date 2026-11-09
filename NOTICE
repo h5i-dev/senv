@@ -31,8 +31,14 @@ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 
-senv does not copy OpenEnv source. The Python compatibility test imports the
-unmodified EchoEnv client from a checkout of that commit.
+senv does not copy OpenEnv source. The Python compatibility tests import the
+unmodified EchoEnv and TextArenaEnv clients from a checkout of that commit.
+
+Wordle-v0 rules (5 letters, 6 guesses, green-before-yellow marking, one free
+invalid move) were reimplemented from the public behavior of TextArena's
+Wordle environment and from OpenEnv's TextArenaEnv client. senv does not copy
+that source. The bundled word list is not TextArena's list and not the New
+York Times word list.
 
 The session kernel executes on h5i-app from https://github.com/h5i-dev/h5i
 at commit 5e0f8a929c57bb12a321090d98a14b3a2714b849, which is licensed under

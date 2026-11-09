@@ -180,3 +180,51 @@ increments `step_count` or refuses on overflow without committing; invoke
 evaluates a tool and leaves `step_count` unchanged; state returns a copy.
 `done` is false. Those facts are about that function. They say nothing about
 WebSocket isolation, the session table, or two clients sharing a process.
+
+## Wordle-v0
+
+`senv serve --env wordle` (or `SENV_ENV=wordle`) serves one classic game on
+the OpenEnv `TextArenaEnv` WebSocket contract. The default remains Echo, and
+the Echo routes above do not change.
+
+`TextArenaEnv` connects to `/ws` with no `session_id`. That creates a session.
+`reset` data is `seed` and `episode_id`. `step` data is `{"message": "..."}`.
+`state` returns `episode_id`, `step_count`, `env_id` (`Wordle-v0`),
+`num_players`, `max_turns`, `turn`, `last_reward`, `last_info`, and
+`raw_state`. Observations use the TextArena fields `prompt`, `messages`,
+`current_player_id`, `legal_players`, and `info`, with `reward` and `done`
+beside the nested observation. Non-empty metadata is repeated at the top
+level, matching `serialize_observation`.
+
+The game is 5 letters and 6 guesses. A guess is the first `\[[A-Za-z0-9_]+\]`
+in the message, lowercased. Greens are marked before yellows, and a yellow
+consumes one remaining copy of that letter. The first invalid move does not
+spend a guess. The next consecutive invalid move ends the episode. A correct
+word ends it with reward 1. Six misses end it with reward
+`(greens + 0.5 * yellows) / 5` of the last guess. Reward inside the kernel is
+thousandths. The shell writes a JSON float.
+
+This is not the TextArena package. Differences that matter:
+
+- The answer list and the accepted-guess list are the same file,
+  `assets/wordle/words.txt`: `/usr/share/dict/words` filtered to `^[a-z]{5}$`.
+  That is not NLTK `en-basic` nouns and not the New York Times list.
+- A seed picks `words[(seed as u64) % len]`. The same seed is stable in senv.
+  It is not CPython's Mersenne Twister, and it will not match TextArena's
+  secret for that seed.
+- With no seed, the secret is FNV-1a of the episode id. The kernel does not
+  draw it.
+- `state.raw_state.game_state.secret_word` includes the secret, as the OpenEnv
+  TextArena wrapper's snapshot does. A policy that reads `state()` can cheat.
+  Play from the observation.
+- Action text longer than 4096 bytes is `VALIDATION_ERROR`. Stepping after
+  `done` is `EXECUTION_ERROR` and does not change the snapshot.
+- `POST /mcp` still creates and closes sessions. `tools/list` is empty.
+  `tools/call` is JSON-RPC `-32601`.
+- `wordle.greens`, `wordle.yellows`, `wordle.repetitions`, and `wordle.correct`
+  are attached on a step, using the same guess normalization as OpenEnv's
+  Wordle reward provider. A win has no `Feedback:` line, so greens and yellows
+  are 0 on that step and `wordle.correct` is 1.
+
+`step_core` and `mark` in `src/wordle.rs` are the pure transition. A proof of
+those functions does not prove socket isolation.

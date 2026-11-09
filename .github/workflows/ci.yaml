@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v5
       - run: sh -n install.sh
       - run: shellcheck --shell=sh install.sh
-      - run: shellcheck --shell=bash scripts/echo_compat.sh
+      - run: shellcheck --shell=bash scripts/echo_compat.sh scripts/wordle_compat.sh
 
   supply-chain:
     name: cargo-deny

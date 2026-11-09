@@ -20,6 +20,14 @@ command)` to a write set and a reply, or a refusal. `apply` replaces the
 snapshot with the write set. The shell passes the episode id and the seed in,
 so the function does not read a clock or a random source.
 
+`senv serve --env wordle` uses a second kernel (`src/wordle.rs`,
+`src/wordle_env.rs`) on the same shape: one `MemoryEngine` per session, a
+dummy store, and tenant 1. `mark` and `step_core` do not parse JSON and do
+not choose the secret. The shell picks the secret from the seed or the
+episode id, then asks the kernel to commit. Rendering the TextArena
+observation is shell work. A proof of `step_core` still would not prove that
+two sockets have two engines.
+
 The adapter (`src/store.rs`, `src/env.rs`) implements `h5i_app::Kernel` for
 that function and builds one `H5iApp<EchoKernel, EchoStore, MemoryEngine<_>>`
 per session. `H5iApp::with_executor` still requires a `Store` type.

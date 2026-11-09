@@ -17,7 +17,7 @@
 
 ## Behavior that callers hit
 
-- `senv serve` listens on `127.0.0.1:8000` unless `--bind` or `SENV_BIND` is set.
+- `senv serve` listens on `127.0.0.1:8000` unless `--bind` or `SENV_BIND` is set. `--env` is `echo` (default) or `wordle`.
 - `EchoEnv` (production mode) posts `openenv/session/create` to `/mcp`, then opens `/ws?session_id=`.
 - `reset`, `step`, and `state` are WebSocket messages. `list_tools` and `call_tool` are HTTP JSON-RPC and do not increment `step_count`.
 - Reset reward is `0.0`, done is false, metadata message is `Echo environment ready!`.
@@ -28,4 +28,4 @@
 
 ## Checked
 
-On 2026-11-09, `scripts/echo_compat.sh` against the pinned unmodified client printed `PASS official EchoEnv reset/step/state, isolation, reconnect`. `cargo test --locked --offline` passed 10 unit tests and 3 protocol tests. `cargo clippy --all-targets --locked --offline -- -D warnings` was clean. No speedup is claimed. No Lean proof is claimed.
+On 2026-11-09, `scripts/echo_compat.sh` against the pinned unmodified client printed `PASS official EchoEnv reset/step/state, isolation, reconnect`. `scripts/wordle_compat.sh` printed `PASS official TextArenaEnv Wordle reset/step/state, feedback, win, invalid, isolation`. Wordle uses a system spelling list of 15,034 five-letter words, not NLTK and not the New York Times list, and its seeded secret is not CPython's RNG. `cargo test --locked --offline` passed 17 library tests, 3 Echo protocol tests, and 2 Wordle WebSocket tests. `cargo clippy --all-targets --locked --offline -- -D warnings` was clean. No speedup is claimed. No Lean proof is claimed.

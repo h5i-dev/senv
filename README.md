@@ -27,6 +27,7 @@ The default listen address is `127.0.0.1:8000`.
 | Flag | Environment | Default |
 |---|---|---|
 | `--bind` | `SENV_BIND` | `127.0.0.1:8000` |
+| `--env` | `SENV_ENV` | `echo` (`wordle` serves Wordle-v0) |
 | `--max-sessions` | `MAX_CONCURRENT_ENVS` | 8 |
 | `--max-message-bytes` | | 16777216 (16 MiB) |
 | `--idle-timeout-secs` | | 120 (0 disables the idle sweep) |
@@ -104,9 +105,10 @@ fastapi 0.162.2, fastmcp 3.4.11, openai 3.48.0, and requests 2.34.2.
 
 ```text
 cargo test --locked --offline
-10 passed (kernel and protocol unit tests)
-3 passed (tests/protocol.rs: reset/step/state, isolation, malformed frames,
+17 passed (kernel, protocol, and Wordle unit tests)
+3 passed (tests/protocol.rs: Echo reset/step/state, isolation, malformed frames,
          capacity, second socket, idle reap)
+2 passed (tests/wordle.rs: feedback, win, invalid moves, seed, isolation)
 0 failed
 
 cargo clippy --all-targets --locked --offline -- -D warnings
@@ -124,6 +126,22 @@ second `EchoEnv` whose reset stays at `step_count` 0; then a new `EchoEnv`
 after close, which receives a new episode. The client file path is checked
 against `OPENENV_CLIENT` when that variable is set. `echo_compat.sh` sets it
 to `envs/echo_env/client.py` inside `OPENENV_SRC`.
+
+`scripts/wordle_compat.sh` is the same kind of check for Wordle. It starts
+`senv serve --env wordle` and imports the unmodified `TextArenaEnv` from
+`envs/textarena_env/client.py` in that OpenEnv tree. On 2026-11-09 that script
+printed:
+
+```text
+PASS official TextArenaEnv Wordle reset/step/state, feedback, win, invalid, isolation
+```
+
+`cargo test --locked --offline` then also passed the two Wordle WebSocket
+tests in `tests/wordle.rs` (17 library tests, 3 Echo protocol tests, 2 Wordle
+tests). Wordle is a 5-letter, 6-guess game on that client's socket. The word
+list is `assets/wordle/words.txt` (15,034 words from a system spelling list).
+It is not NLTK, not the New York Times list, and not CPython's RNG. `PROTOCOL.md`
+lists the other differences, including that `state()` reveals the secret.
 
 No latency or throughput numbers are claimed. No Lean proof is claimed.
 

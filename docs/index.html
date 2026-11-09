@@ -50,9 +50,10 @@
     <div class="hero-badge">OpenEnv Echo · one MemoryEngine per session · Apache-2.0</div>
     <h1 class="hero-title"><em>Echo</em> for OpenEnv, on h5i-app</h1>
     <p class="hero-sub">
-      senv serves the production Echo protocol. <code>reset</code>, <code>step</code>, and
-      <code>state</code> are kernel transitions. The official Python <code>EchoEnv</code> client
-      talks to this process without changes.
+      senv serves the production Echo protocol, and <code>--env wordle</code> serves a
+      5-letter Wordle on the TextArenaEnv socket. <code>reset</code>, <code>step</code>, and
+      <code>state</code> are kernel transitions. The official Python clients
+      talk to this process without changes.
     </p>
     <div class="hero-install" id="quickstart">
       <code>cargo run --locked --bin senv -- serve</code>

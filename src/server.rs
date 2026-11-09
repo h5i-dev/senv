@@ -25,6 +25,22 @@ use uuid::Uuid;
 use crate::env::{EchoEnvironment, EnvError, Environment};
 use crate::kernel::{Body, StepAction};
 use crate::protocol::{self, Incoming, WireError};
+use crate::wordle_env::{self, WordleEnvironment};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EnvKind {
+    Echo,
+    Wordle,
+}
+
+impl EnvKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Echo => "echo",
+            Self::Wordle => "wordle",
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
@@ -33,6 +49,7 @@ pub struct ServerConfig {
     /// Sessions that never attach, or whose socket is already gone, are
     /// removed after this long. `None` disables the sweep.
     pub idle_timeout: Option<Duration>,
+    pub kind: EnvKind,
 }
 
 impl Default for ServerConfig {
@@ -41,6 +58,7 @@ impl Default for ServerConfig {
             max_sessions: 8,
             max_message_bytes: 16 * 1024 * 1024,
             idle_timeout: Some(Duration::from_secs(120)),
+            kind: EnvKind::Echo,
         }
     }
 }
@@ -55,10 +73,16 @@ struct SessionTable {
     inner: Mutex<HashMap<String, Arc<Slot>>>,
     max_sessions: usize,
     idle_timeout: Option<Duration>,
+    kind: EnvKind,
+}
+
+enum Live {
+    Echo(EchoEnvironment),
+    Wordle(WordleEnvironment),
 }
 
 struct Slot {
-    env: EchoEnvironment,
+    env: Live,
     attached: AtomicBool,
     pending_close: AtomicBool,
     last_activity: Mutex<Instant>,
@@ -82,6 +106,7 @@ impl SessionTable {
             inner: Mutex::new(HashMap::new()),
             max_sessions: config.max_sessions,
             idle_timeout: config.idle_timeout,
+            kind: config.kind,
         }
     }
 
@@ -125,8 +150,12 @@ impl SessionTable {
         }
         let id = Uuid::new_v4().to_string();
         let episode_id = Uuid::new_v4().to_string();
+        let env = match self.kind {
+            EnvKind::Echo => Live::Echo(EchoEnvironment::open(episode_id)),
+            EnvKind::Wordle => Live::Wordle(WordleEnvironment::open(episode_id)),
+        };
         let slot = Arc::new(Slot {
-            env: EchoEnvironment::open(episode_id),
+            env,
             attached: AtomicBool::new(attached),
             pending_close: AtomicBool::new(false),
             last_activity: Mutex::new(Instant::now()),
@@ -205,6 +234,10 @@ impl AppState {
         }
     }
 
+    pub fn kind(&self) -> EnvKind {
+        self.config.kind
+    }
+
     pub fn router(&self) -> Router {
         Router::new()
             .route("/health", get(health))
@@ -237,12 +270,18 @@ async fn health() -> Json<Value> {
     Json(json!({ "status": "healthy" }))
 }
 
-async fn metadata() -> Json<Value> {
-    Json(protocol::metadata_document())
+async fn metadata(State(state): State<AppState>) -> Json<Value> {
+    Json(match state.kind() {
+        EnvKind::Echo => protocol::metadata_document(),
+        EnvKind::Wordle => wordle_env::metadata_document(),
+    })
 }
 
-async fn schema() -> Json<Value> {
-    Json(protocol::schema_document())
+async fn schema(State(state): State<AppState>) -> Json<Value> {
+    Json(match state.kind() {
+        EnvKind::Echo => protocol::schema_document(),
+        EnvKind::Wordle => wordle_env::schema_document(),
+    })
 }
 
 #[derive(Deserialize)]
@@ -332,7 +371,50 @@ enum Dispatch {
     Close,
 }
 
-fn dispatch(env: &EchoEnvironment, text: &str) -> Dispatch {
+fn dispatch(env: &Live, text: &str) -> Dispatch {
+    match env {
+        Live::Echo(env) => dispatch_echo(env, text),
+        Live::Wordle(env) => dispatch_wordle(env, text),
+    }
+}
+
+fn dispatch_wordle(env: &WordleEnvironment, text: &str) -> Dispatch {
+    let incoming = match wordle_env::parse_incoming(text) {
+        Ok(incoming) => incoming,
+        Err(error) => return Dispatch::Reply(protocol::error_frame(&error)),
+    };
+    match incoming {
+        wordle_env::Incoming::Close => Dispatch::Close,
+        wordle_env::Incoming::State => Dispatch::Reply(env.state_frame()),
+        wordle_env::Incoming::Reset { seed, episode_id } => {
+            let episode_id = episode_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+            match env.reset(seed, episode_id) {
+                Ok(frame) => Dispatch::Reply(frame),
+                Err(error) => Dispatch::Reply(protocol::error_frame(&WireError::new(
+                    wordle_code(&error),
+                    error.to_string(),
+                ))),
+            }
+        }
+        wordle_env::Incoming::Step { message } => match env.step(message) {
+            Ok(frame) => Dispatch::Reply(frame),
+            Err(error) => Dispatch::Reply(protocol::error_frame(&WireError::new(
+                wordle_code(&error),
+                error.to_string(),
+            ))),
+        },
+    }
+}
+
+fn wordle_code(error: &crate::wordle_env::WordleError) -> &'static str {
+    match error {
+        crate::wordle_env::WordleError::ActionTooLong => "VALIDATION_ERROR",
+        crate::wordle_env::WordleError::AlreadyDone
+        | crate::wordle_env::WordleError::StepCountOverflow => "EXECUTION_ERROR",
+    }
+}
+
+fn dispatch_echo(env: &EchoEnvironment, text: &str) -> Dispatch {
     let incoming = match protocol::parse_incoming(text) {
         Ok(incoming) => incoming,
         Err(error) => return Dispatch::Reply(protocol::error_frame(&error)),
@@ -441,7 +523,13 @@ async fn mcp(State(state): State<AppState>, body: axum::body::Bytes) -> impl Int
             },
         },
         "tools/list" => match session_from_params(&state, &params) {
-            Ok(_slot) => rpc_ok(id, json!({ "tools": protocol::http_tools() })),
+            Ok(slot) => {
+                let tools = match &slot.env {
+                    Live::Echo(_) => protocol::http_tools(),
+                    Live::Wordle(_) => Vec::new(),
+                };
+                rpc_ok(id, json!({ "tools": tools }))
+            }
             Err(error) => session_rpc_error(id, &error),
         },
         "tools/call" => match call_tool(&state, id.clone(), &params) {
@@ -487,10 +575,15 @@ fn call_tool(state: &AppState, id: Value, params: &Map<String, Value>) -> Result
         Ok(slot) => slot,
         Err(error) => return Err(session_rpc_error(id, &error)),
     };
-    let outcome = match slot
-        .env
-        .invoke(StepAction::Call(protocol::tool_call(name, &arguments)))
-    {
+    let Live::Echo(env) = &slot.env else {
+        return Err(rpc_error(
+            id,
+            -32601,
+            "tools/call is not available on this environment",
+            None,
+        ));
+    };
+    let outcome = match env.invoke(StepAction::Call(protocol::tool_call(name, &arguments))) {
         Ok(outcome) => outcome,
         Err(error) => return Err(rpc_error(id, -32603, error.to_string(), None)),
     };
