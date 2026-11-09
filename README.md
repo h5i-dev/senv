@@ -149,7 +149,7 @@ and the one-invalid allowance. It has no `sorry` or `admit`. It does not
 prove WebSocket isolation or that sessions have separate engines.
 `proofs/CORRESPONDENCE.md` maps the Lean names to `mark` and `step_core`.
 
-No latency or throughput numbers are claimed.
+`docs/BENCHMARKS.md` records one 2026-11-09 run of `scripts/bench.sh` on a 4 vCPU host. The client was `scripts/bench.py`. On one WebSocket, 400 Echo steps averaged 0.121 ms on senv and 2.097 ms on the pinned Python Echo server. Rust Wordle steps averaged 0.223 ms (n=240). The GPU was idle. That page is the whole claim.
 
 ## Limits
 
