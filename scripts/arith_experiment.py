@@ -266,7 +266,7 @@ def run_train(args: argparse.Namespace) -> dict:
                 opt.zero_grad(set_to_none=True)
                 turn_means = []
                 for prompt_ids, completion_ids in turns:
-                    logprobs = completion_logprobs(model, prompt_ids.to(device), completion_ids.to(device))
+                    logprobs = policy_logprobs(model, prompt_ids.to(device), completion_ids.to(device))
                     turn_means.append(logprobs.mean())
                 loss = -advantage * torch.stack(turn_means).mean()
                 loss.backward()
@@ -326,6 +326,8 @@ def run_train(args: argparse.Namespace) -> dict:
             "lora_r": LORA_R,
             "temperature": TEMPERATURE,
             "top_p": TOP_P,
+            "top_k": 0,
+            "repetition_penalty": 1.0,
             "max_new_tokens": MAX_NEW_TOKENS,
             "updates": updates,
             "skipped_zero_advantage": skipped_zero_advantage,
@@ -341,8 +343,10 @@ def run_train(args: argparse.Namespace) -> dict:
             "objective": (
                 "Monte Carlo REINFORCE. Each turn of an episode gets the terminal "
                 "server reward minus an EMA baseline. The loss is the negative "
-                "advantage times the mean completion-token logprob. Prompt tokens "
-                "are not in that mean. Format validity is not part of the reward."
+                "advantage times the mean completion-token logprob under the "
+                "sampling distribution (temperature 0.7, top-p 0.95, no top-k, "
+                "no repetition penalty). Prompt tokens are not in that mean. "
+                "Format validity is not part of the reward."
                 if args.answer_bonus == 0
                 else (
                     "Separate answer-format warmup. The training target is the "
@@ -482,6 +486,41 @@ def play_episode(client, seed: int, episode_id: str, choose) -> dict:
     }
 
 
+def stop_token_ids(tokenizer, stop_on_newline: bool) -> list[int]:
+    stop_ids = []
+    if stop_on_newline:
+        newline = tokenizer.encode("\n", add_special_tokens=False)
+        if len(newline) == 1:
+            stop_ids.append(newline[0])
+    if tokenizer.eos_token_id is not None:
+        stop_ids.append(tokenizer.eos_token_id)
+    return stop_ids
+
+
+def generation_kwargs(tokenizer, decode: str, max_new_tokens: int, stop_on_newline: bool) -> dict:
+    """Decoder settings the experiment states. Model-card and library defaults are overridden.
+
+    ``generate`` fills omitted fields from the checkpoint, then from library
+    defaults. Qwen2.5-0.5B-Instruct would otherwise add repetition penalty 1.1
+    and top-k 20. An unset top-k becomes the library default of 50, which is
+    what SmolLM2-135M-Instruct inherited. Greedy is argmax. Sampling is
+    temperature 0.7 and top-p 0.95 with no top-k cutoff and no repetition penalty.
+    """
+
+    kwargs = {
+        "max_new_tokens": max_new_tokens,
+        "do_sample": decode == "sample",
+        "pad_token_id": tokenizer.pad_token_id,
+        "eos_token_id": stop_token_ids(tokenizer, stop_on_newline),
+        "repetition_penalty": 1.0,
+        "top_k": 0,
+    }
+    if decode == "sample":
+        kwargs["temperature"] = TEMPERATURE
+        kwargs["top_p"] = TOP_P
+    return kwargs
+
+
 def generate_line(bundle, observation: str, decode: str, system: str | None = None):
     import torch
 
@@ -496,16 +535,9 @@ def generate_line(bundle, observation: str, decode: str, system: str | None = No
     inputs = tokenizer(prompt, return_tensors="pt")
     inputs = {key: value.to(device) for key, value in inputs.items()}
     prompt_len = int(inputs["input_ids"].shape[1])
-    stop_ids = bundle["stop_ids"]
-    kwargs = {
-        "max_new_tokens": MAX_NEW_TOKENS,
-        "do_sample": decode == "sample",
-        "pad_token_id": tokenizer.pad_token_id,
-        "eos_token_id": stop_ids,
-    }
-    if decode == "sample":
-        kwargs["temperature"] = TEMPERATURE
-        kwargs["top_p"] = TOP_P
+    # Newline-as-EOS cuts off a later answer command. Seed 2000's greedy
+    # continuation is `calc 6 * 8 * 9` and then `answer 432`. Stop on EOS only.
+    kwargs = generation_kwargs(tokenizer, decode, MAX_NEW_TOKENS, stop_on_newline=False)
     was_training = model.training
     model.eval()
     model.config.use_cache = True
@@ -521,7 +553,36 @@ def generate_line(bundle, observation: str, decode: str, system: str | None = No
     return prompt_ids, completion_ids, action_line(text)
 
 
-def completion_logprobs(model, prompt_ids, completion_ids):
+def sampling_log_softmax(logits, temperature: float = 1.0, top_p: float = 1.0):
+    """Log-probabilities of one next-token row under temperature and top-p.
+
+    Temperature is applied first. Top-p then matches ``TopPLogitsWarper`` with
+    ``min_tokens_to_keep=1``: sort ascending, drop tokens whose cumulative
+    probability is at most ``1 - top_p``, and always keep the highest token.
+    Top-k is not applied.
+    """
+
+    import torch
+
+    if temperature <= 0.0:
+        raise ValueError(f"temperature must be positive, got {temperature}")
+    if not 0.0 < top_p <= 1.0:
+        raise ValueError(f"top_p must be in (0, 1], got {top_p}")
+    scores = logits.float()
+    if temperature != 1.0:
+        scores = scores / float(temperature)
+    if top_p < 1.0:
+        row = scores.unsqueeze(0)
+        sorted_logits, sorted_indices = torch.sort(row, descending=False)
+        cumulative = sorted_logits.softmax(dim=-1).cumsum(dim=-1)
+        remove = cumulative <= (1.0 - float(top_p))
+        remove[..., -1:] = False
+        remove = remove.scatter(1, sorted_indices, remove)
+        scores = row.masked_fill(remove, float("-inf")).squeeze(0)
+    return torch.log_softmax(scores, dim=-1)
+
+
+def completion_logprobs(model, prompt_ids, completion_ids, temperature: float = 1.0, top_p: float = 1.0):
     import torch
 
     if prompt_ids.numel() == 0 or completion_ids.numel() == 0:
@@ -540,11 +601,23 @@ def completion_logprobs(model, prompt_ids, completion_ids):
         target = input_ids[0, position + 1]
         if int(target.item()) != int(completion_ids[offset].item()):
             raise RuntimeError("completion target does not match the generated token")
-        token_logprob = torch.log_softmax(logits[position].float(), dim=-1)[target]
+        token_logprob = sampling_log_softmax(logits[position], temperature, top_p)[target]
         scored.append(token_logprob)
     if len(scored) != int(completion_ids.shape[0]):
         raise RuntimeError("mask length does not equal the completion length")
     return torch.stack(scored)
+
+
+def policy_logprobs(model, prompt_ids, completion_ids):
+    """Log-probabilities of the tokens ``generate_line(..., decode='sample')`` drew."""
+
+    return completion_logprobs(
+        model,
+        prompt_ids,
+        completion_ids,
+        temperature=TEMPERATURE,
+        top_p=TOP_P,
+    )
 
 
 def validate_logprob(bundle) -> dict:
@@ -651,12 +724,15 @@ def load_bundle(lora: bool) -> dict:
         trainable = sum(param.numel() for param in model.parameters() if param.requires_grad)
         model.print_trainable_parameters()
     model.config.use_cache = False
+    # generate() copies unset fields from this object, then library defaults.
+    # Pin them so a checkpoint cannot put top-k or a repetition penalty back.
+    model.generation_config.do_sample = False
+    model.generation_config.temperature = 1.0
+    model.generation_config.top_p = 1.0
+    model.generation_config.top_k = 0
+    model.generation_config.repetition_penalty = 1.0
     newline = tokenizer.encode("\n", add_special_tokens=False)
-    stop_ids = []
-    if len(newline) == 1:
-        stop_ids.append(newline[0])
-    if tokenizer.eos_token_id is not None:
-        stop_ids.append(tokenizer.eos_token_id)
+    stop_ids = stop_token_ids(tokenizer, stop_on_newline=True)
     parameters = sum(param.numel() for param in model.parameters())
     meta = model_meta(model_id, revision, parameters, trainable, len(newline) == 1)
     return {

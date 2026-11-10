@@ -84,11 +84,36 @@ def eval_expr(text: str) -> int:
     raise ValueError(op)
 
 
+def _answer_command(line: str) -> bool:
+    """True when the server would parse this line as `answer <int>`.
+
+    The command word is the first token. The next token is an optional minus
+    and 1 to 12 digits. Trailing tokens do not make it invalid.
+    """
+
+    tokens = line.split()
+    if len(tokens) < 2 or tokens[0].lower() != "answer":
+        return False
+    token = tokens[1][1:] if tokens[1].startswith("-") else tokens[1]
+    return token.isdigit() and 1 <= len(token) <= 12
+
+
 def action_line(text: str) -> str:
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped:
-            return stripped
+    """Line submitted to the server.
+
+    The server scores one line. A completion can still contain a later
+    `answer` command, and taking only the first line drops it. On the live
+    seed-2000 prompt the greedy continuation was `calc 6 * 8 * 9` and then
+    `answer 432`, and 432 is the value. The first answer command is the
+    action. With no answer command, the first non-empty line is the action.
+    """
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for line in lines:
+        if _answer_command(line):
+            return line
+    if lines:
+        return lines[0]
     return ""
 
 
@@ -165,6 +190,20 @@ def self_test() -> None:
         raise SystemExit("sub")
     if action_line("\n  answer 4\nmore") != "answer 4":
         raise SystemExit("action line")
+    if action_line("calc 6 * 8 * 9\nanswer 432") != "answer 432":
+        raise SystemExit("later answer command was dropped")
+    if action_line("calc 10 - 5\nanswer 5 please") != "answer 5 please":
+        raise SystemExit("later answer with trailing words")
+    if action_line("answer: 5\nanswer 432") != "answer 432":
+        raise SystemExit("answer colon is not a command")
+    if action_line("calc (6 * 8) * 9") != "calc (6 * 8) * 9":
+        raise SystemExit("parenthesized calc")
+    if action_line("The answer to 1 + 3 is 4.") != "The answer to 1 + 3 is 4.":
+        raise SystemExit("prose")
+    if action_line("answer 5.0") != "answer 5.0":
+        raise SystemExit("non-integer answer stays the first line")
+    if action_line("") != "":
+        raise SystemExit("empty")
     interval = wilson(100, 200)
     if interval is None or not interval["low"] <= 0.5 <= interval["high"]:
         raise SystemExit(f"wilson {interval}")
