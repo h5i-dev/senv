@@ -67,4 +67,14 @@ Separate from the frozen 3-operator run. Operator count 2, Qwen2.5-0.5B-Instruct
 | 20 | 0/40 | 0.000 | 0.00 | 0 | 0.0225 |
 | 40 | 0/40 | 0.000 | 0.00 | 0 | 0.000 |
 
-Server reward was 0 on all 40 episodes. The only positive shaped returns were episode 1 (0.100) and episode 3 (0.125). Both were below the 0.25 baseline, so their advantages were negative and those answer lines were pushed down. From episode 4 on, the leading-answer rate in the log is 0. Validation greedy success stayed 0/40. This run does not show that the format bonus teaches the command. A repeat with the baseline started at 0 is the check that the sign of the advantage was the cause.
+Server reward was 0 on all 40 episodes. The only positive shaped returns were episode 1 (0.100) and episode 3 (0.125). Both were below the 0.25 baseline, so their advantages were negative and those answer lines were pushed down. From episode 4 on, the leading-answer rate in the log is 0. Validation greedy success stayed 0/40. This run does not show that the format bonus teaches the command.
+
+The same 40 episodes with the baseline started at 0 are a separate check. Qwen, operator count 2, torch seed 1, validation greedy on seeds 2000..2039, test split unread. Wall time 219 s. Peak allocated GPU memory 3,852,050,432 bytes. Forty updates, none skipped.
+
+| Checkpoint | Val success | Val format | Val leading-answer rate | Mean steps | Wilson 95% |
+|---|---:|---:|---:|---:|---|
+| 0 | 0/40 | 0.025 | 0.00 | 8.0 | 0–0.088 |
+| 20 | 0/40 | 1.000 | 0.50 | 2.0 | 0–0.088 |
+| 40 | 2/40 | 1.000 | 0.50 | 2.0 | 0.014–0.165 |
+
+The second training window, episodes 21..40, had server reward on 1 of 20 sampled episodes (episode 27). A greedy replay of the final adapter on the same 40 validation seeds reproduces 2/40, format 1, and 2 steps. Every episode is one `calc` line and then one `answer` line. The calc does not match the expression: `calc 8 * 6` is 17 of the 40 lines, and `calc 4 * 6` is 7. The answer is `answer 10` on 20 of 40 episodes. Seed 2013 is the only validation problem whose value is 10, and the policy answered 10 after `calc 8 * 6`. Seed 2039 answered 12 for `((3 * 1) * 4)`, which is correct, while the two other value-12 problems were answered 10. The bonus taught a legal two-step template. It did not teach the policy to evaluate the expression.

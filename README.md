@@ -156,7 +156,7 @@ prove WebSocket isolation or that sessions have separate engines.
 
 On 2026-11-10, `cargo test --locked --offline` passed 21 library tests, 3 Echo protocol tests, 2 Wordle tests, and 2 Arith tests. `cargo clippy --all-targets --locked --offline -- -D warnings` was clean. Arith-v0 is a custom task (`senv serve --env arith`), not an upstream environment. The expression value is scored in the server and is absent from the observation and from `state.raw_state`. `scripts/arith_compat.sh` printed `PASS official TextArenaEnv Arith-v0 reset/step/state, score, hidden value, isolation`.
 
-`docs/ARITH.md` is the 2026-11-10 Arith run on the same client. Difficulty froze at 3 operators because no validation pilot sat in the success band. On held-out seeds 10000..10199, `answer 0` scored 3/200 and a random legal line scored 6/200. SmolLM2-135M-Instruct scored 0/200 before and after 200 REINFORCE episodes. A separate 40-episode Qwen answer-format warmup at 2 operators also scored 0/40 on validation and drove the leading-answer rate to 0, because the 0.25 baseline made those advantages negative.
+`docs/ARITH.md` is the 2026-11-10 Arith run on the same client. Difficulty froze at 3 operators because no validation pilot sat in the success band. On held-out seeds 10000..10199, `answer 0` scored 3/200 and a random legal line scored 6/200. SmolLM2-135M-Instruct scored 0/200 before and after 200 REINFORCE episodes. A 40-episode Qwen answer-format warmup at 2 operators scored 0/40 when the baseline started at 0.25. The same run with the baseline started at 0 reached validation format 1 and 2/40 successes; the final policy mostly emits `calc 8 * 6` and `answer 10`.
 
 ## Limits
 

@@ -619,5 +619,32 @@
     "positive_shaped_episodes": [1, 3],
     "test_split_used": false,
     "note": "Both positive shaped returns were below the 0.25 baseline, so their advantages were negative."
+  },
+  "answer_format_warmup_baseline0": {
+    "ops": 2,
+    "episodes": 40,
+    "answer_bonus": 0.5,
+    "baseline_init": 0.0,
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+    "torch_seed": 1,
+    "wall_s": 218.79037235997384,
+    "updates": 40,
+    "skipped_zero_advantage": 0,
+    "peak_allocated_bytes": 3852050432,
+    "mean_grad_norm_preclip": 1.481101135816425,
+    "final_baseline": 0.2327566410846314,
+    "train_server_successes": 1,
+    "train_success_episode": 27,
+    "val_greedy": [
+      {"episodes": 0, "successes": 0, "episodes_scored": 40, "mean_format_rate": 0.025, "mean_answer_line_rate": 0.0, "mean_steps": 8.0},
+      {"episodes": 20, "successes": 0, "episodes_scored": 40, "mean_format_rate": 1.0, "mean_answer_line_rate": 0.5, "mean_steps": 2.0},
+      {"episodes": 40, "successes": 2, "episodes_scored": 40, "mean_format_rate": 1.0, "mean_answer_line_rate": 0.5, "mean_steps": 2.0, "success_wilson95": [0.013820377146101098, 0.165041708179252]}
+    ],
+    "replay_answer_counts": {"answer 10": 20, "answer 1": 6, "answer 2": 3},
+    "replay_calc_counts": {"calc 8 * 6": 17, "calc 4 * 6": 7, "calc 10 * 6": 4},
+    "correct_seeds": [2013, 2039],
+    "values_equal_to_10": 1,
+    "test_split_used": false
   }
 }
