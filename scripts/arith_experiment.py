@@ -235,7 +235,11 @@ def run_train(args: argparse.Namespace) -> dict:
         device = bundle["device"]
         params = [param for param in model.parameters() if param.requires_grad]
         opt = torch.optim.AdamW(params, lr=LR, weight_decay=0.0)
-        baseline = 0.25
+        # A 0.25 prior matches a 0/1 task reward. The answer bonus is at most
+        # that prior, so the same prior makes every warmup advantage negative
+        # and the update suppresses the few legal answer lines.
+        baseline_init = 0.0 if args.answer_bonus > 0 else 0.25
+        baseline = baseline_init
         curve = []
         window: list[dict] = []
         grad_norms: list[float] = []
@@ -316,7 +320,7 @@ def run_train(args: argparse.Namespace) -> dict:
             "train_problem_seeds": [TRAIN_START_SEED(), TRAIN_START_SEED() + TRAIN_MOD() - 1],
             "lr": LR,
             "baseline_beta": BASELINE_BETA,
-            "baseline_init": 0.25,
+            "baseline_init": baseline_init,
             "answer_bonus": args.answer_bonus,
             "grad_clip": GRAD_CLIP,
             "lora_r": LORA_R,

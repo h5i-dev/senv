@@ -57,6 +57,14 @@ On validation seed 2000 with 2 operators the expression is `((6 * 8) * 9)` and t
 
 A cleaner instruction without a numeric example did not make Qwen drop the parentheses. Adding the examples `calc 8 - 3` and `answer 5` raised the ops-3 greedy format rate to 0.56 on 8 validation episodes by eliciting lines such as `calc 10 - 5 answer 5` and `calc 8 - 3 answer 5`, and the embedded integers were still wrong. SmolLM2 greedy under that instruction repeated the instruction sentence. Both checks used validation seeds 2000..2007 only.
 
-## Follow-up
+## Answer-format warmup
 
-`scripts/arith_format_warmup.sh` is a separate run. It keeps operator count 2, the only validation setting with a pretrained success, and adds 0.5 times the fraction of leading `answer <integer>` lines to the training target. Task success remains the server reward. The test split is not read. Results of that run are recorded when the 40-episode Qwen seed finishes.
+Separate from the frozen 3-operator run. Operator count 2, Qwen2.5-0.5B-Instruct, one torch seed, 40 sampled training episodes on train seeds 0..39. The training target is the server reward plus 0.5 times the fraction of actions whose first tokens are `answer` and an integer. Validation is greedy on seeds 2000..2039. The test split was not read. Wall time 1046 s. Peak allocated GPU memory 5,086,340,096 bytes. Baseline prior 0.25.
+
+| Checkpoint | Val success | Val format | Val leading-answer rate | Train window reward | Train window leading-answer rate |
+|---|---:|---:|---:|---:|---:|
+| 0 | 0/40 | 0.025 | 0.00 |  |  |
+| 20 | 0/40 | 0.000 | 0.00 | 0 | 0.0225 |
+| 40 | 0/40 | 0.000 | 0.00 | 0 | 0.000 |
+
+Server reward was 0 on all 40 episodes. The only positive shaped returns were episode 1 (0.100) and episode 3 (0.125). Both were below the 0.25 baseline, so their advantages were negative and those answer lines were pushed down. From episode 4 on, the leading-answer rate in the log is 0. Validation greedy success stayed 0/40. This run does not show that the format bonus teaches the command. A repeat with the baseline started at 0 is the check that the sign of the advantage was the cause.

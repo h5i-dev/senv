@@ -37,6 +37,8 @@ cat >"$out/label.json" <<EOF
   "model_revision": "${SENV_MODEL_REVISION}",
   "train_episodes": ${episodes},
   "answer_bonus": ${bonus},
+  "baseline_init": 0,
+  "baseline_reason": "answer bonus is at most 0.5; a 0.25 prior made every advantage negative",
   "test_split_used": false,
   "original_frozen_ops": 3
 }
