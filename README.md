@@ -156,6 +156,8 @@ prove WebSocket isolation or that sessions have separate engines.
 
 On 2026-11-10, `cargo test --locked --offline` passed 21 library tests, 3 Echo protocol tests, 2 Wordle tests, and 2 Arith tests. `cargo clippy --all-targets --locked --offline -- -D warnings` was clean. Arith-v0 is a custom task (`senv serve --env arith`), not an upstream environment. The expression value is scored in the server and is absent from the observation and from `state.raw_state`. `scripts/arith_compat.sh` printed `PASS official TextArenaEnv Arith-v0 reset/step/state, score, hidden value, isolation`.
 
+`docs/ARITH.md` is the 2026-11-10 Arith run on the same client. Difficulty froze at 3 operators because no validation pilot sat in the success band. On held-out seeds 10000..10199, `answer 0` scored 3/200 and a random legal line scored 6/200. SmolLM2-135M-Instruct scored 0/200 before and after 200 REINFORCE episodes. Qwen2.5-0.5B-Instruct was not trained on that frozen task. The page records the action-level failure and a separate validation-only follow-up.
+
 ## Limits
 
 The full list is `PROTOCOL.md`. The ones that surprise people who know

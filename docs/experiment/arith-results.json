@@ -1,0 +1,605 @@
+{
+  "experiment": "arith-v0",
+  "date": "2026-11-10",
+  "frozen_ops": 3,
+  "freeze_rule": "no_validation_success_in_[0.05,0.75]_frozen_at_3",
+  "test_seeds": [
+    10000,
+    10199
+  ],
+  "val_seeds": [
+    2000,
+    2039
+  ],
+  "note": "Qwen held-out test and Qwen training were not run. Smol seed 2 was stopped at episode 99.",
+  "runs": {
+    "baseline-answer0.json": {
+      "phase": "baseline",
+      "split": "test",
+      "decode": null,
+      "policy": "answer0",
+      "ops": 3,
+      "variant": null,
+      "summary": {
+        "episodes": 200,
+        "mean_format_rate": 1.0,
+        "mean_reward": 0.015,
+        "mean_steps": 1.0,
+        "success_rate": 0.015,
+        "success_wilson95": {
+          "high": 0.043166480556278884,
+          "low": 0.005114145184492387,
+          "z": 1.96
+        },
+        "successes": 3
+      },
+      "wall_s": null
+    },
+    "baseline-random.json": {
+      "phase": "baseline",
+      "split": "test",
+      "decode": null,
+      "policy": "random",
+      "ops": 3,
+      "variant": null,
+      "summary": {
+        "episodes": 200,
+        "mean_format_rate": 1.0,
+        "mean_reward": 0.03,
+        "mean_steps": 1.605,
+        "success_rate": 0.03,
+        "success_wilson95": {
+          "high": 0.06389511973247333,
+          "low": 0.013820125830748327,
+          "z": 1.96
+        },
+        "successes": 6
+      },
+      "wall_s": null
+    },
+    "choice.json": {
+      "ops": 3,
+      "rule": "no_validation_success_in_[0.05,0.75]_frozen_at_3"
+    },
+    "oracle.json": {
+      "phase": "oracle",
+      "split": "train",
+      "decode": null,
+      "policy": null,
+      "ops": 3,
+      "variant": null,
+      "summary": {
+        "episodes": 5,
+        "mean_format_rate": 1.0,
+        "mean_reward": 1.0,
+        "mean_steps": 1.0,
+        "success_rate": 1.0,
+        "success_wilson95": {
+          "high": 1.0000000000000002,
+          "low": 0.5655085052479191,
+          "z": 1.96
+        },
+        "successes": 5
+      },
+      "wall_s": null
+    },
+    "pilot-ops2-qwen.json": {
+      "phase": "pretrained",
+      "split": "val",
+      "decode": "sample",
+      "policy": null,
+      "ops": 2,
+      "variant": null,
+      "summary": {
+        "episodes": 40,
+        "mean_format_rate": 0.25398809523809524,
+        "mean_reward": 0.025,
+        "mean_steps": 7.475,
+        "success_rate": 0.025,
+        "success_wilson95": {
+          "high": 0.1288165948800778,
+          "low": 0.0044267174077949195,
+          "z": 1.96
+        },
+        "successes": 1
+      },
+      "wall_s": 80.38555632403586
+    },
+    "pilot-ops2-smol.json": {
+      "phase": "pretrained",
+      "split": "val",
+      "decode": "sample",
+      "policy": null,
+      "ops": 2,
+      "variant": null,
+      "summary": {
+        "episodes": 40,
+        "mean_format_rate": 0.009375,
+        "mean_reward": 0.0,
+        "mean_steps": 8.0,
+        "success_rate": 0.0,
+        "success_wilson95": {
+          "high": 0.08762453925039232,
+          "low": -6.938893903907228e-18,
+          "z": 1.96
+        },
+        "successes": 0
+      },
+      "wall_s": 134.2203033780097
+    },
+    "pilot-ops3-qwen.json": {
+      "phase": "pretrained",
+      "split": "val",
+      "decode": "sample",
+      "policy": null,
+      "ops": 3,
+      "variant": null,
+      "summary": {
+        "episodes": 40,
+        "mean_format_rate": 0.1793154761904762,
+        "mean_reward": 0.0,
+        "mean_steps": 7.375,
+        "success_rate": 0.0,
+        "success_wilson95": {
+          "high": 0.08762453925039232,
+          "low": -6.938893903907228e-18,
+          "z": 1.96
+        },
+        "successes": 0
+      },
+      "wall_s": 97.5027991879615
+    },
+    "pilot-ops3-smol.json": {
+      "phase": "pretrained",
+      "split": "val",
+      "decode": "sample",
+      "policy": null,
+      "ops": 3,
+      "variant": null,
+      "summary": {
+        "episodes": 40,
+        "mean_format_rate": 0.00625,
+        "mean_reward": 0.0,
+        "mean_steps": 8.0,
+        "success_rate": 0.0,
+        "success_wilson95": {
+          "high": 0.08762453925039232,
+          "low": -6.938893903907228e-18,
+          "z": 1.96
+        },
+        "successes": 0
+      },
+      "wall_s": 170.87041450000834
+    },
+    "pilot-ops4-qwen.json": {
+      "phase": "pretrained",
+      "split": "val",
+      "decode": "sample",
+      "policy": null,
+      "ops": 4,
+      "variant": null,
+      "summary": {
+        "episodes": 40,
+        "mean_format_rate": 0.16398809523809524,
+        "mean_reward": 0.0,
+        "mean_steps": 7.325,
+        "success_rate": 0.0,
+        "success_wilson95": {
+          "high": 0.08762453925039232,
+          "low": -6.938893903907228e-18,
+          "z": 1.96
+        },
+        "successes": 0
+      },
+      "wall_s": 108.66810199897736
+    },
+    "pilot-ops4-smol.json": {
+      "phase": "pretrained",
+      "split": "val",
+      "decode": "sample",
+      "policy": null,
+      "ops": 4,
+      "variant": null,
+      "summary": {
+        "episodes": 40,
+        "mean_format_rate": 0.0,
+        "mean_reward": 0.0,
+        "mean_steps": 8.0,
+        "success_rate": 0.0,
+        "success_wilson95": {
+          "high": 0.08762453925039232,
+          "low": -6.938893903907228e-18,
+          "z": 1.96
+        },
+        "successes": 0
+      },
+      "wall_s": 159.24648897204315
+    },
+    "pretrained-smol-greedy.json": {
+      "phase": "pretrained",
+      "split": "test",
+      "decode": "greedy",
+      "policy": null,
+      "ops": 3,
+      "variant": null,
+      "summary": {
+        "episodes": 200,
+        "mean_format_rate": 0.0,
+        "mean_reward": 0.0,
+        "mean_steps": 8.0,
+        "success_rate": 0.0,
+        "success_wilson95": {
+          "high": 0.018846005918320894,
+          "low": 0.0,
+          "z": 1.96
+        },
+        "successes": 0
+      },
+      "wall_s": 710.5505135789863
+    },
+    "pretrained-smol-sample.json": {
+      "phase": "pretrained",
+      "split": "test",
+      "decode": "sample",
+      "policy": null,
+      "ops": 3,
+      "variant": null,
+      "summary": {
+        "episodes": 200,
+        "mean_format_rate": 0.00625,
+        "mean_reward": 0.0,
+        "mean_steps": 8.0,
+        "success_rate": 0.0,
+        "success_wilson95": {
+          "high": 0.018846005918320894,
+          "low": 0.0,
+          "z": 1.96
+        },
+        "successes": 0
+      },
+      "wall_s": 793.842023166013
+    },
+    "train-smol-seed1.json": {
+      "train_episodes": 200,
+      "updates": 200,
+      "skipped_zero_advantage": 0,
+      "wall_s": 6971.776001763996,
+      "final_baseline": 8.763166562207168e-06,
+      "curve": [
+        {
+          "episodes": 0,
+          "val_successes": 0,
+          "val_episodes": 40,
+          "val_format": 0.0,
+          "val_wilson95": {
+            "high": 0.08762453925039232,
+            "low": -6.938893903907228e-18,
+            "z": 1.96
+          }
+        },
+        {
+          "episodes": 50,
+          "val_successes": 0,
+          "val_episodes": 40,
+          "val_format": 0.0,
+          "val_wilson95": {
+            "high": 0.08762453925039232,
+            "low": -6.938893903907228e-18,
+            "z": 1.96
+          }
+        },
+        {
+          "episodes": 100,
+          "val_successes": 0,
+          "val_episodes": 40,
+          "val_format": 0.0,
+          "val_wilson95": {
+            "high": 0.08762453925039232,
+            "low": -6.938893903907228e-18,
+            "z": 1.96
+          }
+        },
+        {
+          "episodes": 150,
+          "val_successes": 0,
+          "val_episodes": 40,
+          "val_format": 0.0,
+          "val_wilson95": {
+            "high": 0.08762453925039232,
+            "low": -6.938893903907228e-18,
+            "z": 1.96
+          }
+        },
+        {
+          "episodes": 200,
+          "val_successes": 0,
+          "val_episodes": 40,
+          "val_format": 0.0,
+          "val_wilson95": {
+            "high": 0.08762453925039232,
+            "low": -6.938893903907228e-18,
+            "z": 1.96
+          }
+        }
+      ],
+      "test": {
+        "greedy": {
+          "successes": 0,
+          "episodes": 200,
+          "mean_reward": 0.0,
+          "mean_format_rate": 0.0,
+          "success_wilson95": {
+            "high": 0.018846005918320894,
+            "low": 0.0,
+            "z": 1.96
+          }
+        },
+        "sample": {
+          "successes": 0,
+          "episodes": 200,
+          "mean_reward": 0.0,
+          "mean_format_rate": 0.00625,
+          "success_wilson95": {
+            "high": 0.018846005918320894,
+            "low": 0.0,
+            "z": 1.96
+          }
+        }
+      }
+    }
+  },
+  "prompt_probe_val8": {
+    "ops2-qwen-format_example-greedy.json": {
+      "phase": null,
+      "split": "val",
+      "decode": "greedy",
+      "policy": null,
+      "ops": null,
+      "variant": "format_example",
+      "summary": {
+        "episodes": 8,
+        "mean_format_rate": 0.25,
+        "mean_reward": 0.0,
+        "mean_steps": 8.0,
+        "success_rate": 0.0,
+        "success_wilson95": {
+          "high": 0.3244156195108769,
+          "low": 0.0,
+          "z": 1.96
+        },
+        "successes": 0
+      },
+      "wall_s": 19.147057441994548
+    },
+    "ops2-qwen-format_first-greedy.json": {
+      "phase": null,
+      "split": "val",
+      "decode": "greedy",
+      "policy": null,
+      "ops": null,
+      "variant": "format_first",
+      "summary": {
+        "episodes": 8,
+        "mean_format_rate": 0.0,
+        "mean_reward": 0.0,
+        "mean_steps": 8.0,
+        "success_rate": 0.0,
+        "success_wilson95": {
+          "high": 0.3244156195108769,
+          "low": 0.0,
+          "z": 1.96
+        },
+        "successes": 0
+      },
+      "wall_s": 23.624454169010278
+    },
+    "ops2-qwen-server_prompt-greedy.json": {
+      "phase": null,
+      "split": "val",
+      "decode": "greedy",
+      "policy": null,
+      "ops": null,
+      "variant": "server_prompt",
+      "summary": {
+        "episodes": 8,
+        "mean_format_rate": 0.0625,
+        "mean_reward": 0.0,
+        "mean_steps": 8.0,
+        "success_rate": 0.0,
+        "success_wilson95": {
+          "high": 0.3244156195108769,
+          "low": 0.0,
+          "z": 1.96
+        },
+        "successes": 0
+      },
+      "wall_s": 17.0987113279989
+    },
+    "ops2-smol-format_first-greedy.json": {
+      "phase": null,
+      "split": "val",
+      "decode": "greedy",
+      "policy": null,
+      "ops": null,
+      "variant": "format_first",
+      "summary": {
+        "episodes": 8,
+        "mean_format_rate": 0.0,
+        "mean_reward": 0.0,
+        "mean_steps": 8.0,
+        "success_rate": 0.0,
+        "success_wilson95": {
+          "high": 0.3244156195108769,
+          "low": 0.0,
+          "z": 1.96
+        },
+        "successes": 0
+      },
+      "wall_s": 43.121890803973656
+    },
+    "ops2-smol-server_prompt-greedy.json": {
+      "phase": null,
+      "split": "val",
+      "decode": "greedy",
+      "policy": null,
+      "ops": null,
+      "variant": "server_prompt",
+      "summary": {
+        "episodes": 8,
+        "mean_format_rate": 0.0,
+        "mean_reward": 0.0,
+        "mean_steps": 8.0,
+        "success_rate": 0.0,
+        "success_wilson95": {
+          "high": 0.3244156195108769,
+          "low": 0.0,
+          "z": 1.96
+        },
+        "successes": 0
+      },
+      "wall_s": 18.635645614005625
+    },
+    "ops3-qwen-format_example-greedy.json": {
+      "phase": null,
+      "split": "val",
+      "decode": "greedy",
+      "policy": null,
+      "ops": null,
+      "variant": "format_example",
+      "summary": {
+        "episodes": 8,
+        "mean_format_rate": 0.5625,
+        "mean_reward": 0.0,
+        "mean_steps": 8.0,
+        "success_rate": 0.0,
+        "success_wilson95": {
+          "high": 0.3244156195108769,
+          "low": 0.0,
+          "z": 1.96
+        },
+        "successes": 0
+      },
+      "wall_s": 17.77528490597615
+    },
+    "ops3-qwen-format_first-greedy.json": {
+      "phase": null,
+      "split": "val",
+      "decode": "greedy",
+      "policy": null,
+      "ops": null,
+      "variant": "format_first",
+      "summary": {
+        "episodes": 8,
+        "mean_format_rate": 0.0,
+        "mean_reward": 0.0,
+        "mean_steps": 8.0,
+        "success_rate": 0.0,
+        "success_wilson95": {
+          "high": 0.3244156195108769,
+          "low": 0.0,
+          "z": 1.96
+        },
+        "successes": 0
+      },
+      "wall_s": 22.095847004035022
+    },
+    "ops3-qwen-server_prompt-greedy.json": {
+      "phase": null,
+      "split": "val",
+      "decode": "greedy",
+      "policy": null,
+      "ops": null,
+      "variant": "server_prompt",
+      "summary": {
+        "episodes": 8,
+        "mean_format_rate": 0.015625,
+        "mean_reward": 0.0,
+        "mean_steps": 8.0,
+        "success_rate": 0.0,
+        "success_wilson95": {
+          "high": 0.3244156195108769,
+          "low": 0.0,
+          "z": 1.96
+        },
+        "successes": 0
+      },
+      "wall_s": 21.536070284957532
+    }
+  },
+  "stopped_smol_seed2": {
+    "episodes_completed": 99,
+    "train_episodes_planned": 200,
+    "zero_reward_episodes": 99,
+    "format_zero_episodes": 94,
+    "format_nonzero_episodes": 5,
+    "nonzero_format": 0.12,
+    "val_checkpoints": [
+      {
+        "episodes": 0,
+        "val_success": "0/40",
+        "val_format": 0.0
+      },
+      {
+        "episodes": 50,
+        "val_success": "0/40",
+        "val_format": 0.0
+      }
+    ],
+    "json_written": false,
+    "reason": "stopped to avoid another zero-reward hour; log retained on scratch"
+  },
+  "embedded_answer_audit": {
+    "split": "val",
+    "ops2_format_first_greedy_8": {
+      "embedded_correct": "16/56",
+      "episodes_with_correct_embedded_answer": "2/8",
+      "leading_answer": "0/0"
+    },
+    "ops2_format_example_greedy_8": {
+      "embedded_correct": "3/58",
+      "episodes_with_correct_embedded_answer": "2/8"
+    },
+    "ops2_sample_pilot_40": {
+      "embedded_correct": "8/46",
+      "episodes_with_correct_embedded_answer": "3/40",
+      "leading_correct": "1/10"
+    },
+    "ops3_format_first_greedy_8": {
+      "embedded_correct": "0/38"
+    },
+    "ops3_format_example_greedy_8": {
+      "embedded_correct": "0/48"
+    },
+    "examples": {
+      "2000_ops2": {
+        "expression": "((6 * 8) * 9)",
+        "value": 432,
+        "format_first_line": "calc (6 * 8) * 9 answer 432"
+      },
+      "2000_ops3": {
+        "expression": "(((6 * 8) * 9) + 2)",
+        "value": 434
+      }
+    }
+  },
+  "models": {
+    "smol": {
+      "id": "HuggingFaceTB/SmolLM2-135M-Instruct",
+      "revision": "12fd25f77366fa6b3b4b768ec3050bf629380bac",
+      "license": "apache-2.0"
+    },
+    "qwen": {
+      "id": "Qwen/Qwen2.5-0.5B-Instruct",
+      "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+      "license": "apache-2.0"
+    }
+  },
+  "answer_format_warmup": {
+    "status": "launched_after_this_summary",
+    "ops": 2,
+    "episodes": 40,
+    "answer_bonus": 0.5,
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "test_split_used": false
+  }
+}

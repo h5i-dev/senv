@@ -140,7 +140,7 @@ def aggregate(episodes: list[dict]) -> dict:
     successes = sum(1 for episode in episodes if episode["success"])
     format_rates = [float(episode["format_rate"]) for episode in episodes]
     total = len(episodes)
-    return {
+    summary = {
         "episodes": total,
         "successes": successes,
         "success_rate": (successes / total) if total else None,
@@ -149,6 +149,9 @@ def aggregate(episodes: list[dict]) -> dict:
         "mean_format_rate": (sum(format_rates) / total) if total else None,
         "mean_steps": (sum(int(episode["steps"]) for episode in episodes) / total) if total else None,
     }
+    if episodes and "answer_line_rate" in episodes[0]:
+        summary["mean_answer_line_rate"] = sum(float(episode["answer_line_rate"]) for episode in episodes) / total
+    return summary
 
 
 def self_test() -> None:

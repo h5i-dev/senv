@@ -58,6 +58,12 @@ def main() -> int:
     parser.add_argument("--out", required=True)
     parser.add_argument("--pilot-dir", default="")
     parser.add_argument("--adapter-dir", default="")
+    parser.add_argument(
+        "--answer-bonus",
+        type=float,
+        default=0.0,
+        help="Added to the server reward during training only. 0 keeps the original objective.",
+    )
     args = parser.parse_args()
 
     if args.split == "test" and os.environ.get("SENV_ARITH_FROZEN") != "1":
@@ -245,8 +251,11 @@ def run_train(args: argparse.Namespace) -> dict:
                 client, bundle, seed, f"train-{args.torch_seed}-{episode_index}", "sample"
             )
             window.append(episode)
-            advantage = float(episode["reward"]) - baseline
-            baseline = (1.0 - BASELINE_BETA) * baseline + BASELINE_BETA * float(episode["reward"])
+            server_reward = float(episode["reward"])
+            shaped = server_reward + args.answer_bonus * float(episode.get("answer_line_rate") or 0.0)
+            episode["shaped_reward"] = shaped
+            advantage = shaped - baseline
+            baseline = (1.0 - BASELINE_BETA) * baseline + BASELINE_BETA * shaped
             if turns and advantage != 0.0:
                 model.train()
                 model.config.use_cache = False
@@ -269,8 +278,10 @@ def run_train(args: argparse.Namespace) -> dict:
                 window = []
             print(
                 f"train seed={args.torch_seed} episode={done_count}/{args.train_episodes} "
-                f"reward={episode['reward']} success={int(episode['success'])} "
-                f"format={episode['format_rate']:.2f} baseline={baseline:.3f}",
+                f"reward={episode['reward']} shaped={episode['shaped_reward']:.3f} "
+                f"success={int(episode['success'])} "
+                f"format={episode['format_rate']:.2f} answer_line={episode['answer_line_rate']:.2f} "
+                f"baseline={baseline:.3f}",
                 flush=True,
             )
         test_summary = None
@@ -306,6 +317,7 @@ def run_train(args: argparse.Namespace) -> dict:
             "lr": LR,
             "baseline_beta": BASELINE_BETA,
             "baseline_init": 0.25,
+            "answer_bonus": args.answer_bonus,
             "grad_clip": GRAD_CLIP,
             "lora_r": LORA_R,
             "temperature": TEMPERATURE,
@@ -327,6 +339,13 @@ def run_train(args: argparse.Namespace) -> dict:
                 "server reward minus an EMA baseline. The loss is the negative "
                 "advantage times the mean completion-token logprob. Prompt tokens "
                 "are not in that mean. Format validity is not part of the reward."
+                if args.answer_bonus == 0
+                else (
+                    "Separate answer-format warmup. The training target is the "
+                    "server reward plus answer_bonus times the fraction of actions "
+                    "whose first tokens are 'answer' and an integer. Task success "
+                    "stays the server reward. This is not the original objective."
+                )
             ),
             **server_note(),
         }
@@ -361,7 +380,8 @@ def checkpoint(client, bundle, episodes_done: int, window: list[dict], limit: in
     }
     print(
         f"checkpoint episodes={episodes_done} val_success={point['val']['successes']}/{point['val']['episodes']} "
-        f"val_format={point['val']['mean_format_rate']}",
+        f"val_format={point['val']['mean_format_rate']} "
+        f"val_answer_line={point['val'].get('mean_answer_line_rate')}",
         flush=True,
     )
     return point
@@ -412,9 +432,18 @@ def play_lm_episode(client, bundle, seed: int, episode_id: str, decode: str):
         "success": bool(done and reward >= 0.999),
         "format_rate": (sum(valids) / steps) if steps else 0.0,
         "format_valid_actions": int(sum(valids)),
+        "answer_line_rate": (sum(1 for line in actions if leading_answer(line)) / steps) if steps else 0.0,
         "ops": ops,
     }
     return episode, turns
+
+
+def leading_answer(line: str) -> bool:
+    parts = line.strip().split()
+    if len(parts) < 2 or parts[0].lower() != "answer":
+        return False
+    token = parts[1][1:] if parts[1].startswith("-") else parts[1]
+    return token.isdigit() and 1 <= len(token) <= 12
 
 
 def play_episode(client, seed: int, episode_id: str, choose) -> dict:
@@ -449,14 +478,14 @@ def play_episode(client, seed: int, episode_id: str, choose) -> dict:
     }
 
 
-def generate_line(bundle, observation: str, decode: str):
+def generate_line(bundle, observation: str, decode: str, system: str | None = None):
     import torch
 
     model = bundle["model"]
     tokenizer = bundle["tokenizer"]
     device = bundle["device"]
     messages = [
-        {"role": "system", "content": SYSTEM},
+        {"role": "system", "content": SYSTEM if system is None else system},
         {"role": "user", "content": observation},
     ]
     prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
