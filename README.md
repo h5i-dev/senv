@@ -27,7 +27,8 @@ The default listen address is `127.0.0.1:8000`.
 | Flag | Environment | Default |
 |---|---|---|
 | `--bind` | `SENV_BIND` | `127.0.0.1:8000` |
-| `--env` | `SENV_ENV` | `echo` (`wordle` serves Wordle-v0) |
+| `--env` | `SENV_ENV` | `echo` (`wordle` serves Wordle-v0, `arith` serves custom Arith-v0) |
+| `--arith-ops` | `SENV_ARITH_OPS` | `3` (only `arith`; 2, 3, or 4 operators) |
 | `--max-sessions` | `MAX_CONCURRENT_ENVS` | 8 |
 | `--max-message-bytes` | | 16777216 (16 MiB) |
 | `--idle-timeout-secs` | | 120 (0 disables the idle sweep) |
@@ -151,7 +152,9 @@ prove WebSocket isolation or that sessions have separate engines.
 
 `docs/BENCHMARKS.md` records one 2026-11-09 run of `scripts/bench.sh` on a 4 vCPU host. The client was `scripts/bench.py`. On one WebSocket, 400 Echo steps averaged 0.121 ms on senv and 2.097 ms on the pinned Python Echo server. Rust Wordle steps averaged 0.223 ms (n=240). The GPU was idle. That page is the whole claim.
 
-`docs/EXPERIMENT.md` records two Wordle runs through the unmodified `TextArenaEnv` client on the same date, held-out seeds 10000..10039. Uniform random won 0/40 (mean reward 0.165). A trained four-feature linear policy won 6/40 when sampled and 23/40 when greedy. That linear policy is a softmax over the word list, not a language model. Free-text SmolLM2-135M-Instruct won 0/40 before and after 32 REINFORCE episodes because repeated invalid replies ended the games around step 3. A second run restricts SmolLM2 to a seeded shortlist of at most 32 feedback-consistent dictionary words: the uniform shortlist won 26/40, pretrained sampling won 30/40, and after 32 REINFORCE episodes sampling won 31/40. That one-win change is not clear evidence of learning. The shortlist itself accounts for most of the wins.
+`docs/EXPERIMENT.md` records two Wordle runs through the unmodified `TextArenaEnv` client on the same date, held-out seeds 10000..10039. Uniform random won 0/40 (mean reward 0.165). A trained four-feature linear policy won 6/40 when sampled and 23/40 when greedy. That linear policy is a softmax over the word list, not a language model. Free-text SmolLM2-135M-Instruct won 0/40 before and after 32 REINFORCE episodes because repeated invalid replies ended the games around step 3. A second run restricts SmolLM2 to a seeded shortlist of at most 32 feedback-consistent dictionary words: the uniform shortlist won 26/40, pretrained sampling won 30/40, and after 32 REINFORCE episodes sampling won 31/40. That one-win change is not clear evidence of learning. The shortlist itself accounts for most of the wins. It is not a reasoning result.
+
+On 2026-11-10, `cargo test --locked --offline` passed 21 library tests, 3 Echo protocol tests, 2 Wordle tests, and 2 Arith tests. `cargo clippy --all-targets --locked --offline -- -D warnings` was clean. Arith-v0 is a custom task (`senv serve --env arith`), not an upstream environment. The expression value is scored in the server and is absent from the observation and from `state.raw_state`. `scripts/arith_compat.sh` printed `PASS official TextArenaEnv Arith-v0 reset/step/state, score, hidden value, isolation`.
 
 ## Limits
 

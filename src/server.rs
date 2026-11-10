@@ -22,6 +22,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
+use crate::arith_env::{self, ArithEnvironment};
 use crate::env::{EchoEnvironment, EnvError, Environment};
 use crate::kernel::{Body, StepAction};
 use crate::protocol::{self, Incoming, WireError};
@@ -31,6 +32,7 @@ use crate::wordle_env::{self, WordleEnvironment};
 pub enum EnvKind {
     Echo,
     Wordle,
+    Arith,
 }
 
 impl EnvKind {
@@ -38,6 +40,7 @@ impl EnvKind {
         match self {
             Self::Echo => "echo",
             Self::Wordle => "wordle",
+            Self::Arith => "arith",
         }
     }
 }
@@ -50,6 +53,8 @@ pub struct ServerConfig {
     /// removed after this long. `None` disables the sweep.
     pub idle_timeout: Option<Duration>,
     pub kind: EnvKind,
+    /// Operator count for [`EnvKind::Arith`]. Ignored by Echo and Wordle.
+    pub arith_ops: u8,
 }
 
 impl Default for ServerConfig {
@@ -59,6 +64,7 @@ impl Default for ServerConfig {
             max_message_bytes: 16 * 1024 * 1024,
             idle_timeout: Some(Duration::from_secs(120)),
             kind: EnvKind::Echo,
+            arith_ops: 3,
         }
     }
 }
@@ -74,11 +80,13 @@ struct SessionTable {
     max_sessions: usize,
     idle_timeout: Option<Duration>,
     kind: EnvKind,
+    arith_ops: u8,
 }
 
 enum Live {
     Echo(EchoEnvironment),
     Wordle(WordleEnvironment),
+    Arith(ArithEnvironment),
 }
 
 struct Slot {
@@ -107,6 +115,7 @@ impl SessionTable {
             max_sessions: config.max_sessions,
             idle_timeout: config.idle_timeout,
             kind: config.kind,
+            arith_ops: config.arith_ops,
         }
     }
 
@@ -153,6 +162,7 @@ impl SessionTable {
         let env = match self.kind {
             EnvKind::Echo => Live::Echo(EchoEnvironment::open(episode_id)),
             EnvKind::Wordle => Live::Wordle(WordleEnvironment::open(episode_id)),
+            EnvKind::Arith => Live::Arith(ArithEnvironment::open(episode_id, self.arith_ops)),
         };
         let slot = Arc::new(Slot {
             env,
@@ -274,6 +284,7 @@ async fn metadata(State(state): State<AppState>) -> Json<Value> {
     Json(match state.kind() {
         EnvKind::Echo => protocol::metadata_document(),
         EnvKind::Wordle => wordle_env::metadata_document(),
+        EnvKind::Arith => arith_env::metadata_document(),
     })
 }
 
@@ -281,6 +292,7 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
     Json(match state.kind() {
         EnvKind::Echo => protocol::schema_document(),
         EnvKind::Wordle => wordle_env::schema_document(),
+        EnvKind::Arith => arith_env::schema_document(),
     })
 }
 
@@ -375,6 +387,43 @@ fn dispatch(env: &Live, text: &str) -> Dispatch {
     match env {
         Live::Echo(env) => dispatch_echo(env, text),
         Live::Wordle(env) => dispatch_wordle(env, text),
+        Live::Arith(env) => dispatch_arith(env, text),
+    }
+}
+
+fn dispatch_arith(env: &ArithEnvironment, text: &str) -> Dispatch {
+    let incoming = match arith_env::parse_incoming(text) {
+        Ok(incoming) => incoming,
+        Err(error) => return Dispatch::Reply(protocol::error_frame(&error)),
+    };
+    match incoming {
+        arith_env::Incoming::Close => Dispatch::Close,
+        arith_env::Incoming::State => Dispatch::Reply(env.state_frame()),
+        arith_env::Incoming::Reset { seed, episode_id } => {
+            let episode_id = episode_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+            match env.reset(seed, episode_id) {
+                Ok(frame) => Dispatch::Reply(frame),
+                Err(error) => Dispatch::Reply(protocol::error_frame(&WireError::new(
+                    arith_code(&error),
+                    error.to_string(),
+                ))),
+            }
+        }
+        arith_env::Incoming::Step { message } => match env.step(message) {
+            Ok(frame) => Dispatch::Reply(frame),
+            Err(error) => Dispatch::Reply(protocol::error_frame(&WireError::new(
+                arith_code(&error),
+                error.to_string(),
+            ))),
+        },
+    }
+}
+
+fn arith_code(error: &crate::arith_env::ArithError) -> &'static str {
+    match error {
+        crate::arith_env::ArithError::ActionTooLong => "VALIDATION_ERROR",
+        crate::arith_env::ArithError::AlreadyDone
+        | crate::arith_env::ArithError::StepCountOverflow => "EXECUTION_ERROR",
     }
 }
 
@@ -526,7 +575,7 @@ async fn mcp(State(state): State<AppState>, body: axum::body::Bytes) -> impl Int
             Ok(slot) => {
                 let tools = match &slot.env {
                     Live::Echo(_) => protocol::http_tools(),
-                    Live::Wordle(_) => Vec::new(),
+                    Live::Wordle(_) | Live::Arith(_) => Vec::new(),
                 };
                 rpc_ok(id, json!({ "tools": tools }))
             }

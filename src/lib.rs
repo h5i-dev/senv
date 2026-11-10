@@ -1,6 +1,7 @@
 //! senv is an OpenEnv-compatible reinforcement-learning environment server.
 //!
-//! Echo and Wordle reset, step, and state transitions are h5i-app kernels.
+//! Echo, Wordle, and the custom Arith-v0 task run reset, step, and state as
+//! h5i-app kernels.
 //! Each WebSocket session owns a [`h5i_app::MemoryEngine`]. The Axum process
 //! is the trusted shell: it speaks the OpenEnv wire protocol and does not
 //! decide what a transition means.
@@ -9,6 +10,8 @@
 //! do not establish WebSocket isolation, session cleanup, or any other
 //! property of this shell.
 
+pub mod arith;
+pub mod arith_env;
 pub mod env;
 pub mod kernel;
 pub mod protocol;

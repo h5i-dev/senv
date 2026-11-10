@@ -17,7 +17,7 @@
 
 ## Behavior that callers hit
 
-- `senv serve` listens on `127.0.0.1:8000` unless `--bind` or `SENV_BIND` is set. `--env` is `echo` (default) or `wordle`.
+- `senv serve` listens on `127.0.0.1:8000` unless `--bind` or `SENV_BIND` is set. `--env` is `echo` (default), `wordle`, or `arith`. `--arith-ops` is 2, 3, or 4 and applies only to the custom Arith-v0 task.
 - `EchoEnv` (production mode) posts `openenv/session/create` to `/mcp`, then opens `/ws?session_id=`.
 - `reset`, `step`, and `state` are WebSocket messages. `list_tools` and `call_tool` are HTTP JSON-RPC and do not increment `step_count`.
 - Reset reward is `0.0`, done is false, metadata message is `Echo environment ready!`.

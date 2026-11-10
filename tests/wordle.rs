@@ -151,6 +151,7 @@ async fn spawn() -> String {
         max_message_bytes: 1024 * 1024,
         idle_timeout: Some(Duration::from_secs(30)),
         kind: EnvKind::Wordle,
+        arith_ops: 3,
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

@@ -4,7 +4,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-use senv::{AppState, EnvKind, H5I_GIT_REVISION, OPENENV_GIT_REVISION, ServerConfig, serve};
+use senv::{AppState, EnvKind, H5I_GIT_REVISION, OPENENV_GIT_REVISION, ServerConfig, arith, serve};
 
 #[derive(Parser)]
 #[command(
@@ -24,9 +24,12 @@ enum Command {
         /// Address to listen on.
         #[arg(long, default_value = "127.0.0.1:8000", env = "SENV_BIND")]
         bind: String,
-        /// `echo` (default) or `wordle`.
+        /// `echo` (default), `wordle`, or `arith`.
         #[arg(long, default_value = "echo", env = "SENV_ENV")]
         env: String,
+        /// Operator count for `--env arith`. Allowed values are 2, 3, and 4.
+        #[arg(long, default_value_t = 3, env = "SENV_ARITH_OPS")]
+        arith_ops: u8,
         /// Maximum live sessions, including sockets and not-yet-attached HTTP sessions.
         #[arg(long, default_value_t = 8, env = "MAX_CONCURRENT_ENVS")]
         max_sessions: usize,
@@ -50,6 +53,7 @@ fn main() -> ExitCode {
         Command::Serve {
             bind,
             env,
+            arith_ops,
             max_sessions,
             max_message_bytes,
             idle_timeout_secs,
@@ -57,6 +61,7 @@ fn main() -> ExitCode {
             if let Err(error) = run_serve(
                 bind,
                 env,
+                arith_ops,
                 max_sessions,
                 max_message_bytes,
                 idle_timeout_secs,
@@ -73,6 +78,7 @@ fn main() -> ExitCode {
 fn run_serve(
     bind: String,
     env: String,
+    arith_ops: u8,
     max_sessions: usize,
     max_message_bytes: usize,
     idle_timeout_secs: u64,
@@ -83,12 +89,21 @@ fn run_serve(
     if max_message_bytes == 0 {
         return Err("max message size must be at least 1 byte".into());
     }
+    if !(arith::MIN_OPS..=arith::MAX_OPS).contains(&arith_ops) {
+        return Err(format!(
+            "--arith-ops must be {}, {}, or {} (got {arith_ops})",
+            arith::MIN_OPS,
+            arith::DEFAULT_OPS,
+            arith::MAX_OPS
+        ));
+    }
     let kind = match env.as_str() {
         "echo" => EnvKind::Echo,
         "wordle" => EnvKind::Wordle,
+        "arith" => EnvKind::Arith,
         other => {
             return Err(format!(
-                "unknown environment '{other}', expected echo or wordle"
+                "unknown environment '{other}', expected echo, wordle, or arith"
             ));
         }
     };
@@ -102,6 +117,7 @@ fn run_serve(
         max_message_bytes,
         idle_timeout,
         kind,
+        arith_ops,
     };
     let state = AppState::new(config);
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -118,6 +134,7 @@ fn run_serve(
             openenv = OPENENV_GIT_REVISION,
             h5i = H5I_GIT_REVISION,
             env = kind.as_str(),
+            arith_ops,
             max_sessions,
             "environment listening"
         );

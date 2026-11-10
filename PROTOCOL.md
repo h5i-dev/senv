@@ -228,3 +228,47 @@ This is not the TextArena package. Differences that matter:
 
 `step_core` and `mark` in `src/wordle.rs` are the pure transition. A proof of
 those functions does not prove socket isolation.
+
+## Arith-v0
+
+`senv serve --env arith` (or `SENV_ENV=arith`) serves a custom arithmetic task
+on the same `TextArenaEnv` socket as Wordle. It is not an upstream OpenEnv
+environment and it is not a TextArena game. `--arith-ops` (`SENV_ARITH_OPS`)
+is 2, 3, or 4 and defaults to 3. Echo and Wordle ignore it. `GET /metadata`
+is `arith_v0` only while this environment is the one being served.
+
+`reset` data is `seed` and `episode_id`. The seed selects a left-associative
+expression of single digits 1 through 9 and the operators `+`, `-`, and `*`.
+The same seed and operator count always produce the same expression. With no
+seed, the expression comes from FNV-1a of the episode id. `step` data is
+`{"message": "..."}`. The action is the first non-empty line:
+
+- A line whose first tokens are `calc <integer> <op> <integer>` is
+  format-valid. Trailing tokens are ignored, so `calc 10 * 2 - 5` is the
+  single operation `10 * 2`. The reply is `Result: <n>` or `Result: overflow`.
+  Reward is 0. The episode continues until the step cap.
+- A line whose first tokens are `answer <integer>` is format-valid and ends
+  the episode. Trailing words are ignored. The correct value scores reward 1
+  and replies `Correct.` A wrong value scores reward 0 and replies
+  `Incorrect.`
+- A line that does not start with `calc` or `answer` is format-invalid,
+  reward 0, and does not end the episode. A bare integer is invalid. This
+  strip is formatting. The server does not search a list of candidate answers.
+
+The eighth action ends the episode even when it is not an `answer`. That reply
+says the step limit was reached and does not include the value. Stepping after
+`done` is `EXECUTION_ERROR`. A message longer than 4096 bytes is
+`VALIDATION_ERROR` and does not increment `step_count`. Integers in an action
+are an optional minus and at most 12 digits.
+
+The observation prompt shows the parenthesized expression and the action
+syntax. `state.raw_state` repeats the expression, the operator count, the step
+count, the cap, `done`, and the last public reply. It has no `value`,
+`answer`, or `secret` field. Reward on the wire is the JSON float for the
+kernel's thousandths. `arith.format_valid` and `arith.success` are on a step's
+`info`. A policy that calls `state()` still does not receive the integer it
+is supposed to find.
+
+`POST /mcp` can create and close sessions. `tools/list` is empty. `tools/call`
+is JSON-RPC `-32601`. `generate` and `step_core` in `src/arith.rs` are the
+pure transition. They do not establish socket isolation.

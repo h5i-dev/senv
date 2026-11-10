@@ -28,6 +28,12 @@ episode id, then asks the kernel to commit. Rendering the TextArena
 observation is shell work. A proof of `step_core` still would not prove that
 two sockets have two engines.
 
+`senv serve --env arith` is a third kernel (`src/arith.rs`, `src/arith_env.rs`)
+on that same shape. It is a custom task, not an upstream environment. The
+shell turns the reset seed into an expression and passes that problem into
+`transition`. The integer value stays in the snapshot so `answer` can be
+scored. The shell's observation and state JSON omit it.
+
 The adapter (`src/store.rs`, `src/env.rs`) implements `h5i_app::Kernel` for
 that function and builds one `H5iApp<EchoKernel, EchoStore, MemoryEngine<_>>`
 per session. `H5iApp::with_executor` still requires a `Store` type.
