@@ -38,7 +38,7 @@ LORA_R = 8
 MAX_NEW_TOKENS = 24
 TEMPERATURE = 0.7
 TOP_P = 0.95
-VALIDATE_LR = 1e-2
+VALIDATE_LR = 1e-4
 
 
 def main() -> int:
@@ -541,13 +541,17 @@ def validate_logprob(bundle) -> dict:
     opt = torch.optim.AdamW(trainable, lr=VALIDATE_LR, weight_decay=0.0)
     increased = False
     after = before
-    for _ in range(3):
+    grad_norm = None
+    for _ in range(5):
         model.train()
         model.config.use_cache = False
         opt.zero_grad(set_to_none=True)
         current = completion_logprobs(model, prompt_ids.to(device), completion_ids.to(device))
         loss = -current.mean()
         loss.backward()
+        grad_norm = float(torch.nn.utils.clip_grad_norm_(trainable, GRAD_CLIP))
+        if grad_norm == 0.0:
+            raise SystemExit("LoRA gradient is zero; the completion mask is not training")
         opt.step()
         model.eval()
         with torch.no_grad():
@@ -566,6 +570,8 @@ def validate_logprob(bundle) -> dict:
         "repeat_forward_max_abs_gap": max_gap,
         "logprob_sum_before": before,
         "logprob_sum_after": after,
+        "grad_norm_preclip": grad_norm,
+        "validate_lr": VALIDATE_LR,
         "sample_action_line": line,
         "newline_is_single_token": bundle["meta"]["newline_is_single_token"],
         "trainable_parameters": bundle["meta"]["trainable_parameters"],
