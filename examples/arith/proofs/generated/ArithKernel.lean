@@ -20,27 +20,27 @@ set_option maxRecDepth 2048
 namespace arith_kernel
 
 /-- [arith_kernel::MAX_STEPS]
-    Source: 'examples/arith/kernel/src/lib.rs', lines 16:0-16:28
+    Source: 'examples/arith/kernel/src/lib.rs', lines 20:0-20:28
     Visibility: public -/
 @[global_simps, irreducible] def MAX_STEPS : Std.U8 := 8#u8
 
 /-- [arith_kernel::MAX_OPERAND]
-    Source: 'examples/arith/kernel/src/lib.rs', lines 18:0-18:43
+    Source: 'examples/arith/kernel/src/lib.rs', lines 22:0-22:43
     Visibility: public -/
 @[global_simps, irreducible] def MAX_OPERAND : Std.I64 := 1000000000#i64
 
 /-- [arith_kernel::MIN_OPERAND]
-    Source: 'examples/arith/kernel/src/lib.rs', lines 19:0-19:44
+    Source: 'examples/arith/kernel/src/lib.rs', lines 23:0-23:44
     Visibility: public -/
 @[global_simps, irreducible] def MIN_OPERAND : Std.I64 := (-1000000000)#i64
 
 /-- [arith_kernel::WIN_MILLI]
-    Source: 'examples/arith/kernel/src/lib.rs', lines 21:0-21:32
+    Source: 'examples/arith/kernel/src/lib.rs', lines 25:0-25:32
     Visibility: public -/
 @[global_simps, irreducible] def WIN_MILLI : Std.U64 := 1000#u64
 
 /-- [arith_kernel::Op]
-    Source: 'examples/arith/kernel/src/lib.rs', lines 24:0-28:1
+    Source: 'examples/arith/kernel/src/lib.rs', lines 28:0-32:1
     Visibility: public -/
 @[discriminant isize]
 inductive Op where
@@ -49,7 +49,7 @@ inductive Op where
 | Mul : Op
 
 /-- [arith_kernel::Problem]
-    Source: 'examples/arith/kernel/src/lib.rs', lines 32:0-36:1
+    Source: 'examples/arith/kernel/src/lib.rs', lines 36:0-40:1
     Visibility: public -/
 structure Problem where
   digits : Array Std.I64 5#usize
@@ -57,7 +57,7 @@ structure Problem where
   n_ops : Std.U8
 
 /-- [arith_kernel::Action]
-    Source: 'examples/arith/kernel/src/lib.rs', lines 41:0-45:1
+    Source: 'examples/arith/kernel/src/lib.rs', lines 45:0-49:1
     Visibility: public -/
 @[discriminant isize]
 inductive Action where
@@ -66,7 +66,7 @@ inductive Action where
 | Invalid : Action
 
 /-- [arith_kernel::Feedback]
-    Source: 'examples/arith/kernel/src/lib.rs', lines 49:0-56:1
+    Source: 'examples/arith/kernel/src/lib.rs', lines 53:0-60:1
     Visibility: public -/
 @[discriminant isize]
 inductive Feedback where
@@ -78,7 +78,7 @@ inductive Feedback where
 | Invalid : Feedback
 
 /-- [arith_kernel::{impl core::cmp::PartialEq<arith_kernel::Feedback> for arith_kernel::Feedback}::eq]:
-    Source: 'examples/arith/kernel/src/lib.rs', lines 48:29-48:38
+    Source: 'examples/arith/kernel/src/lib.rs', lines 52:29-52:38
     Visibility: public -/
 def Feedback.Insts.CoreCmpPartialEqFeedback.eq
   (self : Feedback) (other : Feedback) : Result Bool := do
@@ -104,7 +104,7 @@ def Feedback.Insts.CoreCmpPartialEqFeedback.eq
   else ok false
 
 /-- [arith_kernel::Snapshot]
-    Source: 'examples/arith/kernel/src/lib.rs', lines 59:0-66:1
+    Source: 'examples/arith/kernel/src/lib.rs', lines 63:0-70:1
     Visibility: public -/
 structure Snapshot where
   problem : Problem
@@ -115,7 +115,7 @@ structure Snapshot where
   reward_milli : Std.U64
 
 /-- [arith_kernel::Command]
-    Source: 'examples/arith/kernel/src/lib.rs', lines 69:0-73:1
+    Source: 'examples/arith/kernel/src/lib.rs', lines 73:0-77:1
     Visibility: public -/
 @[discriminant isize]
 inductive Command where
@@ -124,14 +124,14 @@ inductive Command where
 | State : Command
 
 /-- [arith_kernel::Reply]
-    Source: 'examples/arith/kernel/src/lib.rs', lines 76:0-79:1
+    Source: 'examples/arith/kernel/src/lib.rs', lines 80:0-83:1
     Visibility: public -/
 structure Reply where
   reward_milli : Std.U64
   done : Bool
 
 /-- [arith_kernel::Error]
-    Source: 'examples/arith/kernel/src/lib.rs', lines 82:0-87:1
+    Source: 'examples/arith/kernel/src/lib.rs', lines 86:0-91:1
     Visibility: public -/
 @[discriminant isize]
 inductive Error where
@@ -139,7 +139,7 @@ inductive Error where
 | Done : Error
 
 /-- [arith_kernel::fresh]:
-    Source: 'examples/arith/kernel/src/lib.rs', lines 97:0-106:1
+    Source: 'examples/arith/kernel/src/lib.rs', lines 101:0-110:1
     Visibility: public -/
 def fresh (problem : Problem) : Result Snapshot := do
   ok
@@ -153,14 +153,14 @@ def fresh (problem : Problem) : Result Snapshot := do
     }
 
 /-- [arith_kernel::digit_ok]:
-    Source: 'examples/arith/kernel/src/lib.rs', lines 114:0-116:1 -/
+    Source: 'examples/arith/kernel/src/lib.rs', lines 118:0-120:1 -/
 def digit_ok (d : Std.I64) : Result Bool := do
   if 1#i64 <= d
   then ok (d <= 9#i64)
   else ok false
 
 /-- [arith_kernel::valid]:
-    Source: 'examples/arith/kernel/src/lib.rs', lines 119:0-127:1
+    Source: 'examples/arith/kernel/src/lib.rs', lines 123:0-131:1
     Visibility: public -/
 def valid (p : Problem) : Result Bool := do
   if 2#u8 <= p.n_ops
@@ -192,14 +192,14 @@ def valid (p : Problem) : Result Bool := do
   else ok false
 
 /-- [arith_kernel::operand_ok]:
-    Source: 'examples/arith/kernel/src/lib.rs', lines 129:0-131:1 -/
+    Source: 'examples/arith/kernel/src/lib.rs', lines 133:0-135:1 -/
 def operand_ok (x : Std.I64) : Result Bool := do
   if MIN_OPERAND <= x
   then ok (x <= MAX_OPERAND)
   else ok false
 
 /-- [arith_kernel::calc]:
-    Source: 'examples/arith/kernel/src/lib.rs', lines 134:0-144:1
+    Source: 'examples/arith/kernel/src/lib.rs', lines 138:0-148:1
     Visibility: public -/
 def «calc»
   (a : Std.I64) (op : Op) (b : Std.I64) : Result (Option Std.I64) := do
@@ -220,7 +220,7 @@ def «calc»
   else ok none
 
 /-- [arith_kernel::then]:
-    Source: 'examples/arith/kernel/src/lib.rs', lines 146:0-151:1 -/
+    Source: 'examples/arith/kernel/src/lib.rs', lines 150:0-155:1 -/
 def «then»
   (acc : Option Std.I64) (op : Op) (b : Std.I64) :
   Result (Option Std.I64)
@@ -230,7 +230,7 @@ def «then»
   | some a => «calc» a op b
 
 /-- [arith_kernel::value]:
-    Source: 'examples/arith/kernel/src/lib.rs', lines 155:0-171:1
+    Source: 'examples/arith/kernel/src/lib.rs', lines 159:0-175:1
     Visibility: public -/
 def value (p : Problem) : Result (Option Std.I64) := do
   let i ← Array.index_usize p.digits 0#usize
@@ -254,7 +254,7 @@ def value (p : Problem) : Result (Option Std.I64) := do
       «then» three o4 i4
 
 /-- [arith_kernel::judge]:
-    Source: 'examples/arith/kernel/src/lib.rs', lines 174:0-185:1
+    Source: 'examples/arith/kernel/src/lib.rs', lines 178:0-189:1
     Visibility: public -/
 def judge (p : Problem) (answer : Std.I64) : Result Feedback := do
   let o ← value p
@@ -265,7 +265,7 @@ def judge (p : Problem) (answer : Std.I64) : Result Feedback := do
               else ok Feedback.Incorrect
 
 /-- [arith_kernel::respond]:
-    Source: 'examples/arith/kernel/src/lib.rs', lines 187:0-196:1 -/
+    Source: 'examples/arith/kernel/src/lib.rs', lines 191:0-200:1 -/
 def respond (p : Problem) (action : Action) : Result Feedback := do
   match action with
   | Action.Calc left op right =>
@@ -277,12 +277,12 @@ def respond (p : Problem) (action : Action) : Result Feedback := do
   | Action.Invalid => ok Feedback.Invalid
 
 /-- [arith_kernel::at_limit]:
-    Source: 'examples/arith/kernel/src/lib.rs', lines 199:0-201:1 -/
+    Source: 'examples/arith/kernel/src/lib.rs', lines 203:0-205:1 -/
 def at_limit (steps : Std.U8) : Result Bool := do
   ok (steps >= MAX_STEPS)
 
 /-- [arith_kernel::is_answer]:
-    Source: 'examples/arith/kernel/src/lib.rs', lines 203:0-209:1 -/
+    Source: 'examples/arith/kernel/src/lib.rs', lines 207:0-213:1 -/
 def is_answer (action : Action) : Result Bool := do
   match action with
   | Action.Calc _ _ _ => ok false
@@ -290,7 +290,7 @@ def is_answer (action : Action) : Result Bool := do
   | Action.Invalid => ok false
 
 /-- [arith_kernel::transition]:
-    Source: 'examples/arith/kernel/src/lib.rs', lines 213:0-260:1
+    Source: 'examples/arith/kernel/src/lib.rs', lines 217:0-264:1
     Visibility: public -/
 def transition
   (_ : Unit) (s : Snapshot) (cmd : Command) :
@@ -344,7 +344,7 @@ def transition
       { reward_milli := s.reward_milli, done := s.done }))
 
 /-- [arith_kernel::apply]:
-    Source: 'examples/arith/kernel/src/lib.rs', lines 263:0-268:1
+    Source: 'examples/arith/kernel/src/lib.rs', lines 267:0-272:1
     Visibility: public -/
 def apply (s : Snapshot) (w : Option Snapshot) : Result Snapshot := do
   match w with
@@ -352,7 +352,7 @@ def apply (s : Snapshot) (w : Option Snapshot) : Result Snapshot := do
   | some next => ok next
 
 /-- [arith_kernel::read_only]:
-    Source: 'examples/arith/kernel/src/lib.rs', lines 271:0-277:1
+    Source: 'examples/arith/kernel/src/lib.rs', lines 275:0-281:1
     Visibility: public -/
 def read_only (cmd : Command) : Result Bool := do
   match cmd with

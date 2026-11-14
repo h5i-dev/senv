@@ -6,14 +6,14 @@ start-from = ["transition", "apply", "read_only"]
 
 [check]
 theorems = [
-    "wordle_kernel.Theorems.mark_spec",
-    "wordle_kernel.Theorems.all_green_iff",
+    "wordle_kernel.Theorems.completion_spec",
     "wordle_kernel.Theorems.reward_in_range",
-    "wordle_kernel.Theorems.guess_pays",
     "wordle_kernel.Theorems.game_ends",
     "wordle_kernel.Theorems.fresh_moves",
     "wordle_kernel.Theorems.done_is_final",
     "wordle_kernel.Theorems.secret_is_fixed",
+    "wordle_kernel.Theorems.loss_pays_less",
+    "wordle_kernel.Theorems.all_green_spec",
 ]
 
 [obligations]
@@ -21,17 +21,9 @@ panic-free = "wordle_kernel.Theorems.panic_free"
 read-only = "wordle_kernel.Theorems.read_only_sound"
 
 # Bugs the proofs must reject (`h5i app mutate`). Each `old` occurs once in
-# kernel/src/lib.rs.
-
-[[mutant]]
-name = "yellow_reuses_a_letter"
-old = "                    remaining[j] = CONSUMED;\n"
-new = ""
-
-[[mutant]]
-name = "green_does_not_consume"
-old = "            remaining[i] = CONSUMED;\n"
-new = ""
+# kernel/src/lib.rs. Mutants of the marking rule itself (a yellow that reuses
+# a letter, a green that does not consume one) and of repeat detection wait
+# for theorems about `mark` and `already_guessed`.
 
 [[mutant]]
 name = "loss_pays_like_a_win"
@@ -40,15 +32,20 @@ new = "                next.reward_milli = WIN_MILLI;\n                PlayOutco
 
 [[mutant]]
 name = "unlimited_invalid_moves"
-old = "if core.error_count < ERROR_ALLOWANCE {"
-new = "if core.error_count < 255 {"
-
-[[mutant]]
-name = "repeats_allowed"
-old = "            } else if already_guessed(core, letters) {"
-new = "            } else if false && already_guessed(core, letters) {"
+old = "if game.error_count < ERROR_ALLOWANCE {"
+new = "if game.error_count < 255 {"
 
 [[mutant]]
 name = "replay_after_done"
-old = "if core.done || core.guess_count >= MAX_GUESSES || core.turn >= MAX_GUESSES {"
-new = "if core.guess_count >= MAX_GUESSES || core.turn >= MAX_GUESSES {"
+old = "if game.done || game.guess_count >= MAX_GUESSES || game.turn >= MAX_GUESSES {"
+new = "if game.guess_count >= MAX_GUESSES || game.turn >= MAX_GUESSES {"
+
+[[mutant]]
+name = "win_pays_less"
+old = "                next.reward_milli = WIN_MILLI;\n                PlayOutcome::Win"
+new = "                next.reward_milli = 2000;\n                PlayOutcome::Win"
+
+[[mutant]]
+name = "secret_swap"
+old = "            next.guesses[game.guess_count as usize] = letters;\n"
+new = "            next.guesses[game.guess_count as usize] = letters;\n            next.secret = letters;\n"

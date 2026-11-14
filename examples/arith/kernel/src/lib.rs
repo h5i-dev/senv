@@ -10,7 +10,11 @@
 
 // Range methods, iterator adapters and closures are outside the Rust that
 // Charon and Aeneas extract, so the kernel spells them out.
-#![allow(clippy::manual_range_contains, clippy::needless_range_loop)]
+#![allow(
+    clippy::manual_range_contains,
+    clippy::needless_range_loop,
+    clippy::single_match
+)]
 
 /// Steps per episode. The step that reaches it ends the episode.
 pub const MAX_STEPS: u8 = 8;

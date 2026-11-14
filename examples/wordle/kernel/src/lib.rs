@@ -10,7 +10,11 @@
 
 // Range methods, iterator adapters and closures are outside the Rust that
 // Charon and Aeneas extract, so the kernel spells them out.
-#![allow(clippy::manual_range_contains, clippy::needless_range_loop)]
+#![allow(
+    clippy::manual_range_contains,
+    clippy::needless_range_loop,
+    clippy::single_match
+)]
 
 pub const WORD_LEN: usize = 5;
 pub const MAX_GUESSES: u8 = 6;
@@ -129,36 +133,77 @@ impl Default for Core {
     }
 }
 
-/// Two passes: greens first, each consuming its secret letter; then each
-/// non-green letter takes the first remaining copy as a yellow.
-pub fn mark(secret: &[u8; WORD_LEN], guess: &[u8; WORD_LEN]) -> [Mark; WORD_LEN] {
-    let mut feedback = [Mark::Wrong; WORD_LEN];
+// Aeneas b86120d extracts `marks[i] = Mark::Green` inside a loop as an update
+// with `()`. Building the value in a function avoids it.
+fn green() -> Mark {
+    Mark::Green
+}
+
+fn yellow() -> Mark {
+    Mark::Yellow
+}
+
+/// The first pass: a letter in its secret position is green and uses up that
+/// secret letter.
+fn mark_greens(
+    secret: &[u8; WORD_LEN],
+    guess: &[u8; WORD_LEN],
+) -> ([Mark; WORD_LEN], [u8; WORD_LEN]) {
+    let mut marks = [Mark::Wrong; WORD_LEN];
     let mut remaining = *secret;
     let mut i = 0;
     while i < WORD_LEN {
         if guess[i] == remaining[i] {
-            feedback[i] = Mark::Green;
+            marks[i] = green();
             remaining[i] = CONSUMED;
         }
         i += 1;
     }
+    (marks, remaining)
+}
+
+/// Where `letter` first remains, if anywhere.
+fn find_remaining(remaining: &[u8; WORD_LEN], letter: u8) -> Option<usize> {
+    let mut j = 0;
+    while j < WORD_LEN {
+        if remaining[j] == letter {
+            return Some(j);
+        }
+        j += 1;
+    }
+    None
+}
+
+/// The second pass: each letter that is not green takes the first remaining
+/// copy as a yellow and uses it up.
+fn mark_yellows(
+    guess: &[u8; WORD_LEN],
+    greens: [Mark; WORD_LEN],
+    remaining: [u8; WORD_LEN],
+) -> [Mark; WORD_LEN] {
+    let mut marks = greens;
+    let mut left = remaining;
     let mut i = 0;
     while i < WORD_LEN {
-        if feedback[i] != Mark::Green {
-            let mut j = 0;
-            let mut found = false;
-            while j < WORD_LEN && !found {
-                if remaining[j] == guess[i] {
-                    feedback[i] = Mark::Yellow;
-                    remaining[j] = CONSUMED;
-                    found = true;
+        if marks[i] != Mark::Green {
+            match find_remaining(&left, guess[i]) {
+                Some(j) => {
+                    marks[i] = yellow();
+                    left[j] = CONSUMED;
                 }
-                j += 1;
+                None => {}
             }
         }
         i += 1;
     }
-    feedback
+    marks
+}
+
+/// Two passes: greens first, each consuming its secret letter; then each
+/// non-green letter takes the first remaining copy as a yellow.
+pub fn mark(secret: &[u8; WORD_LEN], guess: &[u8; WORD_LEN]) -> [Mark; WORD_LEN] {
+    let (greens, remaining) = mark_greens(secret, guess);
+    mark_yellows(guess, greens, remaining)
 }
 
 /// `(greens + 0.5 * yellows) / 5` in thousandths.
@@ -199,10 +244,10 @@ pub fn is_word(letters: &[u8; WORD_LEN]) -> bool {
     true
 }
 
-fn already_guessed(core: &Core, letters: &[u8; WORD_LEN]) -> bool {
+fn already_guessed(game: &Core, letters: &[u8; WORD_LEN]) -> bool {
     let mut i = 0;
-    while i < core.guess_count as usize && i < 6 {
-        if core.guesses[i] == *letters {
+    while i < game.guess_count as usize && i < 6 {
+        if game.guesses[i] == *letters {
             return true;
         }
         i += 1;
@@ -212,7 +257,7 @@ fn already_guessed(core: &Core, letters: &[u8; WORD_LEN]) -> bool {
 
 /// `None` for a playable guess, or why the move is invalid. A repeat is
 /// checked before the dictionary flag.
-fn invalid_reason(core: &Core, mv: &Move) -> Option<Reason> {
+fn invalid_reason(game: &Core, mv: &Move) -> Option<Reason> {
     match mv {
         Move::Malformed { reason } => Some(*reason),
         Move::Candidate {
@@ -221,7 +266,7 @@ fn invalid_reason(core: &Core, mv: &Move) -> Option<Reason> {
         } => {
             if !is_word(letters) {
                 Some(Reason::NotEnglish)
-            } else if already_guessed(core, letters) {
+            } else if already_guessed(game, letters) {
                 Some(Reason::Repeat)
             } else if !*in_dictionary {
                 Some(Reason::NotEnglish)
@@ -233,12 +278,12 @@ fn invalid_reason(core: &Core, mv: &Move) -> Option<Reason> {
 }
 
 /// The completion of the last guess, or 0 before any guess.
-fn latest_completion(core: &Core) -> i64 {
-    if core.guess_count == 0 || core.guess_count > 6 {
+fn latest_completion(game: &Core) -> i64 {
+    if game.guess_count == 0 || game.guess_count > 6 {
         0
     } else {
-        let last = core.guesses[(core.guess_count - 1) as usize];
-        completion_milli(&mark(&core.secret, &last))
+        let last = game.guesses[(game.guess_count - 1) as usize];
+        completion_milli(&mark(&game.secret, &last))
     }
 }
 
@@ -250,19 +295,19 @@ fn letters_of(mv: &Move) -> [u8; WORD_LEN] {
 }
 
 /// One move on an unfinished game.
-pub fn step_core(core: &Core, mv: &Move) -> Result<(Core, Phase), Error> {
-    if core.done || core.guess_count >= MAX_GUESSES || core.turn >= MAX_GUESSES {
+pub fn step_core(game: &Core, mv: &Move) -> Result<(Core, Phase), Error> {
+    if game.done || game.guess_count >= MAX_GUESSES || game.turn >= MAX_GUESSES {
         return Err(Error::Done);
     }
-    let mut next = *core;
-    match invalid_reason(core, mv) {
+    let mut next = *game;
+    match invalid_reason(game, mv) {
         Some(reason) => {
-            if core.error_count < ERROR_ALLOWANCE {
-                next.error_count = core.error_count + 1;
+            if game.error_count < ERROR_ALLOWANCE {
+                next.error_count = game.error_count + 1;
                 next.reward_milli = 0;
                 Ok((next, Phase::Retry { reason }))
             } else {
-                let reward_milli = latest_completion(core);
+                let reward_milli = latest_completion(game);
                 next.done = true;
                 next.won = false;
                 next.reward_milli = reward_milli;
@@ -277,12 +322,12 @@ pub fn step_core(core: &Core, mv: &Move) -> Result<(Core, Phase), Error> {
         }
         None => {
             let letters = letters_of(mv);
-            let marks = mark(&core.secret, &letters);
-            let guesses_left = MAX_GUESSES - core.turn - 1;
-            next.guesses[core.guess_count as usize] = letters;
-            next.guess_count = core.guess_count + 1;
+            let marks = mark(&game.secret, &letters);
+            let guesses_left = MAX_GUESSES - game.turn - 1;
+            next.guesses[game.guess_count as usize] = letters;
+            next.guess_count = game.guess_count + 1;
             next.error_count = 0;
-            next.turn = core.turn + 1;
+            next.turn = game.turn + 1;
             let outcome = if all_green(&marks) {
                 next.done = true;
                 next.won = true;
@@ -312,7 +357,7 @@ pub fn step_core(core: &Core, mv: &Move) -> Result<(Core, Phase), Error> {
 }
 
 /// One command: the game to commit (`None` writes nothing) and the reply.
-pub fn transition(_actor: &(), core: &Core, cmd: &Command) -> Result<(Option<Core>, Reply), Error> {
+pub fn transition(_actor: &(), game: &Core, cmd: &Command) -> Result<(Option<Core>, Reply), Error> {
     match cmd {
         Command::Reset { secret } => {
             if is_word(secret) {
@@ -328,7 +373,7 @@ pub fn transition(_actor: &(), core: &Core, cmd: &Command) -> Result<(Option<Cor
                 Err(Error::InvalidSecret)
             }
         }
-        Command::Step { mv } => match step_core(core, mv) {
+        Command::Step { mv } => match step_core(game, mv) {
             Ok((next, phase)) => Ok((
                 Some(next),
                 Reply {
@@ -342,18 +387,18 @@ pub fn transition(_actor: &(), core: &Core, cmd: &Command) -> Result<(Option<Cor
         Command::State => Ok((
             None,
             Reply {
-                reward_milli: core.reward_milli,
-                done: core.done,
+                reward_milli: game.reward_milli,
+                done: game.done,
                 phase: None,
             },
         )),
     }
 }
 
-pub fn apply(core: &Core, w: &Option<Core>) -> Core {
+pub fn apply(game: &Core, w: &Option<Core>) -> Core {
     match w {
         Some(next) => *next,
-        None => *core,
+        None => *game,
     }
 }
 
@@ -379,12 +424,12 @@ mod tests {
         out
     }
 
-    fn play(core: &Core, word: &str) -> (Core, Phase) {
+    fn play(game: &Core, word: &str) -> (Core, Phase) {
         let mv = Move::Candidate {
             letters: letters(word),
             in_dictionary: true,
         };
-        step_core(core, &mv).unwrap()
+        step_core(game, &mv).unwrap()
     }
 
     #[test]
@@ -417,13 +462,13 @@ mod tests {
     #[test]
     fn reset_shape_and_win_and_six_failures() {
         let secret = letters("apple");
-        let core = fresh(secret);
-        assert_eq!(core.guess_count, 0);
-        assert!(!core.done);
-        assert_eq!(core.reward_milli, 0);
-        assert_eq!(core.turn, 0);
+        let game = fresh(secret);
+        assert_eq!(game.guess_count, 0);
+        assert!(!game.done);
+        assert_eq!(game.reward_milli, 0);
+        assert_eq!(game.turn, 0);
 
-        let (won, phase) = play(&core, "apple");
+        let (won, phase) = play(&game, "apple");
         assert!(won.done && won.won);
         assert_eq!(won.reward_milli, 1000);
         assert_eq!(won.turn, 1);
@@ -478,9 +523,9 @@ mod tests {
 
     #[test]
     fn first_invalid_does_not_consume_a_guess() {
-        let core = fresh(letters("apple"));
+        let game = fresh(letters("apple"));
         let (once, phase) = step_core(
-            &core,
+            &game,
             &Move::Malformed {
                 reason: Reason::Format,
             },
@@ -536,9 +581,9 @@ mod tests {
 
     #[test]
     fn second_invalid_with_no_guess_scores_zero() {
-        let core = fresh(letters("apple"));
+        let game = fresh(letters("apple"));
         let (once, _) = step_core(
-            &core,
+            &game,
             &Move::Malformed {
                 reason: Reason::Length,
             },
@@ -564,9 +609,9 @@ mod tests {
 
     #[test]
     fn repeat_is_checked_before_the_dictionary_flag() {
-        let (core, _) = play(&fresh(letters("apple")), "crane");
+        let (game, _) = play(&fresh(letters("apple")), "crane");
         let (next, phase) = step_core(
-            &core,
+            &game,
             &Move::Candidate {
                 letters: letters("crane"),
                 in_dictionary: false,
