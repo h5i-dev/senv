@@ -370,9 +370,16 @@ mod tests {
         assert_eq!(parse_action("answer 5 please"), Action::Answer(5));
         assert_eq!(
             parse_action("calc 10 * 2 - 5"),
-            Action::Calc { left: 10, op: Op::Mul, right: 2 }
+            Action::Calc {
+                left: 10,
+                op: Op::Mul,
+                right: 2
+            }
         );
-        assert_eq!(parse_action("The expression evaluates to 10."), Action::Invalid);
+        assert_eq!(
+            parse_action("The expression evaluates to 10."),
+            Action::Invalid
+        );
         assert_eq!(parse_action("17"), Action::Invalid);
         assert_eq!(parse_action("answer 5.0"), Action::Invalid);
         assert_eq!(parse_action("calc 1+2"), Action::Invalid);
