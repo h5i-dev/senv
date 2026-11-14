@@ -1,8 +1,16 @@
 # OpenEnv subset implemented by senv
 
-Derived from `meta-pytorch/OpenEnv` commit `58d0344011fe961342706c90288f7e842b15b1c9`.
-The Echo behavior comes from `envs/echo_env` and `src/openenv/core`. This server
-reimplements that wire protocol. It does not copy OpenEnv source. See `NOTICE`.
+Derived from `openenv/OpenEnv` commit `58d0344011fe961342706c90288f7e842b15b1c9`.
+The wire protocol comes from `src/openenv/core`; the Echo behavior from
+`envs/echo_env`. senv reimplements them. It does not copy OpenEnv source. See
+`NOTICE`.
+
+The routes, envelopes, error codes, and session rules below are the same for
+every environment served with senv (`src/server.rs`, `src/wire.rs`,
+`src/session.rs`). What a `step` payload contains, what an observation looks
+like, and what `state` returns are up to each environment's `Environment`
+implementation. The Echo, Wordle-v0, and Arith-v0 sections describe the three
+examples under `examples/`.
 
 `EchoEnv` is an `MCPToolClient`. It only supports production mode. Connecting
 creates an HTTP session, then attaches a WebSocket to that same session.
@@ -14,8 +22,8 @@ travel as JSON-RPC on `POST /mcp` and do not increment `step_count`.
 | Method | Path | Behavior |
 |---|---|---|
 | GET | `/health` | `{"status":"healthy"}` |
-| GET | `/metadata` | Name `echo_env`, crate version, short description |
-| GET | `/schema` | A description of the Echo action and state shapes |
+| GET | `/metadata` | `Environment::metadata`: name, version, description |
+| GET | `/schema` | `Environment::schema`: action, observation, and state shapes |
 | POST | `/mcp` | JSON-RPC 2.0. HTTP status is 200, including for JSON-RPC errors |
 | GET | `/ws` | WebSocket. Optional query `session_id` |
 
@@ -164,7 +172,7 @@ Dropping the session drops the engine.
   a reconnect is a new episode.
 - Unattached sessions idle for `--idle-timeout-secs` (default 120; 0 disables
   the sweep) are removed on the next create and about every 30 seconds while
-  `senv serve` is running. Attached sessions are not swept. The integration
+  `Server::serve` is running. Attached sessions are not swept. The integration
   tests drive the router directly, so only the create-time sweep runs there.
 
 Capacity counts every live session, attached or not. The default is 8
@@ -174,7 +182,7 @@ consume another slot.
 
 ## What the kernel does and does not establish
 
-`transition` in `src/kernel.rs` is the pure step: reset stores the seed,
+`transition` in `examples/echo/kernel` is the pure step: reset stores the seed,
 replaces the episode id, zeroes `step_count`, and returns reward zero; step
 increments `step_count` or refuses on overflow without committing; invoke
 evaluates a tool and leaves `step_count` unchanged; state returns a copy.
@@ -183,9 +191,8 @@ WebSocket isolation, the session table, or two clients sharing a process.
 
 ## Wordle-v0
 
-`senv serve --env wordle` (or `SENV_ENV=wordle`) serves one classic game on
-the OpenEnv `TextArenaEnv` WebSocket contract. The default remains Echo, and
-the Echo routes above do not change.
+The `wordle-env` example (`examples/wordle`) serves one classic game on the
+OpenEnv `TextArenaEnv` WebSocket contract.
 
 `TextArenaEnv` connects to `/ws` with no `session_id`. That creates a session.
 `reset` data is `seed` and `episode_id`. `step` data is `{"message": "..."}`.
@@ -207,7 +214,7 @@ thousandths. The shell writes a JSON float.
 This is not the TextArena package. Differences that matter:
 
 - The answer list and the accepted-guess list are the same file,
-  `assets/wordle/words.txt`: `/usr/share/dict/words` filtered to `^[a-z]{5}$`.
+  `examples/wordle/kernel/words.txt`: `/usr/share/dict/words` filtered to `^[a-z]{5}$`.
   That is not NLTK `en-basic` nouns and not the New York Times list.
 - A seed picks `words[(seed as u64) % len]`. The same seed is stable in senv.
   It is not CPython's Mersenne Twister, and it will not match TextArena's
@@ -220,22 +227,21 @@ This is not the TextArena package. Differences that matter:
 - Action text longer than 4096 bytes is `VALIDATION_ERROR`. Stepping after
   `done` is `EXECUTION_ERROR` and does not change the snapshot.
 - `POST /mcp` still creates and closes sessions. `tools/list` is empty.
-  `tools/call` is JSON-RPC `-32601`.
+  `tools/call` is JSON-RPC `-32602` (`Unknown tool`).
 - `wordle.greens`, `wordle.yellows`, `wordle.repetitions`, and `wordle.correct`
   are attached on a step, using the same guess normalization as OpenEnv's
   Wordle reward provider. A win has no `Feedback:` line, so greens and yellows
   are 0 on that step and `wordle.correct` is 1.
 
-`step_core` and `mark` in `src/wordle.rs` are the pure transition. A proof of
+`step_core` and `mark` in `examples/wordle/kernel` are the pure transition. A proof of
 those functions does not prove socket isolation.
 
 ## Arith-v0
 
-`senv serve --env arith` (or `SENV_ENV=arith`) serves a custom arithmetic task
-on the same `TextArenaEnv` socket as Wordle. It is not an upstream OpenEnv
-environment and it is not a TextArena game. `--arith-ops` (`SENV_ARITH_OPS`)
-is 2, 3, or 4 and defaults to 3. Echo and Wordle ignore it. `GET /metadata`
-is `arith_v0` only while this environment is the one being served.
+The `arith-env` example (`examples/arith`) serves a custom arithmetic task on
+the same `TextArenaEnv` socket as Wordle. It is not an upstream OpenEnv
+environment and it is not a TextArena game. `--ops` (`SENV_ARITH_OPS`) is 2,
+3, or 4 and defaults to 3.
 
 `reset` data is `seed` and `episode_id`. The seed selects a left-associative
 expression of single digits 1 through 9 and the operators `+`, `-`, and `*`.
@@ -270,5 +276,5 @@ kernel's thousandths. `arith.format_valid` and `arith.success` are on a step's
 is supposed to find.
 
 `POST /mcp` can create and close sessions. `tools/list` is empty. `tools/call`
-is JSON-RPC `-32601`. `generate` and `step_core` in `src/arith.rs` are the
+is JSON-RPC `-32602` (`Unknown tool`). `generate` and `step_core` in `examples/arith/kernel` are the
 pure transition. They do not establish socket isolation.

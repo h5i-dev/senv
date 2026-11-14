@@ -1,0 +1,22 @@
+[package]
+name = "wordle-env"
+description = "The Wordle kernel served as an OpenEnv TextArena environment with senv."
+version = "0.1.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+wordle-kernel = { path = "../kernel" }
+senv = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+futures-util = { workspace = true }
+reqwest = { workspace = true }
+tokio-tungstenite = { workspace = true }
+
+[lints]
+workspace = true

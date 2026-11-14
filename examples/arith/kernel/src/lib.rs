@@ -5,6 +5,8 @@
 //! scored. Observation text and the public state frame must not copy it.
 //! This task is not an upstream OpenEnv or TextArena environment.
 
+pub mod episode;
+
 pub const ENV_ID: &str = "Arith-v0";
 pub const MAX_ACTION_BYTES: usize = 4096;
 pub const MAX_STEPS: u8 = 8;

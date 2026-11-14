@@ -7,9 +7,10 @@
 
 use std::time::Duration;
 
+use arith_env::Arith;
+use arith_kernel::{self as arith, generate};
 use futures_util::{SinkExt, StreamExt};
-use senv::arith::{self, generate};
-use senv::{AppState, EnvKind, ServerConfig};
+use senv::{Server, ServerConfig};
 use serde_json::{Value, json};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
@@ -267,19 +268,15 @@ fn operator_count(expression: &str) -> usize {
 }
 
 async fn spawn(arith_ops: u8) -> String {
-    let state = AppState::new(ServerConfig {
-        max_sessions: 8,
-        max_message_bytes: 1024 * 1024,
-        idle_timeout: Some(Duration::from_secs(30)),
-        kind: EnvKind::Arith,
-        arith_ops,
-    });
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let router = state.router();
-    tokio::spawn(async move {
-        let _ = axum::serve(listener, router).await;
-    });
+    let server = Server::new(
+        Arith::new(arith_ops),
+        ServerConfig {
+            max_sessions: 8,
+            max_message_bytes: 1024 * 1024,
+            idle_timeout: Some(Duration::from_secs(30)),
+        },
+    );
+    let addr = server.spawn("127.0.0.1:0").await.unwrap();
     format!("http://{addr}")
 }
 

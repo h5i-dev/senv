@@ -7,8 +7,9 @@
 
 use std::time::Duration;
 
+use echo_env::Echo;
 use futures_util::{SinkExt, StreamExt};
-use senv::{AppState, EnvKind, ServerConfig};
+use senv::{Server, ServerConfig};
 use serde_json::{Value, json};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
@@ -219,19 +220,15 @@ async fn unattached_session_is_reaped() {
 
 #[allow(clippy::unwrap_used)]
 async fn spawn(max_sessions: usize, idle: Option<Duration>) -> String {
-    let state = AppState::new(ServerConfig {
-        max_sessions,
-        max_message_bytes: 1024 * 1024,
-        idle_timeout: idle,
-        kind: EnvKind::Echo,
-        arith_ops: 3,
-    });
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let router = state.router();
-    tokio::spawn(async move {
-        let _ = axum::serve(listener, router).await;
-    });
+    let server = Server::new(
+        Echo,
+        ServerConfig {
+            max_sessions,
+            max_message_bytes: 1024 * 1024,
+            idle_timeout: idle,
+        },
+    );
+    let addr = server.spawn("127.0.0.1:0").await.unwrap();
     format!("http://{addr}")
 }
 

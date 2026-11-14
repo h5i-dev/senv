@@ -1,19 +1,19 @@
 # Lean correspondence
 
-`proofs/SenvWordle.lean` is checked by Lean 4.31 (`proofs/lean-toolchain`).
-The library builds with `lake build` from `proofs/`. There is no `sorry` and
+`examples/wordle/proofs/SenvWordle.lean` is checked by Lean 4.31 (`lean-toolchain` in this directory).
+The library builds with `lake build` from this directory. There is no `sorry` and
 no `admit`.
 
 The proofs are about the pure game. They do not establish WebSocket
 isolation, session cleanup, capacity limits, or the fact that each socket has
-its own `MemoryEngine`. Those are properties of `src/server.rs`, and the Rust
+its own `MemoryEngine`. Those are properties of senv's `src/server.rs`, and the Rust
 tests are what check them.
 
 ## Names
 
 | Lean | Rust | What it decides |
 |---|---|---|
-| `mark` / `markPairs` | `mark` in `src/wordle.rs` | Greens consume a secret letter, then yellows consume a remaining copy |
+| `mark` / `markPairs` | `mark` in `examples/wordle/kernel/src/lib.rs` | Greens consume a secret letter, then yellows consume a remaining copy |
 | `completionMilli` | `completion_milli` | `(greens + 0.5 * yellows) / 5` in thousandths |
 | `fresh` | `fresh` | `done = false`, reward 0, turn 0, no guesses |
 | `step` | `step_core` | Win, six-miss loss, invalid allowance, repeat-before-dictionary |
@@ -30,7 +30,7 @@ from that array. Lean stores the same guesses in a list and recomputes with
 `cigar` on `crane` is `[green, wrong, wrong, yellow, yellow]` and 400
 thousandths. `llama` on `alley` is `[yellow, green, yellow, wrong, wrong]`.
 Both are `native_decide` theorems and the same vectors as
-`greens_consume_before_yellows` in `src/wordle.rs`.
+`greens_consume_before_yellows` in `examples/wordle/kernel/src/lib.rs`.
 
 `mark_green_iff` is proved for every secret and guess: a mark is green
 exactly where the letters are equal. That is the first pass. The yellow pass

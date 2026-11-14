@@ -25,12 +25,12 @@ python="${SENV_PYTHON:-python3}"
 bind="${SENV_BIND:-127.0.0.1:8784}"
 base_url="http://${bind}"
 
-cargo build --locked --bin senv
-bin="${CARGO_TARGET_DIR:-$root/target}/debug/senv"
+cargo build --locked -p arith-env
+bin="${CARGO_TARGET_DIR:-$root/target}/debug/arith-env"
 
 log="$(mktemp)"
 trap 'kill "$server_pid" 2>/dev/null || true; rm -f "$log"' EXIT
-"$bin" serve --bind "$bind" --env arith --arith-ops 3 --max-sessions 8 >"$log" 2>&1 &
+"$bin" --bind "$bind" --ops 3 --max-sessions 8 >"$log" 2>&1 &
 server_pid=$!
 
 for _ in $(seq 1 50); do

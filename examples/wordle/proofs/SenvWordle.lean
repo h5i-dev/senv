@@ -1,7 +1,7 @@
 /-!
 Pure Wordle reset, marking, reward, and termination.
 
-This file follows `mark` and `step_core` in `src/wordle.rs`. It does not model
+This file follows `mark` and `step_core` in `examples/wordle/kernel/src/lib.rs`. It does not model
 WebSocket framing, the session table, or the per-session `MemoryEngine`.
 Those are shell properties. Nothing here is `sorry` or `admit`.
 -/

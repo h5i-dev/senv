@@ -19,7 +19,7 @@ export OPENENV_CLIENT="${openenv}/envs/textarena_env/client.py"
 
 port="${SENV_ARITH_PORT:-8785}"
 export SENV_BASE_URL="http://127.0.0.1:${port}"
-bin="${CARGO_TARGET_DIR:-$root/target}/release/senv"
+bin="${CARGO_TARGET_DIR:-$root/target}/release/arith-env"
 limit="${SENV_PROBE_LIMIT:-8}"
 
 "$python" "$root/scripts/arith_prompt_probe.py" --self-test
@@ -37,7 +37,7 @@ trap stop_server EXIT
 start_server() {
   local ops="$1"
   stop_server
-  "$bin" serve --bind "127.0.0.1:${port}" --env arith --arith-ops "$ops" --max-sessions 2 \
+  "$bin" --bind "127.0.0.1:${port}" --ops "$ops" --max-sessions 2 \
     >"$out/server-ops${ops}.log" 2>&1 &
   server_pid=$!
   for _ in $(seq 1 100); do

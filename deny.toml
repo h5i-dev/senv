@@ -1,18 +1,12 @@
 # Supply-chain gates for senv.
 #
-# senv links h5i-app from crates.io. The graph is gated on advisories, licenses,
-# and which registries and git hosts a dependency may come from. Run `cargo deny check`. CI runs
-# the same command.
+# senv and its examples link h5i-app from crates.io. The graph is gated on
+# advisories, licenses, and which registries and git hosts a dependency may come
+# from. Run `cargo deny check`. CI runs the same command.
 
 [advisories]
 yanked = "deny"
-ignore = [
-    # proc-macro-error2 is unmaintained (RUSTSEC-2026-0173). It is a build-time
-    # dependency of hax-lib-macros, pulled in by h5i-app-http → libcrux-hmac →
-    # libcrux. There is no fixed release. Retire this ignore when the h5i pin
-    # no longer depends on that crate.
-    "RUSTSEC-2026-0173",
-]
+ignore = []
 
 [licenses]
 allow = [
@@ -20,7 +14,6 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "MIT",
     "BSD-3-Clause",
-    "ISC",
     "Unicode-3.0",
     "CDLA-Permissive-2.0",
 ]

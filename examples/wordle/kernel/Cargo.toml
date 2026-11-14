@@ -1,0 +1,14 @@
+[package]
+name = "wordle-kernel"
+description = "The pure Wordle transition, modeled in Lean under ../proofs."
+version = "0.1.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# No h5i-app, no Axum: the kernel is only the transition.
+[dependencies]
+
+[lints]
+workspace = true

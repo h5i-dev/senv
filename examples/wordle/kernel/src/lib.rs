@@ -3,13 +3,15 @@
 //! `mark` and `step_core` are deterministic. They do not read the clock, the
 //! dictionary file, or another session. The shell picks the secret, parses
 //! the client's text into a [`Move`], and renders the TextArena-shaped
-//! observation. `proofs/SenvWordle.lean` follows `mark` and `step_core`.
+//! observation. `../proofs/SenvWordle.lean` follows `mark` and `step_core`.
 //! Those proofs do not establish WebSocket isolation or anything about the
-//! session table. See `proofs/CORRESPONDENCE.md`.
+//! session table. See `../proofs/CORRESPONDENCE.md`.
 //!
 //! Letters are `0..26` for `a..z`. Marks follow the TextArena Wordle rule:
 //! greens consume a secret letter, then a later yellow consumes one remaining
 //! copy, otherwise the mark is wrong.
+
+pub mod episode;
 
 use std::sync::LazyLock;
 
@@ -314,7 +316,7 @@ pub fn ascii_word(letters: &[u8; WORD_LEN]) -> String {
 
 fn words() -> &'static [&'static str] {
     static WORDS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
-        include_str!("../assets/wordle/words.txt")
+        include_str!("../words.txt")
             .split('\n')
             .filter(|line| !line.is_empty())
             .collect()

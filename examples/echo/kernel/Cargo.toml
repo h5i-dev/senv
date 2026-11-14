@@ -1,0 +1,15 @@
+[package]
+name = "echo-kernel"
+description = "The pure transition of the Echo environment."
+version = "0.1.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# No h5i-app, no Axum: the kernel is only the transition.
+[dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

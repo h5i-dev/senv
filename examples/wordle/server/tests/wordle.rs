@@ -6,9 +6,10 @@
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
-use senv::{AppState, EnvKind, ServerConfig};
+use senv::{Server, ServerConfig};
 use serde_json::{Value, json};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
+use wordle_env::Wordle;
 
 #[tokio::test]
 async fn wordle_feedback_win_invalid_and_isolation() {
@@ -146,19 +147,15 @@ async fn same_seed_picks_the_same_secret() {
 }
 
 async fn spawn() -> String {
-    let state = AppState::new(ServerConfig {
-        max_sessions: 8,
-        max_message_bytes: 1024 * 1024,
-        idle_timeout: Some(Duration::from_secs(30)),
-        kind: EnvKind::Wordle,
-        arith_ops: 3,
-    });
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let router = state.router();
-    tokio::spawn(async move {
-        let _ = axum::serve(listener, router).await;
-    });
+    let server = Server::new(
+        Wordle,
+        ServerConfig {
+            max_sessions: 8,
+            max_message_bytes: 1024 * 1024,
+            idle_timeout: Some(Duration::from_secs(30)),
+        },
+    );
+    let addr = server.spawn("127.0.0.1:0").await.unwrap();
     format!("http://{addr}")
 }
 

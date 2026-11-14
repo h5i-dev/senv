@@ -1,15 +1,7 @@
 name: Release
 
-# One tag, three ways to get senv:
-#
-#   curl … | sh            → the tarballs built here, verified against the
-#                            .sha256 published beside them
-#   pip install h5i-senv   → the wheels built here; the binary, in a wheel,
-#                            not a Python package (see pyproject.toml)
-#   cargo install --git    → no artifact at all; cargo builds this tag itself
-#
-# The tarball is a static binary. The wheel packages that same binary.
-# senv does not link OpenSSL; there is no vendored-openssl feature.
+# senv is a library. A `v*` tag publishes the `senv` crate to crates.io.
+# The example environments under examples/ are `publish = false`.
 on:
   push:
     tags: ["v*"]
@@ -17,9 +9,6 @@ on:
 permissions:
   contents: read
 
-# Never cancel a release mid-flight: a half-uploaded set of assets, or a PyPI
-# upload without the GitHub release that matches it, is worse than a duplicated
-# run.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -28,15 +17,16 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Hoisted out of the build jobs so a mistyped tag costs one 20-second job
-  # rather than three toolchain installs — and so it gates the wheels too,
-  # whose version maturin reads from the same Cargo.toml.
-  version:
-    name: The tag matches the crate version
+  publish:
+    name: Publish senv to crates.io
     runs-on: ubuntu-latest
+    environment:
+      name: crates-io
+      url: https://crates.io/crates/senv
     steps:
       - uses: actions/checkout@v5
-      - shell: bash
+      - name: The tag matches the crate version
+        shell: bash
         run: |
           set -euo pipefail
           crate="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml","rb"))["package"]["version"])')"
@@ -45,276 +35,8 @@ jobs:
             echo "::error::tag v$tag does not match Cargo.toml version $crate"
             exit 1
           fi
-          echo "v$tag matches Cargo.toml"
-
-  # ── the tarballs install.sh downloads ───────────────────────────────────────
-  #
-  # musl, not gnu: a glibc binary is only as portable as the runner's glibc,
-  # which would make the newest Ubuntu image the floor for everyone downloading
-  # a release. Both Linux targets build natively — the arm64 runner has an
-  # aarch64 musl-gcc — so there is no cross toolchain in the picture.
-  build:
-    name: tarball ${{ matrix.target }}
-    needs: version
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-24.04-arm
-          - target: aarch64-apple-darwin
-            os: macos-latest
-    steps:
-      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
-
-      - name: Install musl-tools
-        if: contains(matrix.target, 'musl')
-        run: sudo apt-get update -q && sudo apt-get install -y musl-tools
-
-      - run: cargo build --release --locked --target ${{ matrix.target }}
-
-      # A binary that reaches for a library the downloader does not have fails
-      # at exec, long after this workflow is green and with an error message
-      # that says nothing about a release. Check it here instead: nothing
-      # outside libc (and the system frameworks, on macOS) may be dynamic.
-      - name: The binary is self-contained
-        shell: bash
-        run: |
-          set -euo pipefail
-          bin="target/${{ matrix.target }}/release/senv"
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            echo "--- otool -L ---"; otool -L "$bin"
-            if otool -L "$bin" | tail -n +2 | grep -vE '/usr/lib/|/System/Library/'; then
-              echo "::error::macOS binary links a non-system library"
-              exit 1
-            fi
-          else
-            echo "--- file ---"; file "$bin"
-            # rustc builds musl targets as static-pie, which `file` reports as
-            # "static-pie linked" rather than "statically linked". Both are
-            # static; neither spelling is worth failing a release over.
-            file "$bin" | grep -qE 'statically linked|static-pie linked' || {
-              echo "::error::musl binary is not statically linked"
-              ldd "$bin" || true
-              exit 1
-            }
-          fi
-
-      - name: Package
-        shell: bash
-        run: |
-          set -euo pipefail
-          name="senv-${GITHUB_REF_NAME}-${{ matrix.target }}"
-          mkdir -p "dist/$name"
-          cp "target/${{ matrix.target }}/release/senv" "dist/$name/"
-          cp README.md LICENSE DESIGN.md "dist/$name/"
-          # Both run from inside dist/, so the checksum file names the archive
-          # and nothing else — `sha256sum -c` in the download directory works,
-          # which it does not if the recorded path still says `dist/`.
-          cd dist
-          tar -czf "$name.tar.gz" "$name"
-          shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
-
-      - uses: actions/upload-artifact@v5
-        with:
-          name: tarball-${{ matrix.target }}
-          path: dist/*.tar.gz*
-          if-no-files-found: error
-
-  # ── the wheels `pip install h5i-senv` resolves to ───────────────────────────
-  #
-  # gnu, not musl, and built inside the manylinux image: a musllinux wheel only
-  # installs on Alpine, and an unqualified linux_* tag is one PyPI rejects
-  # outright. The container's glibc becomes the floor, which is the point.
-  #
-  # Wheels only, no sdist. An sdist would hand pip a Rust project with a git
-  # dependency and ask it to build that on a machine which may have neither
-  # cargo nor a network path to GitHub. Anyone who wants a source build is
-  # better served by `cargo install --git`, which says so up front.
-  wheels:
-    name: wheel ${{ matrix.target }}
-    needs: version
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-24.04-arm
-          - target: aarch64-apple-darwin
-            os: macos-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.target }}
-          # `auto` is the action's default and is ignored off Linux; it picks
-          # the oldest policy the build actually satisfies rather than letting
-          # us assert one it does not.
-          manylinux: auto
-          args: --release --locked --out dist
-
-      # maturin will happily produce a wheel whose only tag is `linux_x86_64`
-      # if the manylinux policy is turned off or silently downgraded; PyPI then
-      # rejects the upload at the very end of the release, after the GitHub
-      # release has already gone out. Refuse here instead.
-      - name: The Linux wheels carry a manylinux tag
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          ls -l dist
-          for w in dist/*.whl; do
-            case "$(basename "$w")" in
-              *manylinux*) ;;
-              *) echo "::error::$w has no manylinux tag; PyPI will reject it"; exit 1 ;;
-            esac
-          done
-
-      - uses: actions/upload-artifact@v5
-        with:
-          name: wheel-${{ matrix.target }}
-          path: dist/*.whl
-          if-no-files-found: error
-
-  github-release:
-    name: Publish the GitHub release
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      # For install.sh, which the guard below reads.
-      - uses: actions/checkout@v5
-
-      - uses: actions/download-artifact@v6
-        with:
-          pattern: tarball-*
-          path: dist
-          merge-multiple: true
-
-      # The failure this exists to catch is a platform quietly going missing:
-      # a build job that stops uploading takes nobody's build down, it just
-      # produces a release that install.sh 404s on for the people on that
-      # platform. So the list is not a hardcoded count — it is read out of
-      # install.sh itself, which means adding a platform there without adding
-      # it to the matrix above fails the release rather than the install.
-      - name: Every platform install.sh offers is actually here
-        shell: bash
-        run: |
-          set -euo pipefail
-          ls -lh dist/
-          targets="$(sed -n 's/.*target="\([^"]*\)".*/\1/p' install.sh | sort -u)"
-          test -n "$targets" || { echo "::error::no targets found in install.sh"; exit 1; }
-          status=0
-          for t in $targets; do
-            for f in "dist/senv-${GITHUB_REF_NAME}-${t}.tar.gz" \
-                     "dist/senv-${GITHUB_REF_NAME}-${t}.tar.gz.sha256"; do
-              if [ ! -f "$f" ]; then
-                echo "::error::install.sh offers $t but $(basename "$f") is missing"
-                status=1
-              fi
-            done
-          done
-          exit $status
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          name: senv ${{ github.ref_name }}
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
-          files: |
-            dist/*.tar.gz
-            dist/*.tar.gz.sha256
-          body: |
-            ## Install
-
-            ```bash
-            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | sh
-            ```
-
-            ```bash
-            pip install h5i-senv            # or: pipx install h5i-senv
-            ```
-
-            ```bash
-            cargo install --git https://github.com/${{ github.repository }} --tag ${{ github.ref_name }}
-            ```
-
-            `senv serve` listens on `127.0.0.1:8000` and speaks the OpenEnv Echo protocol.
-
-            ### Published builds
-
-            | Target | Platform | tarball | wheel |
-            |---|---|---|---|
-            | `x86_64-unknown-linux-musl` / `..._gnu` | Linux x86_64 | ✓ | ✓ |
-            | `aarch64-unknown-linux-musl` / `..._gnu` | Linux arm64 | ✓ | ✓ |
-            | `aarch64-apple-darwin` | macOS Apple Silicon | ✓ | ✓ |
-
-            The tarballs are static musl builds so they do not depend on the
-            build machine's glibc; the wheels are manylinux builds, because a
-            musl wheel would only install on Alpine. Both are the same source
-            at the same tag.
-
-            Intel Macs have no published build: Rosetta 2 translates x86_64 to
-            arm64, not the reverse, so the Apple Silicon archive will not run
-            there. Build from source instead —
-            `cargo install --git https://github.com/${{ github.repository }} --tag ${{ github.ref_name }}`.
-
-            Each tarball has a `.sha256` beside it; `install.sh` checks it
-            before installing anything.
-
-  # Last, and only after the GitHub release exists. A version on PyPI can never
-  # be replaced — reusing the number is refused even after a delete — so this is
-  # the one step in the pipeline that cannot be re-run into a better outcome. It
-  # goes after every build and after the release that would have to be yanked
-  # alongside it.
-  pypi:
-    name: Publish to PyPI
-    needs: [wheels, github-release]
-    runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/h5i-senv
-    permissions:
-      # Trusted Publishing: the token is minted for this workflow, in this
-      # repository, and expires. There is no PyPI credential stored here to
-      # leak, and nothing else in the repo can mint one.
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v6
-        with:
-          pattern: wheel-*
-          path: dist
-          merge-multiple: true
-
-      - name: Only wheels, and one per platform
-        shell: bash
-        run: |
-          set -euo pipefail
-          ls -lh dist/
-          extra="$(find dist -mindepth 1 ! -name '*.whl')"
-          if [ -n "$extra" ]; then
-            echo "::error::non-wheel files staged for upload:"; echo "$extra"; exit 1
-          fi
-          count="$(find dist -name '*.whl' | wc -l)"
-          if [ "$count" -ne 3 ]; then
-            echo "::error::expected 3 wheels, found $count"; exit 1
-          fi
-
-      - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          # Re-running a release after a downstream failure should not fall
-          # over on the files that already made it up.
-          skip-existing: true
+      - run: cargo test --locked --workspace
+      - run: cargo publish --locked -p senv
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
