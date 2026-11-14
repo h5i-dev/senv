@@ -5,18 +5,15 @@
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg"></a>
 </p>
 
-**senv** is a Rust server for [OpenEnv](https://github.com/openenv/OpenEnv) reinforcement-learning environments. It speaks the OpenEnv wire protocol, so the **unmodified OpenEnv Python clients** (`EchoEnv`, `TextArenaEnv`) connect to it as they would to the Python servers. Every session is a pure [h5i-app](https://github.com/h5i-dev/h5i) kernel running on its own in-memory engine, which keeps transitions deterministic, isolated per session, and small enough to prove in Lean 4.
+senv is a Rust server for [OpenEnv](https://github.com/openenv/OpenEnv) reinforcement-learning environments. It implements the OpenEnv wire protocol, so the unmodified OpenEnv Python clients (`EchoEnv`, `TextArenaEnv`) connect to it the same way they connect to the Python servers. Each session runs an [h5i-app](https://github.com/h5i-dev/h5i) kernel on its own in-memory engine. A transition depends only on the snapshot, the seed, and the action, and no two sessions share state.
 
-- **Drop-in for OpenEnv clients.** `reset()`, `step()`, and `state()` over a WebSocket, plus MCP tools on `/mcp`. No client patches.
-- **Fast and small.** On one WebSocket, an Echo step averages 0.12 ms against 2.1 ms for the Python Echo server, at about 5 MB RSS ([benchmarks](docs/BENCHMARKS.md)).
-- **One kernel per session.** Sessions never share state. Reset, step, and state are pure functions of the snapshot, the seed, and the action.
-- **Verifiable.** The Wordle transition is proved in [Lean 4](proofs/SenvWordle.lean).
-- **Built for parallel rollouts.** Many sessions per process, so a trainer can run a whole GRPO group at once (see [Train an agent](#4-train-an-agent)).
+- Clients call `reset()`, `step()`, and `state()` over a WebSocket and MCP tools on `/mcp`, with no patches.
+- On one WebSocket an Echo step averages 0.12 ms, against 2.1 ms for the Python Echo server, and the process uses about 5 MB of resident memory ([benchmarks](docs/BENCHMARKS.md)).
+- The Wordle transition is proved in Lean 4 ([`proofs/SenvWordle.lean`](proofs/SenvWordle.lean)).
+- One process holds many sessions, so a trainer can run a whole GRPO group at once ([Train an agent](#4-train-an-agent)).
 
 > [!NOTE]
 > senv is early. This repository used to ship a sandboxed Python environment manager; that product and its `v0.1.0` release are not the server described here.
-
----
 
 ## 1. Install
 
@@ -43,7 +40,7 @@ Start a server for the environment you want:
 senv serve --env wordle --bind 127.0.0.1:8000
 ```
 
-Then connect with the **unmodified** OpenEnv client. senv is tested against OpenEnv commit [`58d0344`](https://github.com/openenv/OpenEnv/tree/58d0344011fe961342706c90288f7e842b15b1c9):
+Then connect with the unmodified OpenEnv client. senv is tested against OpenEnv commit [`58d0344`](https://github.com/openenv/OpenEnv/tree/58d0344011fe961342706c90288f7e842b15b1c9):
 
 ```bash
 git clone https://github.com/openenv/OpenEnv.git
@@ -119,8 +116,8 @@ The same seed gives the same problem, so a group can share one task while its ro
                                        sessions)               one MemoryEngine per session
 ```
 
-- The **shell** ([`src/server.rs`](src/server.rs), [`src/protocol.rs`](src/protocol.rs)) parses the OpenEnv protocol, owns the session table, and renders observations.
-- Each **kernel** ([`src/kernel.rs`](src/kernel.rs), [`src/wordle.rs`](src/wordle.rs), [`src/arith.rs`](src/arith.rs)) is a pure transition `(snapshot, command) → (write set, reply)`. The shell passes in the seed and episode id, so a transition never reads a clock or a random source.
+- The shell ([`src/server.rs`](src/server.rs), [`src/protocol.rs`](src/protocol.rs)) parses the OpenEnv protocol, owns the session table, and renders observations.
+- Each kernel ([`src/kernel.rs`](src/kernel.rs), [`src/wordle.rs`](src/wordle.rs), [`src/arith.rs`](src/arith.rs)) is a pure transition `(snapshot, command) → (write set, reply)`. The shell passes in the seed and episode id, so a transition never reads a clock or a random source.
 - Each session gets its own `h5i_app::MemoryEngine`. Sessions are isolated because no two of them share an engine. When a socket closes, its engine is dropped.
 
 [DESIGN.md](DESIGN.md) has the full architecture. [`proofs/`](proofs/) holds the Lean 4 model of the Wordle kernel (reset, green-before-yellow marking, rewards, the one-invalid allowance), with no `sorry`. [`proofs/CORRESPONDENCE.md`](proofs/CORRESPONDENCE.md) maps the Lean names back to the Rust code. The proofs do not cover socket isolation; the integration tests check that.
