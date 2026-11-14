@@ -11,7 +11,7 @@
 - **Fast and small.** On one WebSocket, an Echo step averages 0.12 ms against 2.1 ms for the Python Echo server, at about 5 MB RSS ([benchmarks](docs/BENCHMARKS.md)).
 - **One kernel per session.** Sessions never share state. Reset, step, and state are pure functions of the snapshot, the seed, and the action.
 - **Verifiable.** The Wordle transition is proved in [Lean 4](proofs/SenvWordle.lean).
-- **Ready for training.** Tested end to end with GRPO, REINFORCE, and LoRA on a single GPU (see [Train an agent](#4-train-an-agent)).
+- **Built for parallel rollouts.** Many sessions per process, so a trainer can run a whole GRPO group at once (see [Train an agent](#4-train-an-agent)).
 
 > [!NOTE]
 > senv is early. This repository used to ship a sandboxed Python environment manager; that product and its `v0.1.0` release are not the server described here.
@@ -99,21 +99,17 @@ with EchoEnv(base_url="http://127.0.0.1:8000").sync() as env:
 
 ## 4. Train an agent
 
-[`scripts/arith_grpo.py`](scripts/arith_grpo.py) is a self-contained GRPO trainer. It plays Arith-v0 through the official `TextArenaEnv` client and uses one senv session per rollout. Generation is batched across sessions, and the advantage of each episode is its reward minus the mean reward of its group. The reward comes only from the server.
+Any trainer that drives an OpenEnv client can train against senv. A rollout is one client session. To run a GRPO group, start the server with enough `--max-sessions` and open one client per rollout:
 
-```bash
-senv serve --env arith --arith-ops 2 --max-sessions 64 --bind 127.0.0.1:8790 &
-
-export PYTHONPATH="scripts:$PWD/OpenEnv/src:$PWD/OpenEnv/envs"
-export SENV_BASE_URL=http://127.0.0.1:8790
-python scripts/arith_grpo.py --steps 100 --lr 2e-5 \
-  --system tool-example --invalid-penalty 0.05 \
-  --out experiment-out/arith-grpo/train.json
+```python
+envs = [TextArenaEnv(base_url="http://127.0.0.1:8000").sync() for _ in range(group_size)]
+for env in envs:
+    env.__enter__()
+results = [env.reset(seed=problem_seed) for env in envs]  # same problem in every rollout
+# ... generate one action per active env, then env.step(TextArenaAction(message=line)) ...
 ```
 
-<!-- GRPO results are filled in below once the run completes. -->
-
-Earlier experiments are written up in [docs/EXPERIMENT.md](docs/EXPERIMENT.md) (Wordle, REINFORCE with linear and SmolLM2 policies), [docs/ARITH.md](docs/ARITH.md), and [docs/ARITH-DIAGNOSIS.md](docs/ARITH-DIAGNOSIS.md) (the sampler and decoding bugs that blocked the first Arith runs).
+The same seed gives the same problem, so a group can share one task while its rollouts stay independent. [`scripts/arith_grpo.py`](scripts/arith_grpo.py) is a complete example: GRPO with LoRA on Arith-v0, with generation batched across sessions.
 
 ## 5. How it works
 
