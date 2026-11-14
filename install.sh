@@ -130,11 +130,8 @@ main() {
   fi
 
   # ── install ────────────────────────────────────────────────────────────────
-  # `install` rather than `mv`: `mv` preserves the *invoking user's* ownership,
-  # which under sudo leaves a user-writable senv sitting in a root-owned PATH
-  # directory. Anything running as that user — including code senv is confining,
-  # which shares the uid — could then replace the binary that sets up the
-  # boundary before the next `senv run` ever established one.
+  # `install` rather than `mv`: `mv` preserves the invoking user's ownership,
+  # which under sudo leaves a user-writable senv in a root-owned PATH directory.
   if [ -w "$INSTALL_DIR" ]; then
     install -m 755 "${TMP}/${NAME}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
   else
@@ -142,38 +139,8 @@ main() {
   fi
 
   echo "✔  senv ${VERSION} installed"
-
-  # ── the things senv needs that this script does not install ────────────────
-  # Reported after the install, not before: none of it blocks having the
-  # binary, and `senv doctor` is the authority on what this machine can
-  # actually enforce. These are the two cases where the answer is "nothing",
-  # and it is friendlier to say so now than to let the first command fail.
-  missing=""
-  command -v uv >/dev/null 2>&1 || missing="uv"
-  if [ "$os" = "linux" ]; then
-    for tool in slirp4netns nft; do
-      command -v "$tool" >/dev/null 2>&1 || missing="${missing:+$missing }$tool"
-    done
-  fi
-
-  if [ -n "$missing" ]; then
-    echo
-    echo "Not on PATH: ${missing}"
-    case "$missing" in
-      *uv*)
-        echo "  senv drives uv; install it from https://docs.astral.sh/uv/"
-        ;;
-    esac
-    case "$missing" in
-      *slirp4netns* | *nft*)
-        echo "  Registry allowlisting during installs needs slirp4netns and nftables"
-        echo "  (sudo apt install slirp4netns nftables on Debian/Ubuntu)."
-        ;;
-    esac
-  fi
-
   echo
-  echo "Next: senv doctor   — what this machine can enforce"
+  echo "Next: senv serve    — Echo on 127.0.0.1:8000"
 }
 
 main "$@"

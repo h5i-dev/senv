@@ -1,0 +1,6 @@
+name = "senv-wordle"
+version = "0.1.0"
+defaultTargets = ["SenvWordle"]
+
+[[lean_lib]]
+name = "SenvWordle"

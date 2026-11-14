@@ -1,329 +1,157 @@
-<h1 align="center">senv</h1>
+# senv
 
-<p align="center"><strong>Sandboxed Python environments, with the workflow of uv.</strong></p>
-
-<p align="center">
-  <a href="https://github.com/h5i-dev/senv/blob/main/LICENSE"><img alt="Apache-2.0" src="https://img.shields.io/github/license/h5i-dev/senv?color=blue"></a>
-  <a href="https://github.com/h5i-dev/senv/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/h5i-dev/senv?style=social"></a>
+<p align="left">
+  <a href="https://github.com/h5i-dev/senv/actions/workflows/ci.yaml"><img alt="CI" src="https://github.com/h5i-dev/senv/actions/workflows/ci.yaml/badge.svg"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg"></a>
 </p>
 
-**senv** adds an OS-level security boundary to Python environments. It keeps
-the familiar [`uv`](https://github.com/astral-sh/uv) workflow while isolating
-dependency installation and application execution from your credentials,
-network, and the rest of your machine.
+senv is a Rust server for [OpenEnv](https://github.com/openenv/OpenEnv) reinforcement-learning environments. It implements the OpenEnv wire protocol, so the unmodified OpenEnv Python clients (`EchoEnv`, `TextArenaEnv`) connect to it the same way they connect to the Python servers. Each session runs an [h5i-app](https://github.com/h5i-dev/h5i) kernel on its own in-memory engine. A transition depends only on the snapshot, the seed, and the action, and no two sessions share state.
 
-<table align="center">
-<tr>
-<td>📦 Install packages with registry-only network access</td>
-<td>🔒 Run Python with no network by default</td>
-</tr>
-<tr>
-<td>🧊 Keep the environment read-only while code runs</td>
-<td>🧾 Review policy, denials, and execution receipts</td>
-</tr>
-</table>
+- Clients call `reset()`, `step()`, and `state()` over a WebSocket and MCP tools on `/mcp`, with no patches.
+- On one WebSocket an Echo step averages 0.12 ms, against 2.1 ms for the Python Echo server, and the process uses about 5 MB of resident memory ([benchmarks](docs/BENCHMARKS.md)).
+- The Wordle transition is proved in Lean 4 ([`proofs/SenvWordle.lean`](proofs/SenvWordle.lean)).
+- One process holds many sessions, so a trainer can run a whole GRPO group at once ([Train an agent](#4-train-an-agent)).
+
+> [!NOTE]
+> senv is early. This repository used to ship a sandboxed Python environment manager; that product and its `v0.1.0` release are not the server described here.
+
+## 1. Install
+
+Build from source. You need Rust 1.88 or newer.
 
 ```bash
-senv sync                 # install dependencies inside the install sandbox
-senv run pytest           # run code with no network and a read-only environment
-senv shell                # enter the same boundary interactively
-senv status               # see exactly what is enforced on this machine
+git clone https://github.com/h5i-dev/senv && cd senv
+cargo build --release --locked
+./target/release/senv serve            # listens on 127.0.0.1:8000
 ```
 
-A senv project is still a uv project. It uses the same `pyproject.toml` and
-`uv.lock`, and teammates without senv can continue using `uv` directly.
-
----
-
-## Why senv?
-
-`venv` and `uv` isolate dependencies, but they do not isolate code. A package
-inside a virtual environment can still:
-
-- read files such as `~/.ssh`;
-- access environment variables and credentials;
-- connect to arbitrary network destinations; and
-- execute build code during installation.
-
-A virtual environment is a `PATH` convention, not a security boundary. senv
-puts a sandbox underneath the Python workflow, with separate policies for the
-two moments that carry different risks:
-
-- **Install:** package build code can reach approved registries, but not your
-  source tree or credentials.
-- **Run:** your project is writable, but the installed environment is
-  read-only and network access is denied by default.
-
----
-
-## Install
+Or use Docker:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/h5i-dev/senv/main/install.sh | sh
+docker build -t senv .
+docker run --rm -p 8000:8000 senv      # listens on 0.0.0.0:8000
 ```
 
-The script picks the build for your platform, checks it against the SHA-256
-published beside it, and installs to `/usr/local/bin`. Set `SENV_INSTALL_DIR`
-to install elsewhere, or `SENV_VERSION=vX.Y.Z` to pin a version.
+## 2. Quick start
 
-Or install it the way you install your other tools:
+Start a server for the environment you want:
 
 ```bash
-uv tool install h5i-senv     # also: pipx install h5i-senv, pip install h5i-senv
-cargo install --git https://github.com/h5i-dev/senv
+senv serve --env wordle --bind 127.0.0.1:8000
 ```
 
-senv requires [`uv`](https://docs.astral.sh/uv/) on `PATH`.
-
-- **Linux:** registry allowlisting during installation also requires
-  `slirp4netns` and `nftables` (`sudo apt install slirp4netns nftables` on
-  Debian/Ubuntu).
-- **macOS:** no additional sandbox runtime is required; senv uses the built-in
-  Seatbelt sandbox.
-- **Windows:** use WSL2.
-
-Check what your machine can enforce:
+Then connect with the unmodified OpenEnv client. senv is tested against OpenEnv commit [`58d0344`](https://github.com/openenv/OpenEnv/tree/58d0344011fe961342706c90288f7e842b15b1c9):
 
 ```bash
-senv doctor
+git clone https://github.com/openenv/OpenEnv.git
+git -C OpenEnv checkout 58d0344011fe961342706c90288f7e842b15b1c9
+python3 -m venv .venv && .venv/bin/pip install -r scripts/echo-client-requirements.txt
+export PYTHONPATH="$PWD/OpenEnv/src:$PWD/OpenEnv/envs"
 ```
 
----
+```python
+from textarena_env import TextArenaEnv
+from textarena_env.models import TextArenaAction
 
-## Quick start
+with TextArenaEnv(base_url="http://127.0.0.1:8000").sync() as env:
+    result = env.reset(seed=7)
+    print(result.observation.prompt)
 
-### Start a new project
+    result = env.step(TextArenaAction(message="[crane]"))
+    print(result.observation.messages[-1].content)  # green / yellow feedback
+    print(result.reward, result.done)
+```
+
+The Echo environment (the default for `senv serve`) is an MCP tool environment:
+
+```python
+from echo_env import CallToolAction, EchoEnv
+
+with EchoEnv(base_url="http://127.0.0.1:8000").sync() as env:
+    env.reset()
+    result = env.step(CallToolAction(tool_name="echo_message", arguments={"message": "Hello!"}))
+    print(result.observation.result["data"])  # "Hello!"
+```
+
+## 3. Environments
+
+| `--env` | Client | What it is |
+|---|---|---|
+| `echo` (default) | `EchoEnv` | The OpenEnv Echo MCP environment: `echo_message` and `echo_with_length` tools. For smoke tests and latency. |
+| `wordle` | `TextArenaEnv` | Wordle-v0: 5 letters, 6 guesses, on the TextArena socket. Seeded secrets from a 15,034-word list ([`assets/wordle/words.txt`](assets/wordle/words.txt)). |
+| `arith` | `TextArenaEnv` | Arith-v0, a custom multi-turn tool-use task. The agent gets a nested expression such as `((6 * 8) * 9)`. It can send `calc <int> <op> <int>` to a calculator and must finish with `answer <int>`. Reward is 1 for a correct answer. `--arith-ops 2..4` sets the difficulty. The value is never in the observation or in `state()`. |
+
+### Server options
+
+| Flag | Environment variable | Default |
+|---|---|---|
+| `--bind` | `SENV_BIND` | `127.0.0.1:8000` |
+| `--env` | `SENV_ENV` | `echo` |
+| `--arith-ops` | `SENV_ARITH_OPS` | `3` (2, 3, or 4) |
+| `--max-sessions` | `MAX_CONCURRENT_ENVS` | `8` |
+| `--max-message-bytes` | | `16777216` (16 MiB) |
+| `--idle-timeout-secs` | | `120` (`0` disables the idle sweep) |
+
+`GET /health` returns `{"status":"healthy"}`.
+
+## 4. Train an agent
+
+Any trainer that drives an OpenEnv client can train against senv. A rollout is one client session. To run a GRPO group, start the server with enough `--max-sessions` and open one client per rollout:
+
+```python
+envs = [TextArenaEnv(base_url="http://127.0.0.1:8000").sync() for _ in range(group_size)]
+for env in envs:
+    env.__enter__()
+results = [env.reset(seed=problem_seed) for env in envs]  # same problem in every rollout
+# ... generate one action per active env, then env.step(TextArenaAction(message=line)) ...
+```
+
+The same seed gives the same problem, so a group can share one task while its rollouts stay independent. [`scripts/arith_grpo.py`](scripts/arith_grpo.py) is a complete example: GRPO with LoRA on Arith-v0, with generation batched across sessions.
+
+## 5. How it works
+
+```
+ OpenEnv client ──WebSocket / HTTP──▶ Axum shell ──command──▶ kernel(snapshot, cmd) ─▶ write set + reply
+                                      (protocol,               pure, no clock, no RNG
+                                       sessions)               one MemoryEngine per session
+```
+
+- The shell ([`src/server.rs`](src/server.rs), [`src/protocol.rs`](src/protocol.rs)) parses the OpenEnv protocol, owns the session table, and renders observations.
+- Each kernel ([`src/kernel.rs`](src/kernel.rs), [`src/wordle.rs`](src/wordle.rs), [`src/arith.rs`](src/arith.rs)) is a pure transition `(snapshot, command) → (write set, reply)`. The shell passes in the seed and episode id, so a transition never reads a clock or a random source.
+- Each session gets its own `h5i_app::MemoryEngine`. Sessions are isolated because no two of them share an engine. When a socket closes, its engine is dropped.
+
+[DESIGN.md](DESIGN.md) has the full architecture. [`proofs/`](proofs/) holds the Lean 4 model of the Wordle kernel (reset, green-before-yellow marking, rewards, the one-invalid allowance), with no `sorry`. [`proofs/CORRESPONDENCE.md`](proofs/CORRESPONDENCE.md) maps the Lean names back to the Rust code. The proofs do not cover socket isolation; the integration tests check that.
+
+## 6. Performance
+
+One run on a 4 vCPU AMD EPYC 7R32. Both Echo servers used the same client. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+
+| Server | Mean step | p99 step | Steps/s (one socket) | RSS |
+|---|---:|---:|---:|---:|
+| senv Echo | 0.121 ms | 0.157 ms | 8,276 | 5.3 MB |
+| Python OpenEnv Echo | 2.097 ms | 2.386 ms | 477 | 108 MB |
+| senv Wordle | 0.223 ms | 0.334 ms | 4,476 | 6.0 MB |
+
+## 7. Compatibility and limits
+
+The compatibility scripts run the official clients against a live server: [`scripts/echo_compat.sh`](scripts/echo_compat.sh), [`scripts/wordle_compat.sh`](scripts/wordle_compat.sh), and [`scripts/arith_compat.sh`](scripts/arith_compat.sh). The behaviors most likely to surprise someone who knows upstream OpenEnv:
+
+- A WebSocket disconnect destroys the session. Upstream keeps an HTTP-created session until `session/close`.
+- There is no simulation-mode HTTP API (`POST /reset`, `/step`, `/state`), no CORS, and no Gradio UI.
+- Echo never sets `done`, and a step's reward is JSON `null`.
+- In Wordle, `state()` reveals the secret, as upstream does. Arith never reveals its value.
+
+[PROTOCOL.md](PROTOCOL.md) is the full list.
+
+## 8. Development
 
 ```bash
-mkdir my-project && cd my-project
-senv init --python 3.13
-senv add requests
-senv run python -c 'import requests; print(requests.__version__)'
+cargo test --locked
+cargo clippy --all-targets --locked -- -D warnings
+OPENENV_SRC=$PWD/OpenEnv bash scripts/echo_compat.sh   # official-client check
+(cd proofs && lake build)                              # Lean proofs
 ```
-
-### Adopt an existing uv project
-
-```bash
-cd my-project
-senv init                 # keeps pyproject.toml and uv.lock as-is
-senv sync
-senv run pytest
-```
-
-If the project already has a `.venv`, senv leaves it untouched because those
-packages were installed outside its boundary. It creates a separate managed
-environment and explains how to switch. Use `senv init --replace-venv` when
-you are ready to replace the existing link.
-
----
-
-## Everyday commands
-
-| What you normally do | With senv |
-| --- | --- |
-| `uv sync` | `senv sync` |
-| `uv lock` | `senv lock` |
-| `uv add requests` | `senv add requests` |
-| `uv run pytest` | `senv run pytest` |
-| `source .venv/bin/activate` | `senv shell` |
-| another uv command | `senv uv -- <args>` |
-
-Flags are passed through to uv, and command exit codes pass back to the caller.
-This makes commands such as `senv run pytest` suitable for CI as well as local
-development.
-
----
-
-## What senv enforces
-
-Installing dependencies and running your code use different policies:
-
-| | `senv sync` / `add` / `lock` | `senv run` / `shell` |
-| --- | --- | --- |
-| **Network** | PyPI and configured indexes only | denied by default |
-| **Project source** | read-only | read-write |
-| **Python environment** | writable for installation | **read-only** |
-| **Credentials** | unavailable | only explicitly declared secrets |
-| **Resource limits** | CPU, file size, wall clock; memory and processes on Linux | CPU and file size; memory and processes on Linux |
-
-### Sandboxed installs
-
-Supply-chain attacks can execute before a package is ever imported. For
-example, an sdist build backend runs during installation with the user's
-permissions.
-
-senv resolves and installs dependencies in a staging area containing the
-project manifests but none of the project source. Network access is restricted
-to package registries and pinned at the network layer.
-
-### A read-only runtime environment
-
-While your code runs, installed packages cannot rewrite the environment to
-persist into the next run. The managed environment lives outside the project,
-and `.venv` points to it without exposing a writable parent directory.
-
-senv also compiles bytecode during installation and disables writable bytecode
-caches at runtime. This prevents a package from leaving behind a modified
-`.pyc` file that Python could prefer over the protected source.
-
----
-
-## Allow only what your program needs
-
-When senv blocks an operation, it shows what happened and the narrowest command
-that would permit it:
-
-```text
-senv blocked 1 operation(s):
-  • network access to api.stripe.com
-    allow it with: senv allow api.stripe.com
-```
-
-You can make the grant persistent or apply it to one command:
-
-```bash
-senv allow api.stripe.com
-senv run --allow-net api.stripe.com pytest
-senv report --suggest
-```
-
-`senv allow` records the change in `senv.toml`. `senv report --suggest` only
-prints a proposed policy stanza; it never changes the policy for you.
-
-Some denials are intentional guarantees, so senv does not suggest bypassing
-them. Runtime code cannot make the environment writable or read `~/.ssh`.
-
----
-
-## Policy changes require trust
-
-The policy file, `senv.toml`, lives inside the project. Because runtime code can
-write the project, a compromised dependency could try to widen that policy for
-future commands.
-
-senv therefore keeps the last accepted policy snapshot outside the sandbox:
-
-- an unchanged or narrower policy runs normally;
-- a wider policy is refused until you inspect and accept it with `senv trust`.
-
-```text
-senv: senv.toml grants more than senv recorded, so nothing was run
-  the policy on disk is wider than the one you last accepted:
-    + [run] net: deny → unrestricted
-    + [run.env] pass: added AWS_SECRET_ACCESS_KEY
-  → if you made this change, run `senv trust`; if you did not,
-    inspect senv.toml and your recent dependencies first
-```
-
-The same check applies when senv first sees a project whose policy is wider
-than the defaults. Changes to `pyproject.toml` sections that control install
-behavior—`[build-system]` and `[tool.uv]`—also require trust.
-
-Two settings receive additional protection:
-
-- a `command:` secret source requires `allow-command-secrets = true`, because
-  the command executes on the host;
-- the configured uv is rejected if it lives inside the project or senv
-  state, where sandboxed code could rewrite it.
-
----
-
-## Configuration
-
-`senv.toml` is optional. Without it, senv uses fail-closed defaults. The file is
-created when you first add a grant.
-
-```toml
-[env]
-python = "3.13"
-isolation = "auto"              # auto | process | supervised | container | microvm
-allow-command-secrets = false   # permit command: secret sources on the host
-
-[install]
-extra-indexes = ["download.pytorch.org"]
-cache = "project"               # "shared" saves disk but trades away isolation
-
-[run]
-net = "deny"                    # "deny" | "host" | ["api.example.com", "*.s3.amazonaws.com"]
-
-[run.fs]
-read = ["~/datasets"]           # additional read-only paths
-write = []                      # project and scratch space are already writable
-
-[run.resources]
-mem = "4G"
-wall = "30m"                    # use "none" for a dev server
-
-[secrets.OPENAI_API_KEY]
-source = "env:OPENAI_API_KEY"   # env:… | file:… | command:…
-phases = ["run"]                # secrets are never exposed to install-time build code
-```
-
----
-
-## Inspect the boundary
-
-```bash
-senv status      # resolved policy, isolation tier, grants, limits, and digest
-senv report      # commands, denials, and redactions
-senv trust       # accept the current policy as the new baseline
-senv doctor      # enforcement available on this host
-senv gc          # find stale project state; add --prune to remove it
-```
-
-Every command appends a receipt outside the sandbox. Declared secret values are
-redacted, and h5i's credential scanner checks for additional keys. Each receipt
-includes a digest of the policy that was actually enforced.
-
----
-
-## How it works
-
-senv uses [`h5i-sandbox`](https://github.com/h5i-dev/h5i) as its confinement
-engine and compiles the Python-focused `senv.toml` into an h5i policy.
-
-| Platform / tier | Enforcement |
-| --- | --- |
-| **Linux** | Landlock filesystem allowlists, seccomp-bpf syscall filtering, namespaces, and rlimits/cgroups. Network allowlists use a private namespace and nftables rules pinned to resolved addresses. |
-| **macOS** | Seatbelt filesystem and network confinement. Allowed egress passes through a DNS-pinned loopback proxy; other name resolution is denied. |
-| **Container** | Optional rootless Podman isolation. |
-| **MicroVM** | Optional VM-grade isolation with a separate kernel. |
-
-senv never silently downgrades. If the host cannot enforce the requested
-policy, it refuses to run and explains what is missing.
-
----
-
-## Security boundaries and limitations
-
-- **The default tiers share the host kernel.** Landlock, seccomp, and Seatbelt
-  provide OS-level isolation, not a hypervisor boundary. Use
-  `isolation = "microvm"` when a separate kernel is required.
-- **It does not identify malicious packages.** Lockfile
-  hashes and dependency review remain important.
-- **Run the environment through senv.** `source .venv/bin/activate`, an editor
-  invoking `.venv/bin/python`, or any other host-side execution bypasses the
-  runtime boundary. Use `senv run` or `senv shell`.
-- **Install-time code can modify the environment.** Installation must write
-  packages and scripts. The install sandbox protects your source, credentials,
-  and non-registry network, but it cannot make the environment itself read-only.
-- **Denial suggestions are hints, not proof.** Kernel-tier reports infer some
-  denials from program output, which untrusted code can influence. Review every
-  suggested grant before accepting it. Container-tier network requests have a
-  direct per-request tally.
-- **State must remain outside the project.** senv refuses
-  `SENV_STATE_DIR` or `SENV_CACHE_DIR` locations inside the project because
-  runtime code could then alter environments, receipts, or trusted baselines.
-- **Runtime wall-clock limits are not currently enforced.** CPU and file-size
-  rlimits apply everywhere; memory and process limits use Linux cgroups and do
-  not apply on macOS.
-- **Policy tampering is detected, not prevented.** A dependency can edit files
-  in the writable project; senv refuses a widened policy until you trust it.
-
-For the full threat model and design rationale, see [DESIGN.md](DESIGN.md).
-
----
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE). OpenEnv and h5i attributions are in [NOTICE](NOTICE).

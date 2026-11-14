@@ -217,3 +217,10 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 /PERSONA.md
+
+# Lean build output. Sources under proofs/ are tracked.
+.lake/
+
+# Local benchmark and experiment output. Measured runs belong on a large disk.
+/bench-out/
+/experiment-out/

@@ -1,0 +1,5129 @@
+{
+  "base_url": "http://127.0.0.1:8782",
+  "candidates": 32,
+  "held_out_seeds": [
+    10000,
+    10001,
+    10002,
+    10003,
+    10004,
+    10005,
+    10006,
+    10007,
+    10008,
+    10009,
+    10010,
+    10011,
+    10012,
+    10013,
+    10014,
+    10015,
+    10016,
+    10017,
+    10018,
+    10019,
+    10020,
+    10021,
+    10022,
+    10023,
+    10024,
+    10025,
+    10026,
+    10027,
+    10028,
+    10029,
+    10030,
+    10031,
+    10032,
+    10033,
+    10034,
+    10035,
+    10036,
+    10037,
+    10038,
+    10039
+  ],
+  "lm_train": {
+    "algorithm": "one-step REINFORCE on softmax over language-model logprobs of [word]; shaped reward is wordle.greens + 0.5*wordle.yellows when present, otherwise the client step reward",
+    "baseline_beta": 0.1,
+    "candidates": 32,
+    "episodes": 32,
+    "first_mean_reward": 0.95,
+    "first_wins": 7,
+    "grad_clip": 1.0,
+    "last_mean_reward": 1.0,
+    "last_wins": 8,
+    "lr": 5e-05,
+    "mean_grad_norm": 20.30888408159943,
+    "mean_reward": 0.971875,
+    "mean_shaped": 2.43125,
+    "optimizer": "AdamW",
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ],
+    "temperature": 1.0,
+    "wall_s": 324.18662801897153,
+    "wins": 30
+  },
+  "lr": 5e-05,
+  "model": {
+    "cuda": true,
+    "device_name": "NVIDIA A10G",
+    "dtype": "float32",
+    "parameters": 134515008,
+    "revision": "12fd25f77366fa6b3b4b768ec3050bf629380bac",
+    "torch": "2.15.0+cu132",
+    "transformers": "5.22.2"
+  },
+  "model_id": "HuggingFaceTB/SmolLM2-135M-Instruct",
+  "notes": [
+    "Guesses are dictionary words sent through TextArenaEnv.",
+    "The policy does not call state().",
+    "uniform-candidates draws uniformly from the same capped consistent list the language model scores.",
+    "uniform-candidates is not a language model.",
+    "Language-model training is one-step REINFORCE on the shaped green/yellow signal.",
+    "Held-out mean_reward is the client reward.",
+    "The free-text SmolLM2 run in docs/EXPERIMENT.md is a separate earlier result."
+  ],
+  "peak_memory_allocated_bytes": 6027527680,
+  "peak_memory_reserved_bytes": 22227714048,
+  "phases": {
+    "lm-pretrained-greedy": {
+      "episodes": 40,
+      "mean_reward": 0.9550000000000001,
+      "mean_steps": 5.2,
+      "records": [
+        {
+          "actions": [
+            "[snips]",
+            "[pants]",
+            "[ponds]",
+            "[pongs]",
+            "[pones]"
+          ],
+          "candidate_counts": [
+            32,
+            24,
+            8,
+            3,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10000,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[straw]",
+            "[hippy]",
+            "[penny]",
+            "[poney]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10001,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[acies]",
+            "[float]",
+            "[baboo]",
+            "[vodka]",
+            "[poppa]",
+            "[ponga]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            21,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10002,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[media]",
+            "[scott]",
+            "[bobby]",
+            "[honor]",
+            "[kongo]",
+            "[pongo]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            3,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10003,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[earth]",
+            "[mccoy]",
+            "[bilbo]",
+            "[found]",
+            "[songs]",
+            "[gongs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            8,
+            2
+          ],
+          "reward": 0.8,
+          "seed": 10004,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[panda]",
+            "[penta]",
+            "[pinna]",
+            "[ponga]",
+            "[ponja]"
+          ],
+          "candidate_counts": [
+            32,
+            9,
+            5,
+            4,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10005,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[shush]",
+            "[yocks]",
+            "[goats]",
+            "[foods]",
+            "[oozes]",
+            "[ponos]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            15,
+            12
+          ],
+          "reward": 1.0,
+          "seed": 10006,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[curve]",
+            "[float]",
+            "[dotty]",
+            "[posts]",
+            "[ponto]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            8,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10007,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[happy]",
+            "[phone]",
+            "[pooch]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10008,
+          "steps": 3,
+          "success": true
+        },
+        {
+          "actions": [
+            "[penta]",
+            "[piggy]",
+            "[plush]",
+            "[props]",
+            "[poofs]",
+            "[poods]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            13,
+            2,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10009,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[adolf]",
+            "[frost]",
+            "[hoofs]",
+            "[goofs]",
+            "[woofs]",
+            "[poofs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            5,
+            4,
+            3,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10010,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[right]",
+            "[bonus]",
+            "[vowel]",
+            "[comma]",
+            "[foody]",
+            "[poofy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            10,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10011,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[check]",
+            "[flush]",
+            "[sight]",
+            "[dashy]",
+            "[poohs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            14,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10012,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[legal]",
+            "[smart]",
+            "[ninja]",
+            "[kappa]",
+            "[pukka]",
+            "[pooka]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            3,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10013,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[focus]",
+            "[north]",
+            "[woody]",
+            "[booze]",
+            "[moola]",
+            "[pooli]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            10,
+            6,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10014,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[swiss]",
+            "[clubs]",
+            "[loves]",
+            "[goals]",
+            "[tools]",
+            "[pools]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            11,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10015,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[elves]",
+            "[calla]",
+            "[world]",
+            "[pooly]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            18
+          ],
+          "reward": 1.0,
+          "seed": 10016,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[bongo]",
+            "[colon]",
+            "[noose]",
+            "[moons]",
+            "[toons]",
+            "[poons]"
+          ],
+          "candidate_counts": [
+            32,
+            29,
+            12,
+            6,
+            4,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10017,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[bacon]",
+            "[mouse]",
+            "[works]",
+            "[golds]",
+            "[posts]",
+            "[poofs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            21,
+            3
+          ],
+          "reward": 0.8,
+          "seed": 10018,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[hoose]",
+            "[moody]",
+            "[woolf]",
+            "[rooti]",
+            "[poori]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            17,
+            12,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10019,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[cheat]",
+            "[trust]",
+            "[robot]",
+            "[poort]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            9,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10020,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[agent]",
+            "[trick]",
+            "[lotto]",
+            "[sooth]",
+            "[booty]",
+            "[footy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            15,
+            5,
+            3
+          ],
+          "reward": 0.8,
+          "seed": 10021,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[short]",
+            "[above]",
+            "[glove]",
+            "[emove]",
+            "[poove]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            4,
+            2,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10022,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[rogue]",
+            "[modal]",
+            "[local]",
+            "[total]",
+            "[zonal]",
+            "[popal]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            20,
+            10,
+            5,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10023,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[berry]",
+            "[slice]",
+            "[guest]",
+            "[jones]",
+            "[homes]",
+            "[foxes]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            24,
+            10
+          ],
+          "reward": 0.6,
+          "seed": 10024,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[lings]",
+            "[comic]",
+            "[zowie]",
+            "[foxie]",
+            "[dobie]",
+            "[pokie]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            25,
+            6,
+            4,
+            3
+          ],
+          "reward": 0.8,
+          "seed": 10025,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[sharp]",
+            "[kappa]",
+            "[poppa]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            4
+          ],
+          "reward": 1.0,
+          "seed": 10026,
+          "steps": 3,
+          "success": true
+        },
+        {
+          "actions": [
+            "[grown]",
+            "[jokey]",
+            "[poppy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32
+          ],
+          "reward": 1.0,
+          "seed": 10027,
+          "steps": 3,
+          "success": true
+        },
+        {
+          "actions": [
+            "[digit]",
+            "[sunny]",
+            "[essay]",
+            "[prosy]",
+            "[popsy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            9,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10028,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[weeds]",
+            "[mouth]",
+            "[coral]",
+            "[goral]",
+            "[roral]",
+            "[loral]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            5,
+            4,
+            3
+          ],
+          "reward": 0.8,
+          "seed": 10029,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[grant]",
+            "[curse]",
+            "[birch]",
+            "[porch]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            11,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10030,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[faded]",
+            "[lined]",
+            "[muted]",
+            "[bored]",
+            "[cored]",
+            "[gored]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            3,
+            2
+          ],
+          "reward": 0.8,
+          "seed": 10031,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[bable]",
+            "[ferns]",
+            "[wired]",
+            "[purer]",
+            "[porer]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            15,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10032,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[label]",
+            "[women]",
+            "[poker]",
+            "[pores]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10033,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[world]",
+            "[forms]",
+            "[borne]",
+            "[korea]",
+            "[porer]",
+            "[poret]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            7,
+            5,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10034,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[sucks]",
+            "[xerox]",
+            "[bored]",
+            "[forte]",
+            "[gorge]",
+            "[porge]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            14,
+            8,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10035,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[pizza]",
+            "[purse]",
+            "[porky]",
+            "[porch]",
+            "[porto]",
+            "[porno]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            9,
+            4,
+            3,
+            2
+          ],
+          "reward": 0.8,
+          "seed": 10036,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[alang]",
+            "[right]",
+            "[group]",
+            "[porge]",
+            "[porgo]",
+            "[porgy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            3,
+            2,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10037,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[sheep]",
+            "[point]",
+            "[polio]",
+            "[poria]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            7,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10038,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[sugar]",
+            "[perks]",
+            "[porks]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10039,
+          "steps": 3,
+          "success": true
+        }
+      ],
+      "success_rate": 0.8,
+      "successes": 32,
+      "wall_s": 33.791844951047096
+    },
+    "lm-pretrained-sample": {
+      "episodes": 40,
+      "mean_reward": 0.9225,
+      "mean_steps": 5.275,
+      "records": [
+        {
+          "actions": [
+            "[avian]",
+            "[ferny]",
+            "[snell]",
+            "[hones]",
+            "[bones]",
+            "[jones]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            21,
+            7,
+            6
+          ],
+          "reward": 0.8,
+          "seed": 10000,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[straw]",
+            "[buffy]",
+            "[geeky]",
+            "[honey]",
+            "[money]",
+            "[poney]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            4,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10001,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[ticks]",
+            "[alpha]",
+            "[opera]",
+            "[pompa]",
+            "[ponga]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            12,
+            3,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10002,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[media]",
+            "[scott]",
+            "[bobby]",
+            "[rough]",
+            "[pongo]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10003,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[earth]",
+            "[dilli]",
+            "[goopy]",
+            "[pongs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10004,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[panda]",
+            "[penta]",
+            "[pinna]",
+            "[punga]",
+            "[ponja]"
+          ],
+          "candidate_counts": [
+            32,
+            9,
+            5,
+            4,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10005,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[shush]",
+            "[fools]",
+            "[gobos]",
+            "[cocos]",
+            "[kokos]",
+            "[nomos]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            28,
+            17,
+            15,
+            13
+          ],
+          "reward": 0.7,
+          "seed": 10006,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[jiffy]",
+            "[pound]",
+            "[ponga]",
+            "[ponce]",
+            "[ponto]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            9,
+            4,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10007,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[happy]",
+            "[phone]",
+            "[pooch]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10008,
+          "steps": 3,
+          "success": true
+        },
+        {
+          "actions": [
+            "[penta]",
+            "[piggy]",
+            "[phlox]",
+            "[props]",
+            "[poofs]",
+            "[poods]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            23,
+            2,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10009,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[adolf]",
+            "[goofy]",
+            "[woofs]",
+            "[hoofs]",
+            "[poofs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            5,
+            4,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10010,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[right]",
+            "[bonus]",
+            "[vowel]",
+            "[comma]",
+            "[kooky]",
+            "[foody]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            10,
+            3
+          ],
+          "reward": 0.7,
+          "seed": 10011,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[check]",
+            "[flush]",
+            "[sight]",
+            "[dashy]",
+            "[poohs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            14,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10012,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[legal]",
+            "[smart]",
+            "[ninja]",
+            "[kappa]",
+            "[pukka]",
+            "[pooka]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            3,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10013,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[focus]",
+            "[bobby]",
+            "[modal]",
+            "[lower]",
+            "[hollo]",
+            "[pooli]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            8,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10014,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[swiss]",
+            "[clubs]",
+            "[leafs]",
+            "[golds]",
+            "[tools]",
+            "[pools]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            30,
+            5,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10015,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[elves]",
+            "[pupil]",
+            "[palma]",
+            "[pooly]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            22,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10016,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[bongo]",
+            "[colon]",
+            "[noose]",
+            "[soony]",
+            "[toons]",
+            "[moons]"
+          ],
+          "candidate_counts": [
+            32,
+            29,
+            12,
+            6,
+            5,
+            4
+          ],
+          "reward": 0.8,
+          "seed": 10017,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[bacon]",
+            "[mouse]",
+            "[solid]",
+            "[works]",
+            "[posts]",
+            "[poops]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            19,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10018,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[stout]",
+            "[kooky]",
+            "[boong]",
+            "[hoove]",
+            "[woolf]",
+            "[zooid]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            13,
+            4
+          ],
+          "reward": 0.5,
+          "seed": 10019,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[visit]",
+            "[front]",
+            "[thort]",
+            "[abort]",
+            "[poort]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            8,
+            5,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10020,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[agent]",
+            "[trick]",
+            "[lotto]",
+            "[sooth]",
+            "[booty]",
+            "[pooty]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            15,
+            5,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10021,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[short]",
+            "[above]",
+            "[glove]",
+            "[emove]",
+            "[poove]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            4,
+            2,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10022,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[rogue]",
+            "[posts]",
+            "[polka]",
+            "[podal]",
+            "[popal]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            31,
+            2,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10023,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[berry]",
+            "[slice]",
+            "[guest]",
+            "[zones]",
+            "[moves]",
+            "[foxes]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            23,
+            12
+          ],
+          "reward": 0.6,
+          "seed": 10024,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[fogle]",
+            "[moose]",
+            "[voice]",
+            "[zowie]",
+            "[pokie]",
+            "[popie]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            10,
+            5,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10025,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[sharp]",
+            "[polka]",
+            "[poppa]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            5
+          ],
+          "reward": 1.0,
+          "seed": 10026,
+          "steps": 3,
+          "success": true
+        },
+        {
+          "actions": [
+            "[mammy]",
+            "[corny]",
+            "[potty]",
+            "[pokey]",
+            "[pooly]",
+            "[poddy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            17,
+            12,
+            9
+          ],
+          "reward": 0.6,
+          "seed": 10027,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[digit]",
+            "[sunny]",
+            "[essay]",
+            "[horsy]",
+            "[popsy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            9,
+            5
+          ],
+          "reward": 1.0,
+          "seed": 10028,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[edgar]",
+            "[roman]",
+            "[coral]",
+            "[toral]",
+            "[soral]",
+            "[poral]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            20,
+            6,
+            5,
+            4
+          ],
+          "reward": 1.0,
+          "seed": 10029,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[grant]",
+            "[curse]",
+            "[birch]",
+            "[porch]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            11,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10030,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[stylo]",
+            "[evoke]",
+            "[opera]",
+            "[roper]",
+            "[pored]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            12,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10031,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[saved]",
+            "[greek]",
+            "[oiler]",
+            "[homer]",
+            "[foyer]",
+            "[bower]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            30,
+            25
+          ],
+          "reward": 0.6,
+          "seed": 10032,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[label]",
+            "[fused]",
+            "[jones]",
+            "[moves]",
+            "[cotes]",
+            "[pores]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            27,
+            16
+          ],
+          "reward": 1.0,
+          "seed": 10033,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[world]",
+            "[forms]",
+            "[cornu]",
+            "[gorge]",
+            "[porer]",
+            "[poret]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            5,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10034,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[byron]",
+            "[world]",
+            "[forma]",
+            "[horse]",
+            "[corge]",
+            "[gorge]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            11,
+            2
+          ],
+          "reward": 0.8,
+          "seed": 10035,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[pizza]",
+            "[purse]",
+            "[porky]",
+            "[porch]",
+            "[porno]",
+            "[porto]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            9,
+            4,
+            3,
+            2
+          ],
+          "reward": 0.8,
+          "seed": 10036,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[alang]",
+            "[tough]",
+            "[dodgy]",
+            "[foggy]",
+            "[porgy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            29,
+            7,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10037,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[times]",
+            "[anion]",
+            "[radio]",
+            "[poria]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            31,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10038,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[sugar]",
+            "[perks]",
+            "[porks]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10039,
+          "steps": 3,
+          "success": true
+        }
+      ],
+      "success_rate": 0.75,
+      "successes": 30,
+      "wall_s": 35.909831491007935
+    },
+    "lm-trained-greedy": {
+      "episodes": 40,
+      "mean_reward": 0.95,
+      "mean_steps": 5.025,
+      "records": [
+        {
+          "actions": [
+            "[dozen]",
+            "[sones]",
+            "[nones]",
+            "[cones]",
+            "[tones]",
+            "[hones]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            7,
+            6,
+            5,
+            4
+          ],
+          "reward": 0.8,
+          "seed": 10000,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[straw]",
+            "[devon]",
+            "[money]",
+            "[poney]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            5
+          ],
+          "reward": 1.0,
+          "seed": 10001,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[feint]",
+            "[annum]",
+            "[sands]",
+            "[longa]",
+            "[ponga]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            12,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10002,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[oncin]",
+            "[downs]",
+            "[noter]",
+            "[longa]",
+            "[mongo]",
+            "[pongo]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            20,
+            5,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10003,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[event]",
+            "[align]",
+            "[songs]",
+            "[gongs]",
+            "[pongs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            28,
+            5,
+            4
+          ],
+          "reward": 1.0,
+          "seed": 10004,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[agamy]",
+            "[tapes]",
+            "[onlap]",
+            "[ponja]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10005,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[mayos]",
+            "[onkos]",
+            "[ponos]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10006,
+          "steps": 3,
+          "success": true
+        },
+        {
+          "actions": [
+            "[savvy]",
+            "[topoi]",
+            "[ponto]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            5
+          ],
+          "reward": 1.0,
+          "seed": 10007,
+          "steps": 3,
+          "success": true
+        },
+        {
+          "actions": [
+            "[stood]",
+            "[ology]",
+            "[moore]",
+            "[cooja]",
+            "[pooch]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            29,
+            10,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10008,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[tarps]",
+            "[piles]",
+            "[poons]",
+            "[poofs]",
+            "[poods]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            17,
+            3,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10009,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[acted]",
+            "[flows]",
+            "[poofs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            5
+          ],
+          "reward": 1.0,
+          "seed": 10010,
+          "steps": 3,
+          "success": true
+        },
+        {
+          "actions": [
+            "[right]",
+            "[weeps]",
+            "[onlap]",
+            "[pocky]",
+            "[poofy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            10,
+            5
+          ],
+          "reward": 1.0,
+          "seed": 10011,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[check]",
+            "[hardy]",
+            "[fifth]",
+            "[sophs]",
+            "[poohs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            13,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10012,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[legal]",
+            "[canty]",
+            "[avoid]",
+            "[psora]",
+            "[pooka]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            10,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10013,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[atwin]",
+            "[sipes]",
+            "[prior]",
+            "[pooli]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            29,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10014,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[overs]",
+            "[whoas]",
+            "[moons]",
+            "[looks]",
+            "[pools]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            30,
+            5
+          ],
+          "reward": 1.0,
+          "seed": 10015,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[sents]",
+            "[rigid]",
+            "[clock]",
+            "[moola]",
+            "[booly]",
+            "[pooly]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            15,
+            5,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10016,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[scans]",
+            "[nouns]",
+            "[downs]",
+            "[moons]",
+            "[poons]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            19,
+            15,
+            6
+          ],
+          "reward": 1.0,
+          "seed": 10017,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[safes]",
+            "[tints]",
+            "[looks]",
+            "[moods]",
+            "[woops]",
+            "[hoops]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            20,
+            8,
+            4
+          ],
+          "reward": 0.8,
+          "seed": 10018,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[later]",
+            "[wrong]",
+            "[rooms]",
+            "[poori]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            20,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10019,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[tempo]",
+            "[posts]",
+            "[point]",
+            "[poort]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            5,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10020,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[canal]",
+            "[drums]",
+            "[weigh]",
+            "[booty]",
+            "[footy]",
+            "[pooty]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            27,
+            3,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10021,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[socle]",
+            "[morae]",
+            "[dodge]",
+            "[youze]",
+            "[tonne]",
+            "[pokie]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            30,
+            18,
+            9
+          ],
+          "reward": 0.6,
+          "seed": 10022,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[asher]",
+            "[taint]",
+            "[bylaw]",
+            "[modal]",
+            "[vocal]",
+            "[joual]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            26,
+            7,
+            2
+          ],
+          "reward": 0.6,
+          "seed": 10023,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[sated]",
+            "[files]",
+            "[runes]",
+            "[boxes]",
+            "[comes]",
+            "[poses]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            25,
+            11
+          ],
+          "reward": 0.8,
+          "seed": 10024,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[lings]",
+            "[evite]",
+            "[moxie]",
+            "[pokie]",
+            "[popie]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            10,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10025,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[evase]",
+            "[atman]",
+            "[gauzy]",
+            "[koppa]",
+            "[coppa]",
+            "[poppa]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            2,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10026,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[scale]",
+            "[known]",
+            "[bothy]",
+            "[dodgy]",
+            "[moppy]",
+            "[poppy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            26,
+            10,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10027,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[weave]",
+            "[punts]",
+            "[psych]",
+            "[possy]",
+            "[popsy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            10,
+            4,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10028,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[weeds]",
+            "[attic]",
+            "[unary]",
+            "[foram]",
+            "[poral]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            10
+          ],
+          "reward": 1.0,
+          "seed": 10029,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[agone]",
+            "[forbs]",
+            "[world]",
+            "[toric]",
+            "[corvo]",
+            "[porch]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            23,
+            3,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10030,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[stylo]",
+            "[evoke]",
+            "[coder]",
+            "[rowed]",
+            "[pored]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            6,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10031,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[saved]",
+            "[infer]",
+            "[theer]",
+            "[corer]",
+            "[porer]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10032,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[tipsy]",
+            "[posed]",
+            "[pores]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            6
+          ],
+          "reward": 1.0,
+          "seed": 10033,
+          "steps": 3,
+          "success": true
+        },
+        {
+          "actions": [
+            "[avast]",
+            "[count]",
+            "[foret]",
+            "[toret]",
+            "[poret]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            23,
+            2,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10034,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[downs]",
+            "[forby]",
+            "[toric]",
+            "[morae]",
+            "[gorge]",
+            "[porge]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            3,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10035,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[silly]",
+            "[tramp]",
+            "[power]",
+            "[porno]",
+            "[porgo]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            3,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10036,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[slugs]",
+            "[manga]",
+            "[forge]",
+            "[corgi]",
+            "[borgh]",
+            "[porgo]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            4,
+            3,
+            2
+          ],
+          "reward": 0.8,
+          "seed": 10037,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[times]",
+            "[robin]",
+            "[loric]",
+            "[doria]",
+            "[poria]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            7,
+            2,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10038,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[shema]",
+            "[forbs]",
+            "[words]",
+            "[torts]",
+            "[loris]",
+            "[corns]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            26,
+            16,
+            11,
+            8
+          ],
+          "reward": 0.6,
+          "seed": 10039,
+          "steps": 6,
+          "success": false
+        }
+      ],
+      "success_rate": 0.825,
+      "successes": 33,
+      "wall_s": 33.496562787971925
+    },
+    "lm-trained-sample": {
+      "episodes": 40,
+      "mean_reward": 0.9349999999999999,
+      "mean_steps": 5.1,
+      "records": [
+        {
+          "actions": [
+            "[dozen]",
+            "[sones]",
+            "[nones]",
+            "[cones]",
+            "[bones]",
+            "[tones]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            7,
+            6,
+            5,
+            4
+          ],
+          "reward": 0.8,
+          "seed": 10000,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[yelps]",
+            "[typed]",
+            "[payer]",
+            "[poney]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            11,
+            6
+          ],
+          "reward": 1.0,
+          "seed": 10001,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[feint]",
+            "[annum]",
+            "[sands]",
+            "[longa]",
+            "[wonga]",
+            "[ponga]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            12,
+            3,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10002,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[oncin]",
+            "[downs]",
+            "[notre]",
+            "[longa]",
+            "[kongo]",
+            "[mongo]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            20,
+            5,
+            3
+          ],
+          "reward": 0.8,
+          "seed": 10003,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[event]",
+            "[sudan]",
+            "[norms]",
+            "[ponos]",
+            "[pongs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            15,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10004,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[agamy]",
+            "[canel]",
+            "[punta]",
+            "[pinda]",
+            "[ponja]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            3,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10005,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[mayos]",
+            "[onkos]",
+            "[ponos]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10006,
+          "steps": 3,
+          "success": true
+        },
+        {
+          "actions": [
+            "[savvy]",
+            "[topoi]",
+            "[ponto]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            5
+          ],
+          "reward": 1.0,
+          "seed": 10007,
+          "steps": 3,
+          "success": true
+        },
+        {
+          "actions": [
+            "[stood]",
+            "[ology]",
+            "[moore]",
+            "[pooch]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            29,
+            10
+          ],
+          "reward": 1.0,
+          "seed": 10008,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[amort]",
+            "[goofs]",
+            "[noons]",
+            "[books]",
+            "[pools]",
+            "[poohs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            28,
+            20,
+            12,
+            3
+          ],
+          "reward": 0.8,
+          "seed": 10009,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[unkin]",
+            "[sperm]",
+            "[typos]",
+            "[pools]",
+            "[poofs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            21,
+            4
+          ],
+          "reward": 1.0,
+          "seed": 10010,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[updos]",
+            "[pablo]",
+            "[prone]",
+            "[pooch]",
+            "[poofy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            3,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10011,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[check]",
+            "[hardy]",
+            "[smush]",
+            "[piths]",
+            "[poohs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            11,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10012,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[legal]",
+            "[canty]",
+            "[avoid]",
+            "[psora]",
+            "[pooka]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            10,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10013,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[atwin]",
+            "[sipes]",
+            "[prior]",
+            "[pooli]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            29,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10014,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[overs]",
+            "[whoas]",
+            "[moons]",
+            "[tools]",
+            "[pools]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            30,
+            4
+          ],
+          "reward": 1.0,
+          "seed": 10015,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[sents]",
+            "[rigid]",
+            "[clock]",
+            "[moola]",
+            "[booly]",
+            "[pooly]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            15,
+            5,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10016,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[hosts]",
+            "[forms]",
+            "[longs]",
+            "[downs]",
+            "[joins]",
+            "[poons]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            18,
+            9,
+            7
+          ],
+          "reward": 1.0,
+          "seed": 10017,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[safes]",
+            "[tints]",
+            "[purrs]",
+            "[pools]",
+            "[poohs]",
+            "[poods]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            14,
+            3,
+            2
+          ],
+          "reward": 0.8,
+          "seed": 10018,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[later]",
+            "[wrong]",
+            "[roomy]",
+            "[doors]",
+            "[poori]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            20,
+            4,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10019,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[tempo]",
+            "[posts]",
+            "[point]",
+            "[poort]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            5,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10020,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[aslop]",
+            "[toped]",
+            "[ponto]",
+            "[pooty]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            13,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10021,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[slide]",
+            "[agone]",
+            "[evoke]",
+            "[prove]",
+            "[poove]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            5,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10022,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[asher]",
+            "[taint]",
+            "[molla]",
+            "[codal]",
+            "[joual]",
+            "[bozal]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            13,
+            3,
+            2
+          ],
+          "reward": 0.6,
+          "seed": 10023,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[longs]",
+            "[softs]",
+            "[comes]",
+            "[boxes]",
+            "[pores]",
+            "[pokes]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            22,
+            17,
+            2
+          ],
+          "reward": 0.8,
+          "seed": 10024,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[lings]",
+            "[evite]",
+            "[moxie]",
+            "[yowie]",
+            "[pokie]",
+            "[popie]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            10,
+            6,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10025,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[evase]",
+            "[tanto]",
+            "[allow]",
+            "[foray]",
+            "[podia]",
+            "[poppa]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            27,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10026,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[scale]",
+            "[known]",
+            "[bothy]",
+            "[moudy]",
+            "[gorry]",
+            "[pozzy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            26,
+            8,
+            3
+          ],
+          "reward": 0.6,
+          "seed": 10027,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[weave]",
+            "[punts]",
+            "[psych]",
+            "[possy]",
+            "[popsy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            10,
+            4,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10028,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[weeds]",
+            "[attic]",
+            "[unary]",
+            "[foram]",
+            "[poral]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            10
+          ],
+          "reward": 1.0,
+          "seed": 10029,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[agone]",
+            "[forbs]",
+            "[world]",
+            "[toric]",
+            "[corvo]",
+            "[porch]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            23,
+            3,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10030,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[stylo]",
+            "[evoke]",
+            "[coder]",
+            "[rowed]",
+            "[pored]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            6,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10031,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[saved]",
+            "[infer]",
+            "[theer]",
+            "[lower]",
+            "[porer]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            21
+          ],
+          "reward": 1.0,
+          "seed": 10032,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[stray]",
+            "[words]",
+            "[forks]",
+            "[pores]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            25,
+            19
+          ],
+          "reward": 1.0,
+          "seed": 10033,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[avast]",
+            "[count]",
+            "[foret]",
+            "[poret]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            23,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10034,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[downs]",
+            "[forby]",
+            "[toric]",
+            "[morae]",
+            "[gorge]",
+            "[porge]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            3,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10035,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[finds]",
+            "[heavy]",
+            "[group]",
+            "[porgo]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10036,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[slugs]",
+            "[manga]",
+            "[forgo]",
+            "[gorge]",
+            "[corgi]",
+            "[borgh]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            6,
+            3,
+            2
+          ],
+          "reward": 0.6,
+          "seed": 10037,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[times]",
+            "[robin]",
+            "[loric]",
+            "[doria]",
+            "[poria]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            7,
+            2,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10038,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[shema]",
+            "[forbs]",
+            "[words]",
+            "[torts]",
+            "[loris]",
+            "[corns]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            26,
+            16,
+            11,
+            8
+          ],
+          "reward": 0.6,
+          "seed": 10039,
+          "steps": 6,
+          "success": false
+        }
+      ],
+      "success_rate": 0.775,
+      "successes": 31,
+      "wall_s": 33.83812989998842
+    },
+    "random": {
+      "episodes": 40,
+      "mean_reward": 0.165,
+      "mean_steps": 6.0,
+      "records": [
+        {
+          "actions": [
+            "[insol]",
+            "[kileh]",
+            "[quote]",
+            "[zeist]",
+            "[punks]",
+            "[conky]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            13,
+            11,
+            10,
+            1
+          ],
+          "reward": 0.4,
+          "seed": 10000,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[ocque]",
+            "[brain]",
+            "[boyla]",
+            "[druid]",
+            "[gruss]",
+            "[iliad]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            7,
+            6,
+            4
+          ],
+          "reward": 0.0,
+          "seed": 10001,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[gulae]",
+            "[spiff]",
+            "[heeds]",
+            "[sharn]",
+            "[prase]",
+            "[miaou]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            6,
+            5,
+            2,
+            2
+          ],
+          "reward": 0.2,
+          "seed": 10002,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[indef]",
+            "[prime]",
+            "[masse]",
+            "[sikar]",
+            "[numud]",
+            "[keten]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            19,
+            15,
+            8
+          ],
+          "reward": 0.1,
+          "seed": 10003,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[mimzy]",
+            "[tonus]",
+            "[banal]",
+            "[leuds]",
+            "[ferny]",
+            "[atilt]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            27,
+            19,
+            10,
+            9
+          ],
+          "reward": 0.0,
+          "seed": 10004,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[vuggs]",
+            "[garau]",
+            "[slurb]",
+            "[etuve]",
+            "[greet]",
+            "[bandy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            32,
+            32
+          ],
+          "reward": 0.3,
+          "seed": 10005,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[gunny]",
+            "[hatch]",
+            "[spats]",
+            "[golly]",
+            "[filla]",
+            "[louch]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            8,
+            3,
+            3
+          ],
+          "reward": 0.2,
+          "seed": 10006,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[abmho]",
+            "[cloky]",
+            "[tiddy]",
+            "[muley]",
+            "[yobbo]",
+            "[adust]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            18,
+            4,
+            4
+          ],
+          "reward": 0.1,
+          "seed": 10007,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[knelt]",
+            "[widow]",
+            "[renes]",
+            "[lenin]",
+            "[ogams]",
+            "[walsh]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            32,
+            32
+          ],
+          "reward": 0.2,
+          "seed": 10008,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[poria]",
+            "[metro]",
+            "[cauls]",
+            "[toust]",
+            "[smeer]",
+            "[relic]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            9,
+            9,
+            9
+          ],
+          "reward": 0.0,
+          "seed": 10009,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[mixup]",
+            "[amowt]",
+            "[spiks]",
+            "[dorse]",
+            "[celts]",
+            "[larid]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            26,
+            9,
+            6
+          ],
+          "reward": 0.0,
+          "seed": 10010,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[fiscs]",
+            "[never]",
+            "[bilks]",
+            "[footy]",
+            "[turbo]",
+            "[runsy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            28,
+            4,
+            4
+          ],
+          "reward": 0.2,
+          "seed": 10011,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[slums]",
+            "[kafiz]",
+            "[byous]",
+            "[irone]",
+            "[buras]",
+            "[kloof]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            18,
+            18
+          ],
+          "reward": 0.3,
+          "seed": 10012,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[whomp]",
+            "[feral]",
+            "[debat]",
+            "[salma]",
+            "[manse]",
+            "[psoas]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            7,
+            2,
+            1,
+            1
+          ],
+          "reward": 0.5,
+          "seed": 10013,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[rheen]",
+            "[child]",
+            "[cushy]",
+            "[yesso]",
+            "[deled]",
+            "[creak]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            25,
+            6,
+            6
+          ],
+          "reward": 0.0,
+          "seed": 10014,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[waned]",
+            "[scaup]",
+            "[givin]",
+            "[wharl]",
+            "[ectad]",
+            "[campy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            10,
+            9
+          ],
+          "reward": 0.1,
+          "seed": 10015,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[donum]",
+            "[gauzy]",
+            "[curbs]",
+            "[briss]",
+            "[herms]",
+            "[gamps]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            32,
+            32
+          ],
+          "reward": 0.1,
+          "seed": 10016,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[pules]",
+            "[numps]",
+            "[shyly]",
+            "[briss]",
+            "[glebe]",
+            "[puton]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            18,
+            16,
+            7,
+            5
+          ],
+          "reward": 0.4,
+          "seed": 10017,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[swigs]",
+            "[caupo]",
+            "[gotha]",
+            "[rober]",
+            "[euros]",
+            "[motor]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            14,
+            5,
+            3,
+            3
+          ],
+          "reward": 0.3,
+          "seed": 10018,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[tambo]",
+            "[atune]",
+            "[cited]",
+            "[whole]",
+            "[jhool]",
+            "[didal]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            2,
+            1
+          ],
+          "reward": 0.1,
+          "seed": 10019,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[tawsy]",
+            "[wrath]",
+            "[widdy]",
+            "[vardy]",
+            "[pipit]",
+            "[avgas]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            32,
+            2
+          ],
+          "reward": 0.0,
+          "seed": 10020,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[unkin]",
+            "[krait]",
+            "[morro]",
+            "[volta]",
+            "[ranks]",
+            "[beaks]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            27,
+            18,
+            10
+          ],
+          "reward": 0.0,
+          "seed": 10021,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[lowth]",
+            "[bleat]",
+            "[lupus]",
+            "[miami]",
+            "[ovate]",
+            "[belap]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            18,
+            14,
+            1
+          ],
+          "reward": 0.2,
+          "seed": 10022,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[cades]",
+            "[peace]",
+            "[danny]",
+            "[feyer]",
+            "[cobbs]",
+            "[elses]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            20,
+            5
+          ],
+          "reward": 0.1,
+          "seed": 10023,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[jurel]",
+            "[piman]",
+            "[jawed]",
+            "[rands]",
+            "[kooka]",
+            "[bumbo]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            17,
+            10,
+            7,
+            3
+          ],
+          "reward": 0.1,
+          "seed": 10024,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[pared]",
+            "[moxas]",
+            "[pegma]",
+            "[river]",
+            "[miens]",
+            "[karch]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            9,
+            8,
+            2,
+            2
+          ],
+          "reward": 0.0,
+          "seed": 10025,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[waapa]",
+            "[whiff]",
+            "[sobby]",
+            "[sixes]",
+            "[nuddy]",
+            "[filla]"
+          ],
+          "candidate_counts": [
+            32,
+            17,
+            12,
+            4,
+            4,
+            4
+          ],
+          "reward": 0.2,
+          "seed": 10026,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[penni]",
+            "[chaps]",
+            "[talus]",
+            "[zappy]",
+            "[seven]",
+            "[tenor]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            5,
+            2,
+            1,
+            1
+          ],
+          "reward": 0.1,
+          "seed": 10027,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[coing]",
+            "[davit]",
+            "[april]",
+            "[tozer]",
+            "[nosed]",
+            "[faulx]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            32,
+            20
+          ],
+          "reward": 0.0,
+          "seed": 10028,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[lilty]",
+            "[ootid]",
+            "[fraud]",
+            "[usine]",
+            "[resaw]",
+            "[shawn]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            11,
+            9,
+            6
+          ],
+          "reward": 0.1,
+          "seed": 10029,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[shant]",
+            "[ships]",
+            "[besra]",
+            "[panic]",
+            "[puris]",
+            "[yacks]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            19,
+            1,
+            1,
+            1
+          ],
+          "reward": 0.1,
+          "seed": 10030,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[meant]",
+            "[virls]",
+            "[cubeb]",
+            "[longa]",
+            "[whata]",
+            "[laced]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            14,
+            6,
+            6
+          ],
+          "reward": 0.4,
+          "seed": 10031,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[hulch]",
+            "[dukhn]",
+            "[sarip]",
+            "[glean]",
+            "[yampa]",
+            "[adays]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            13,
+            7,
+            3
+          ],
+          "reward": 0.0,
+          "seed": 10032,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[lenin]",
+            "[asyle]",
+            "[swizz]",
+            "[soken]",
+            "[pyrex]",
+            "[groin]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            32,
+            1
+          ],
+          "reward": 0.2,
+          "seed": 10033,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[warty]",
+            "[monax]",
+            "[weans]",
+            "[enzym]",
+            "[kinos]",
+            "[kappe]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            19,
+            5,
+            5,
+            5
+          ],
+          "reward": 0.2,
+          "seed": 10034,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[sipes]",
+            "[glyph]",
+            "[dongs]",
+            "[notan]",
+            "[vivos]",
+            "[gurus]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            11,
+            2,
+            2,
+            2
+          ],
+          "reward": 0.3,
+          "seed": 10035,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[evene]",
+            "[sowel]",
+            "[siege]",
+            "[parch]",
+            "[bungo]",
+            "[botch]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            25,
+            2,
+            1
+          ],
+          "reward": 0.2,
+          "seed": 10036,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[rhine]",
+            "[hausa]",
+            "[surah]",
+            "[smoot]",
+            "[corse]",
+            "[honan]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            21,
+            15
+          ],
+          "reward": 0.2,
+          "seed": 10037,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[notan]",
+            "[bovey]",
+            "[wuzzy]",
+            "[orate]",
+            "[reply]",
+            "[oorie]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            18,
+            1
+          ],
+          "reward": 0.6,
+          "seed": 10038,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[rotes]",
+            "[steal]",
+            "[lexia]",
+            "[zebub]",
+            "[warse]",
+            "[rummy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            24,
+            19
+          ],
+          "reward": 0.1,
+          "seed": 10039,
+          "steps": 6,
+          "success": false
+        }
+      ],
+      "success_rate": 0.0,
+      "successes": 0,
+      "wall_s": 12.801835274964105
+    },
+    "uniform-candidates": {
+      "episodes": 40,
+      "mean_reward": 0.9099999999999999,
+      "mean_steps": 5.2,
+      "records": [
+        {
+          "actions": [
+            "[hache]",
+            "[filet]",
+            "[boser]",
+            "[jones]",
+            "[sones]",
+            "[nones]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            31,
+            4,
+            3
+          ],
+          "reward": 0.8,
+          "seed": 10000,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[zorro]",
+            "[bovey]",
+            "[fogey]",
+            "[poley]",
+            "[posey]",
+            "[poney]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            29,
+            25,
+            4,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10001,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[burrs]",
+            "[chimp]",
+            "[poled]",
+            "[poofy]",
+            "[ponja]",
+            "[ponga]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            16,
+            4,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10002,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[amylo]",
+            "[pinto]",
+            "[pengo]",
+            "[pongo]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            2,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10003,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[bunce]",
+            "[pynot]",
+            "[pongo]",
+            "[ponga]",
+            "[pongs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            7,
+            2,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10004,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[quale]",
+            "[barbs]",
+            "[addax]",
+            "[oncia]",
+            "[gonna]",
+            "[ponja]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            13,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10005,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[dhava]",
+            "[offic]",
+            "[golem]",
+            "[joust]",
+            "[soppy]",
+            "[poons]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            32,
+            5
+          ],
+          "reward": 0.8,
+          "seed": 10006,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[rosed]",
+            "[nobut]",
+            "[tonal]",
+            "[ponto]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            20,
+            4
+          ],
+          "reward": 1.0,
+          "seed": 10007,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[ruled]",
+            "[bahan]",
+            "[qophs]",
+            "[oomph]",
+            "[pooch]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            3,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10008,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[sirra]",
+            "[elops]",
+            "[poods]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            7
+          ],
+          "reward": 1.0,
+          "seed": 10009,
+          "steps": 3,
+          "success": true
+        },
+        {
+          "actions": [
+            "[wites]",
+            "[arras]",
+            "[hymns]",
+            "[kosos]",
+            "[pools]",
+            "[poops]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            16,
+            3
+          ],
+          "reward": 0.8,
+          "seed": 10010,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[right]",
+            "[mosey]",
+            "[yolky]",
+            "[pobby]",
+            "[poddy]",
+            "[poucy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            7,
+            5
+          ],
+          "reward": 0.6,
+          "seed": 10011,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[idyls]",
+            "[pacts]",
+            "[pours]",
+            "[pomes]",
+            "[poons]",
+            "[poofs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            14,
+            6,
+            3
+          ],
+          "reward": 0.8,
+          "seed": 10012,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[larch]",
+            "[oxman]",
+            "[kokia]",
+            "[vodka]",
+            "[pooka]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            2,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10013,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[olpes]",
+            "[polly]",
+            "[pooli]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            4
+          ],
+          "reward": 1.0,
+          "seed": 10014,
+          "steps": 3,
+          "success": true
+        },
+        {
+          "actions": [
+            "[potsy]",
+            "[porns]",
+            "[poohs]",
+            "[poods]",
+            "[poops]",
+            "[pools]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            20,
+            4,
+            3,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10015,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[hooty]",
+            "[woofy]",
+            "[roomy]",
+            "[booky]",
+            "[gooey]",
+            "[loopy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            30,
+            16,
+            8
+          ],
+          "reward": 0.8,
+          "seed": 10016,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[hosts]",
+            "[loons]",
+            "[zoons]",
+            "[moons]",
+            "[woons]",
+            "[poons]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            8,
+            7,
+            6,
+            5
+          ],
+          "reward": 1.0,
+          "seed": 10017,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[fotui]",
+            "[posey]",
+            "[pools]",
+            "[poods]",
+            "[poons]",
+            "[poohs]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            16,
+            4,
+            3,
+            2
+          ],
+          "reward": 0.8,
+          "seed": 10018,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[tlaco]",
+            "[wrong]",
+            "[moory]",
+            "[doors]",
+            "[poori]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            4,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10019,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[locum]",
+            "[rooti]",
+            "[poort]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            2
+          ],
+          "reward": 1.0,
+          "seed": 10020,
+          "steps": 3,
+          "success": true
+        },
+        {
+          "actions": [
+            "[gamey]",
+            "[ditsy]",
+            "[turvy]",
+            "[zooty]",
+            "[pooty]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            11,
+            5
+          ],
+          "reward": 1.0,
+          "seed": 10021,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[haems]",
+            "[effet]",
+            "[prude]",
+            "[popie]",
+            "[ponce]",
+            "[polje]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            11,
+            4,
+            3
+          ],
+          "reward": 0.6,
+          "seed": 10022,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[coign]",
+            "[dolus]",
+            "[forel]",
+            "[votal]",
+            "[popal]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            8,
+            4
+          ],
+          "reward": 1.0,
+          "seed": 10023,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[sesti]",
+            "[unuse]",
+            "[kames]",
+            "[coles]",
+            "[ropes]",
+            "[hopes]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            22,
+            3
+          ],
+          "reward": 0.8,
+          "seed": 10024,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[pflag]",
+            "[piths]",
+            "[privy]",
+            "[popie]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            7
+          ],
+          "reward": 1.0,
+          "seed": 10025,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[cuter]",
+            "[babis]",
+            "[glazy]",
+            "[aknow]",
+            "[hodad]",
+            "[pompa]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            6,
+            3
+          ],
+          "reward": 0.8,
+          "seed": 10026,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[mammy]",
+            "[horry]",
+            "[bogey]",
+            "[noily]",
+            "[toddy]",
+            "[possy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            32,
+            32,
+            22
+          ],
+          "reward": 0.6,
+          "seed": 10027,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[lowly]",
+            "[boggy]",
+            "[pouty]",
+            "[pondy]",
+            "[pozzy]",
+            "[pommy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            17,
+            13,
+            12
+          ],
+          "reward": 0.6,
+          "seed": 10028,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[singe]",
+            "[chaya]",
+            "[jalur]",
+            "[loral]",
+            "[moral]",
+            "[roral]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            9,
+            5,
+            4
+          ],
+          "reward": 0.8,
+          "seed": 10029,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[wisps]",
+            "[polar]",
+            "[porry]",
+            "[pored]",
+            "[porno]",
+            "[porch]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            14,
+            8,
+            4,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10030,
+          "steps": 6,
+          "success": true
+        },
+        {
+          "actions": [
+            "[rasps]",
+            "[porry]",
+            "[porte]",
+            "[pored]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            8,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10031,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[bable]",
+            "[denom]",
+            "[copei]",
+            "[posey]",
+            "[porer]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            13,
+            5
+          ],
+          "reward": 1.0,
+          "seed": 10032,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[label]",
+            "[unkey]",
+            "[spier]",
+            "[peres]",
+            "[pores]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            4,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10033,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[bagge]",
+            "[stewy]",
+            "[letup]",
+            "[poret]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            8
+          ],
+          "reward": 1.0,
+          "seed": 10034,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[stash]",
+            "[noily]",
+            "[rober]",
+            "[force]",
+            "[dorje]",
+            "[gorge]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            11,
+            3,
+            2
+          ],
+          "reward": 0.8,
+          "seed": 10035,
+          "steps": 6,
+          "success": false
+        },
+        {
+          "actions": [
+            "[palas]",
+            "[pyxie]",
+            "[proto]",
+            "[porno]",
+            "[porgo]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            2,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10036,
+          "steps": 5,
+          "success": true
+        },
+        {
+          "actions": [
+            "[lapis]",
+            "[preux]",
+            "[porgo]",
+            "[porgy]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            10,
+            1
+          ],
+          "reward": 1.0,
+          "seed": 10037,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[villa]",
+            "[baria]",
+            "[feria]",
+            "[poria]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            10,
+            8
+          ],
+          "reward": 1.0,
+          "seed": 10038,
+          "steps": 4,
+          "success": true
+        },
+        {
+          "actions": [
+            "[cetyl]",
+            "[round]",
+            "[zokor]",
+            "[korma]",
+            "[gorki]",
+            "[porks]"
+          ],
+          "candidate_counts": [
+            32,
+            32,
+            32,
+            7,
+            4,
+            3
+          ],
+          "reward": 1.0,
+          "seed": 10039,
+          "steps": 6,
+          "success": true
+        }
+      ],
+      "success_rate": 0.65,
+      "successes": 26,
+      "wall_s": 21.08285251399502
+    }
+  },
+  "temperature": 1.0,
+  "train_episodes": 32
+}
