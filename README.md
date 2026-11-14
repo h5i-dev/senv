@@ -161,9 +161,9 @@ Two examples are verified this way, and CI runs `h5i app extract --check` and `h
 | Example | What is proved | Mutants caught |
 |---|---|---|
 | [`arith`](examples/arith/proofs/Theorems.lean) | The calculator computes the integer operation inside ±10^9. A valid problem's value is [`Spec.value`](examples/arith/proofs/Spec.lean), with no overflow. An answer pays 1 if and only if it equals that value, and nothing else pays. Every episode ends within 8 steps, a finished one refuses steps, and no step changes the problem. The kernel never panics. | 9 of 9, from "any answer wins" to "the task can be swapped" |
-| [`wordle`](examples/wordle/proofs/Theorems.lean) | Every reward is between 0 and 1000, and a losing guess pays less than 1000. Every move ends the game or uses up one of twelve moves. A finished game refuses moves, and no move changes the secret. The kernel never panics. | 5 of 5 |
+| [`wordle`](examples/wordle/proofs/Theorems.lean) | `mark` is the TextArena marking rule, stated with letter counts in [`Spec.mark`](examples/wordle/proofs/Spec.lean). A scored guess pays 1000 if and only if it is the secret, a losing guess pays less than 1000, and every reward is between 0 and 1000. A repeated guess is never scored. Every move ends the game or uses up one of twelve moves. A finished game refuses moves, and no move changes the secret. The kernel never panics. | 10 of 10, including a yellow that reuses a letter and a green that does not consume one |
 
-A proof covers the kernel only. Parsing the agent's text, choosing the task from the seed, and rendering observations are trusted shell code, checked by tests. For Wordle, the marking rule itself (`mark` equals the TextArena rule) is not proved yet; the Rust tests check it.
+A proof covers the kernel only. Parsing the agent's text, choosing the task from the seed, and rendering observations are trusted shell code, checked by tests.
 
 ## 6. Examples
 
