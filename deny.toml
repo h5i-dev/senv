@@ -1,7 +1,7 @@
 # Supply-chain gates for senv.
 #
-# senv links h5i-app from git. The graph is gated on advisories, licenses, and
-# which git hosts a dependency may come from. Run `cargo deny check`. CI runs
+# senv links h5i-app from crates.io. The graph is gated on advisories, licenses,
+# and which registries and git hosts a dependency may come from. Run `cargo deny check`. CI runs
 # the same command.
 
 [advisories]
@@ -33,5 +33,4 @@ wildcards = "allow"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-# h5i-app is not published to crates.io. Cargo.toml pins one commit.
-allow-git = ["https://github.com/h5i-dev/h5i"]
+allow-git = []

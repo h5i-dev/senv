@@ -4,7 +4,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-use senv::{AppState, EnvKind, H5I_GIT_REVISION, OPENENV_GIT_REVISION, ServerConfig, arith, serve};
+use senv::{AppState, EnvKind, H5I_APP_VERSION, OPENENV_GIT_REVISION, ServerConfig, arith, serve};
 
 #[derive(Parser)]
 #[command(
@@ -132,7 +132,7 @@ fn run_serve(
         tracing::info!(
             %local,
             openenv = OPENENV_GIT_REVISION,
-            h5i = H5I_GIT_REVISION,
+            h5i_app = H5I_APP_VERSION,
             env = kind.as_str(),
             arith_ops,
             max_sessions,

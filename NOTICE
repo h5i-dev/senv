@@ -40,6 +40,6 @@ Wordle environment and from OpenEnv's TextArenaEnv client. senv does not copy
 that source. The bundled word list is not TextArena's list and not the New
 York Times word list.
 
-The session kernel executes on h5i-app from https://github.com/h5i-dev/h5i
-at commit 5e0f8a929c57bb12a321090d98a14b3a2714b849, which is licensed under
+The session kernel executes on h5i-app 0.5.5 (https://crates.io/crates/h5i-app,
+source at https://github.com/h5i-dev/h5i), which is licensed under
 the Apache License, Version 2.0.

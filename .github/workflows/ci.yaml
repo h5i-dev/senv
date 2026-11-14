@@ -8,8 +8,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
   # Keep these two revisions aligned with src/lib.rs. The Echo client imported
-  # by scripts/echo_compat.sh is the OpenEnv tree at the first one. The h5i
-  # crate is pinned in Cargo.toml and Cargo.lock.
+  # by scripts/echo_compat.sh is the OpenEnv tree at the first one. The h5i-app
+  # version is pinned in Cargo.toml and Cargo.lock.
   OPENENV_REVISION: 58d0344011fe961342706c90288f7e842b15b1c9
 
 jobs:

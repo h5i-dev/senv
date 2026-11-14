@@ -88,10 +88,10 @@ fragment Aeneas extracts today. No Lean proof is claimed.
 | Component | Revision |
 |---|---|
 | OpenEnv wire and Echo client | `58d0344011fe961342706c90288f7e842b15b1c9` |
-| h5i-app (`Kernel`, `MemoryEngine`, `H5iApp`) | `5e0f8a929c57bb12a321090d98a14b3a2714b849` |
+| h5i-app (`Kernel`, `MemoryEngine`, `H5iApp`) | crates.io `0.5.5` |
 
-Both constants live in `src/lib.rs`. The h5i revision is also the `rev` in
-`Cargo.toml`. CI checks out that OpenEnv commit before running
+Both constants live in `src/lib.rs`. The h5i-app version is also the exact
+version requirement in `Cargo.toml`. CI checks out that OpenEnv commit before running
 `scripts/echo_compat.sh`.
 
 ## Out of scope for this server

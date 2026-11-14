@@ -12,10 +12,10 @@ name = "senv"
 path = "src/main.rs"
 
 [dependencies]
-# Pinned to the h5i commit whose Kernel, MemoryEngine and H5iApp APIs this
-# server is written against. The `http` feature is the Axum shell; Echo
-# sessions run on MemoryEngine, not on PostgreSQL.
-h5i-app = { git = "https://github.com/h5i-dev/h5i", rev = "5e0f8a929c57bb12a321090d98a14b3a2714b849", features = ["http"] }
+# The crates.io release whose Kernel, MemoryEngine and H5iApp APIs this server
+# is written against. Keep H5I_APP_VERSION in src/lib.rs in step. The `http`
+# feature is the Axum shell; sessions run on MemoryEngine, not on PostgreSQL.
+h5i-app = { version = "=0.5.5", features = ["http"] }
 
 axum = { version = "0.8", features = ["json", "ws", "query"] }
 clap = { version = "4", features = ["derive", "env", "wrap_help"] }

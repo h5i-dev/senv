@@ -24,7 +24,7 @@ pub mod wordle_env;
 /// derived from. The Python compatibility test imports that tree unmodified.
 pub const OPENENV_GIT_REVISION: &str = "58d0344011fe961342706c90288f7e842b15b1c9";
 
-/// `h5i-dev/h5i` commit that provides `Kernel`, `MemoryEngine` and `H5iApp`.
-pub const H5I_GIT_REVISION: &str = "5e0f8a929c57bb12a321090d98a14b3a2714b849";
+/// crates.io release of `h5i-app` that provides `Kernel`, `MemoryEngine` and `H5iApp`.
+pub const H5I_APP_VERSION: &str = "0.5.5";
 
 pub use server::{AppState, EnvKind, ServerConfig, serve};

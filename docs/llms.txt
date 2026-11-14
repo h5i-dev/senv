@@ -13,7 +13,7 @@
 ## Pins
 
 - OpenEnv: `58d0344011fe961342706c90288f7e842b15b1c9` (meta-pytorch/OpenEnv).
-- h5i-app: `5e0f8a929c57bb12a321090d98a14b3a2714b849`.
+- h5i-app: `0.5.5` (crates.io).
 
 ## Behavior that callers hit
 
