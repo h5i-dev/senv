@@ -214,7 +214,7 @@ thousandths. The shell writes a JSON float.
 This is not the TextArena package. Differences that matter:
 
 - The answer list and the accepted-guess list are the same file,
-  `examples/wordle/kernel/words.txt`: `/usr/share/dict/words` filtered to `^[a-z]{5}$`.
+  `examples/wordle/server/words.txt`: `/usr/share/dict/words` filtered to `^[a-z]{5}$`.
   That is not NLTK `en-basic` nouns and not the New York Times list.
 - A seed picks `words[(seed as u64) % len]`. The same seed is stable in senv.
   It is not CPython's Mersenne Twister, and it will not match TextArena's
@@ -251,7 +251,8 @@ seed, the expression comes from FNV-1a of the episode id. `step` data is
 
 - A line whose first tokens are `calc <integer> <op> <integer>` is
   format-valid. Trailing tokens are ignored, so `calc 10 * 2 - 5` is the
-  single operation `10 * 2`. The reply is `Result: <n>` or `Result: overflow`.
+  single operation `10 * 2`. The reply is `Result: <n>`, or `Result: overflow`
+  when an operand is outside ±10^9.
   Reward is 0. The episode continues until the step cap.
 - A line whose first tokens are `answer <integer>` is format-valid and ends
   the episode. Trailing words are ignored. The correct value scores reward 1

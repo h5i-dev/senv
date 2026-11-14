@@ -91,19 +91,27 @@ and what the snapshot hides. It cannot talk about two WebSockets, the mutex
 around the session table, the rendering in `observe`, or the process that
 hosts them. Those are shell properties, covered by tests.
 
-The examples show the range:
+The kernel of `examples/arith` and of `examples/wordle` is an h5i app project:
+`h5i-app.toml`, `proofs/Spec.lean` for what the environment means,
+`proofs/Theorems.lean` for proofs about `proofs/generated/`, which
+`h5i app extract` writes from `kernel/` with Charon and Aeneas. CI runs
+`h5i app extract --check` (the committed Lean is what the Rust extracts to)
+and `h5i app check` (no `sorry`, `native_decide` or `axiom`; standard axioms
+only; the named theorems and the panic-free and read-only obligations exist).
+`h5i app mutate` applies the bugs listed in `h5i-app.toml` and fails if a proof
+survives one. The README lists what each example proves.
 
-- `examples/wordle/proofs` is a Lean 4 model of the Wordle kernel (marking,
-  rewards, the invalid-move allowance) with no `sorry`. It is hand-written and
-  matched to the Rust by `CORRESPONDENCE.md`, not extracted by Aeneas: the
-  kernel uses `String` and iterators, which are outside the subset Aeneas
-  translates today.
-- The Echo and Arith kernels have Rust tests but no Lean model.
+The kernels stay inside the subset Aeneas extracts: fixed arrays, `while`
+loops over indices, no `String`, closures, iterators or `?`. Two Aeneas
+`b86120d` limits shaped the Wordle kernel: a nested loop with an `&&` loop
+condition is left unimplemented, and assigning a fieldless enum constant to an
+array element inside a loop extracts as an update with `()`. The kernel uses
+single-loop helpers and builds those values in small functions. The wrapper
+`Kernel` in each server crate, which adds the episode id and the transcript
+around the extracted kernel, is trusted code.
 
-Writing a kernel in the Aeneas subset (no `String`, `while` loops over
-indices, no `?`) and running `h5i app extract` / `h5i app prove` is the path
-to a machine-checked correspondence. h5i's `examples/app/calculator` shows the
-layout.
+The Echo kernel carries `serde_json::Value` for tool payloads and has Rust
+tests but no Lean proofs.
 
 ## Pins
 

@@ -145,21 +145,35 @@ assert_eq!(obs.reward, senv::Reward::Milli(1000));
 
 ## 5. Prove properties
 
-The kernel crate is where proofs apply. With h5i's CLI, `h5i app extract` translates a kernel written in the Aeneas subset (no `String`, `while` loops over indices) to Lean, and `h5i app prove` checks the theorems you state about it. h5i's [calculator tutorial](https://github.com/h5i-dev/h5i/blob/main/examples/app/calculator/TUTORIAL.md) walks through the layout.
+An environment's kernel is an h5i app, so h5i's toolchain proves things about it. Start the project with h5i and add the senv server next to it:
 
-Useful properties for an RL environment are about the reward and the observation: the reward is 1 only for a correct answer, an episode ends within N steps, the hidden answer never appears in what the agent can see. A proof covers the kernel only. Socket handling, session isolation, and the rendering in `observe` are trusted code, checked by senv's tests.
+```bash
+h5i app new my-env            # kernel/, proofs/, h5i-app.toml
+cargo new --lib my-env/server # implements senv::Environment and h5i_app::Kernel
+h5i app prove my-env          # extract kernel/ to Lean, build and gate the proofs
+h5i app mutate my-env         # every bug listed in h5i-app.toml must break a proof
+```
 
-[`examples/wordle/proofs`](examples/wordle/proofs) is a Lean 4 model of the Wordle kernel (marking, rewards, the invalid-move allowance) with no `sorry`. It is hand-written and matched to the Rust in [`CORRESPONDENCE.md`](examples/wordle/proofs/CORRESPONDENCE.md), because that kernel uses `String` and is outside the subset Aeneas extracts today.
+Write the kernel in the subset of Rust that Charon and Aeneas translate (no `String`, no closures or iterators, `while` loops over indices). `proofs/Spec.lean` states what the environment means in plain math; `proofs/Theorems.lean` proves the extracted kernel does that. `h5i app check` rejects `sorry`, `native_decide` and `axiom`, and accepts only theorems that rest on Lean's standard axioms. The `[[mutant]]` entries in `h5i-app.toml` are bugs an agent could exploit; `h5i app mutate` applies each one and fails if no proof breaks.
+
+Two examples are verified this way, and CI runs `h5i app extract --check` and `h5i app check` on both:
+
+| Example | What is proved | Mutants caught |
+|---|---|---|
+| [`arith`](examples/arith/proofs/Theorems.lean) | The calculator computes the integer operation inside ±10^9. A valid problem's value is [`Spec.value`](examples/arith/proofs/Spec.lean), with no overflow. An answer pays 1 if and only if it equals that value, and nothing else pays. Every episode ends within 8 steps, a finished one refuses steps, and no step changes the problem. The kernel never panics. | 9 of 9, from "any answer wins" to "the task can be swapped" |
+| [`wordle`](examples/wordle/proofs/Theorems.lean) | Every reward is between 0 and 1000, and a losing guess pays less than 1000. Every move ends the game or uses up one of twelve moves. A finished game refuses moves, and no move changes the secret. The kernel never panics. | 5 of 5 |
+
+A proof covers the kernel only. Parsing the agent's text, choosing the task from the seed, and rendering observations are trusted shell code, checked by tests. For Wordle, the marking rule itself (`mark` equals the TextArena rule) is not proved yet; the Rust tests check it.
 
 ## 6. Examples
 
 | Example | Run | Client | What it is |
 |---|---|---|---|
 | [`echo`](examples/echo) | `cargo run -p echo-env` | `EchoEnv` | The OpenEnv Echo MCP environment: `echo_message` and `echo_with_length` tools |
-| [`wordle`](examples/wordle) | `cargo run -p wordle-env` | `TextArenaEnv` | Wordle-v0: 5 letters, 6 guesses, seeded secrets from a 15,034-word list, with a Lean model of the kernel |
+| [`wordle`](examples/wordle) | `cargo run -p wordle-env` | `TextArenaEnv` | Wordle-v0: 5 letters, 6 guesses, seeded secrets from a 15,034-word list |
 | [`arith`](examples/arith) | `cargo run -p arith-env -- --ops 3` | `TextArenaEnv` | Arith-v0, a multi-turn tool-use task. The agent can send `calc <int> <op> <int>` to a calculator and must finish with `answer <int>`. The value is never in the observation or in `state()` |
 
-Each example is a `kernel` crate with no web dependencies and a `server` crate that implements `Environment`, plus integration tests that run the server over real WebSockets.
+Each example has a `kernel` crate with no web dependencies and a `server` crate that implements `Environment`, plus integration tests that run the server over real WebSockets. `arith` and `wordle` also have `h5i-app.toml` and `proofs/`.
 
 ## 7. How it works
 
@@ -187,7 +201,8 @@ On one WebSocket, the Echo example averaged 0.12 ms per step against 2.1 ms for 
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 OPENENV_SRC=$PWD/OpenEnv bash scripts/echo_compat.sh   # official-client check
-(cd examples/wordle/proofs && lake build)              # Lean model of the Wordle kernel
+h5i app prove examples/arith examples/wordle            # extract and check the proofs
+h5i app mutate examples/arith                          # the listed bugs must break a proof
 ```
 
 ## License

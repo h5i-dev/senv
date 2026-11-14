@@ -103,3 +103,39 @@ jobs:
           OPENENV_SRC: ${{ github.workspace }}/OpenEnv
           SENV_PYTHON: python
           SENV_BIND: 127.0.0.1:8784
+
+  # The kernels of examples/arith and examples/wordle are h5i app projects.
+  # `extract --check`: the committed Lean is what Aeneas extracts from the
+  # Rust. `check`: the proofs build with no sorry, native_decide or axiom,
+  # every theorem rests on the standard axioms, and the theorems and
+  # obligations each h5i-app.toml names are present.
+  proofs:
+    name: h5i app proofs
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AENEAS_REV: b86120db3183b0107eb5f2637b11c424cd06ef1c
+      H5I_VERSION: v0.5.5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install the h5i CLI
+        run: |
+          mkdir -p "$RUNNER_TEMP/h5i/bin"
+          curl -fsSL --retry 3 https://h5i.dev/install.sh | H5I_INSTALL_DIR="$RUNNER_TEMP/h5i/bin" sh
+          echo "$RUNNER_TEMP/h5i/bin" >> "$GITHUB_PATH"
+      - name: Install Charon and Aeneas at the pinned commit
+        run: bash scripts/install-aeneas.sh "$RUNNER_TEMP/aeneas" >> "$GITHUB_PATH"
+      - name: Install elan and the pinned Lean toolchain
+        run: |
+          curl -fsSL --retry 3 https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          "$HOME/.elan/bin/elan" toolchain install "$(cat examples/arith/proofs/lean-toolchain)"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/h5i/lake
+          key: lake-${{ hashFiles('examples/*/proofs/lake-manifest.json', 'examples/*/proofs/lean-toolchain') }}
+      - run: h5i app doctor examples/arith
+      - run: h5i app extract --check examples/arith examples/wordle
+      - run: h5i app check examples/arith examples/wordle
