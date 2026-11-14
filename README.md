@@ -1,177 +1,164 @@
 # senv
 
-OpenEnv-compatible Echo environment, executed on [h5i-app](https://github.com/h5i-dev/h5i).
+<p align="left">
+  <a href="https://github.com/h5i-dev/senv/actions/workflows/ci.yaml"><img alt="CI" src="https://github.com/h5i-dev/senv/actions/workflows/ci.yaml/badge.svg"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg"></a>
+</p>
 
-`senv serve` speaks the production Echo protocol from
-[meta-pytorch/OpenEnv](https://github.com/meta-pytorch/OpenEnv) at commit
-`58d0344011fe961342706c90288f7e842b15b1c9`. Each WebSocket session owns its own
-`h5i_app::MemoryEngine`. Reset, step, and state are kernel transitions. The
-Axum process only parses the wire protocol and drops the engine when the
-socket ends.
+**senv** is a Rust server for [OpenEnv](https://github.com/openenv/OpenEnv) reinforcement-learning environments. It speaks the OpenEnv wire protocol, so the **unmodified OpenEnv Python clients** (`EchoEnv`, `TextArenaEnv`) connect to it as they would to the Python servers. Every session is a pure [h5i-app](https://github.com/h5i-dev/h5i) kernel running on its own in-memory engine, which keeps transitions deterministic, isolated per session, and small enough to prove in Lean 4.
 
-This repository previously shipped a sandboxed Python environment manager.
-That command set is gone. The name, the git history, and the Apache-2.0
-license remain. `DESIGN.md` describes the current architecture. `PROTOCOL.md`
-is the supported wire subset and its limits. `NOTICE` attributes OpenEnv and h5i.
+- **Drop-in for OpenEnv clients.** `reset()`, `step()`, and `state()` over a WebSocket, plus MCP tools on `/mcp`. No client patches.
+- **Fast and small.** On one WebSocket, an Echo step averages 0.12 ms against 2.1 ms for the Python Echo server, at about 5 MB RSS ([benchmarks](docs/BENCHMARKS.md)).
+- **One kernel per session.** Sessions never share state. Reset, step, and state are pure functions of the snapshot, the seed, and the action.
+- **Verifiable.** The Wordle transition is proved in [Lean 4](proofs/SenvWordle.lean).
+- **Ready for training.** Tested end to end with GRPO, REINFORCE, and LoRA on a single GPU (see [Train an agent](#4-train-an-agent)).
 
-## Run
+> [!NOTE]
+> senv is early. This repository used to ship a sandboxed Python environment manager; that product and its `v0.1.0` release are not the server described here.
 
-Rust 1.88 or newer.
+---
+
+## 1. Install
+
+Build from source. You need Rust 1.88 or newer.
 
 ```bash
-cargo run --locked --bin senv -- serve
+git clone https://github.com/h5i-dev/senv && cd senv
+cargo build --release --locked
+./target/release/senv serve            # listens on 127.0.0.1:8000
 ```
 
-The default listen address is `127.0.0.1:8000`.
-
-| Flag | Environment | Default |
-|---|---|---|
-| `--bind` | `SENV_BIND` | `127.0.0.1:8000` |
-| `--env` | `SENV_ENV` | `echo` (`wordle` serves Wordle-v0, `arith` serves custom Arith-v0) |
-| `--arith-ops` | `SENV_ARITH_OPS` | `3` (only `arith`; 2, 3, or 4 operators) |
-| `--max-sessions` | `MAX_CONCURRENT_ENVS` | 8 |
-| `--max-message-bytes` | | 16777216 (16 MiB) |
-| `--idle-timeout-secs` | | 120 (0 disables the idle sweep) |
-
-`GET /health` returns `{"status":"healthy"}`.
-
-A Docker image is defined in `Dockerfile`. It listens on `0.0.0.0:8000`:
+Or use Docker:
 
 ```bash
 docker build -t senv .
-docker run --rm -p 8000:8000 senv
+docker run --rm -p 8000:8000 senv      # listens on 0.0.0.0:8000
 ```
 
-That image was not built on the host that ran the compatibility test. The
-Docker data root there is on a nearly full disk.
+## 2. Quick start
 
-`install.sh` installs a published release binary. `pyproject.toml` still
-packages that same binary as the `h5i-senv` wheel. Neither path installs a
-Python library.
-
-## Python client
-
-Use the unmodified `EchoEnv` from the pinned OpenEnv tree. Do not vendor it
-into this repository.
+Start a server for the environment you want:
 
 ```bash
-git clone https://github.com/meta-pytorch/OpenEnv.git
+senv serve --env wordle --bind 127.0.0.1:8000
+```
+
+Then connect with the **unmodified** OpenEnv client. senv is tested against OpenEnv commit [`58d0344`](https://github.com/openenv/OpenEnv/tree/58d0344011fe961342706c90288f7e842b15b1c9):
+
+```bash
+git clone https://github.com/openenv/OpenEnv.git
 git -C OpenEnv checkout 58d0344011fe961342706c90288f7e842b15b1c9
-python3 -m venv .venv
-.venv/bin/pip install -r scripts/echo-client-requirements.txt
+python3 -m venv .venv && .venv/bin/pip install -r scripts/echo-client-requirements.txt
+export PYTHONPATH="$PWD/OpenEnv/src:$PWD/OpenEnv/envs"
 ```
 
-`scripts/echo-client-requirements.txt` lists the modules that tree imports
-while loading `EchoEnv`. It is not `pip install openenv`, which also installs
-Gradio.
+```python
+from textarena_env import TextArenaEnv
+from textarena_env.models import TextArenaAction
 
-With `senv serve` already listening:
+with TextArenaEnv(base_url="http://127.0.0.1:8000").sync() as env:
+    result = env.reset(seed=7)
+    print(result.observation.prompt)
 
-```bash
-export OPENENV_SRC="$PWD/OpenEnv"
-export SENV_BASE_URL=http://127.0.0.1:8000
-export PYTHONPATH="$OPENENV_SRC/src:$OPENENV_SRC/envs"
-.venv/bin/python - <<'PY'
+    result = env.step(TextArenaAction(message="[crane]"))
+    print(result.observation.messages[-1].content)  # green / yellow feedback
+    print(result.reward, result.done)
+```
+
+The Echo environment (the default for `senv serve`) is an MCP tool environment:
+
+```python
 from echo_env import CallToolAction, EchoEnv
 
 with EchoEnv(base_url="http://127.0.0.1:8000").sync() as env:
-    reset = env.reset()
-    print(reset.reward, reset.observation.metadata["message"])
-    step = env.step(CallToolAction(
-        tool_name="echo_message",
-        arguments={"message": "Hello!"},
-    ))
-    print(step.observation.result["data"])
-    print(env.state().step_count)
-PY
+    env.reset()
+    result = env.step(CallToolAction(tool_name="echo_message", arguments={"message": "Hello!"}))
+    print(result.observation.result["data"])  # "Hello!"
 ```
 
-`reset()` returns reward `0.0`, `done` false, and metadata message
-`Echo environment ready!`. `step(CallToolAction(...))` increments
-`step_count`. `call_tool` and `list_tools` use HTTP `/mcp` and do not
-increment it. A string tool result is the raw string in `result["data"]`.
-A non-string result's text is JSON, not Python's `repr`.
+## 3. Environments
 
-`scripts/echo_compat.sh` builds the binary, starts it, and runs
-`scripts/echo_client_compat.py` against that client. Set `OPENENV_SRC` to the
-checkout. Set `SENV_PYTHON` if `python3` is older than 3.10. Put
-`CARGO_TARGET_DIR` on a large disk before a cold build.
+| `--env` | Client | What it is |
+|---|---|---|
+| `echo` (default) | `EchoEnv` | The OpenEnv Echo MCP environment: `echo_message` and `echo_with_length` tools. For smoke tests and latency. |
+| `wordle` | `TextArenaEnv` | Wordle-v0: 5 letters, 6 guesses, on the TextArena socket. Seeded secrets from a 15,034-word list ([`assets/wordle/words.txt`](assets/wordle/words.txt)). |
+| `arith` | `TextArenaEnv` | Arith-v0, a custom multi-turn tool-use task. The agent gets a nested expression such as `((6 * 8) * 9)`. It can send `calc <int> <op> <int>` to a calculator and must finish with `answer <int>`. Reward is 1 for a correct answer. `--arith-ops 2..4` sets the difficulty. The value is never in the observation or in `state()`. |
 
-## Validation on 2026-11-09
+### Server options
 
-OpenEnv `58d0344011fe961342706c90288f7e842b15b1c9`. h5i-app
-`5e0f8a929c57bb12a321090d98a14b3a2714b849`. Host Python 3.12.15. The interpreter
-that imported the client had pydantic 2.14.3, websockets 17.4, httpx 0.28.1,
-fastapi 0.162.2, fastmcp 3.4.11, openai 3.48.0, and requests 2.34.2.
+| Flag | Environment variable | Default |
+|---|---|---|
+| `--bind` | `SENV_BIND` | `127.0.0.1:8000` |
+| `--env` | `SENV_ENV` | `echo` |
+| `--arith-ops` | `SENV_ARITH_OPS` | `3` (2, 3, or 4) |
+| `--max-sessions` | `MAX_CONCURRENT_ENVS` | `8` |
+| `--max-message-bytes` | | `16777216` (16 MiB) |
+| `--idle-timeout-secs` | | `120` (`0` disables the idle sweep) |
 
-```text
-cargo test --locked --offline
-17 passed (kernel, protocol, and Wordle unit tests)
-3 passed (tests/protocol.rs: Echo reset/step/state, isolation, malformed frames,
-         capacity, second socket, idle reap)
-2 passed (tests/wordle.rs: feedback, win, invalid moves, seed, isolation)
-0 failed
+`GET /health` returns `{"status":"healthy"}`.
 
-cargo clippy --all-targets --locked --offline -- -D warnings
-clean
+## 4. Train an agent
 
-OPENENV_SRC=<pinned OpenEnv> SENV_PYTHON=<venv python> bash scripts/echo_compat.sh
-client: <OpenEnv>/envs/echo_env/client.py
-PASS official EchoEnv reset/step/state, isolation, reconnect
+[`scripts/arith_grpo.py`](scripts/arith_grpo.py) is a self-contained GRPO trainer. It plays Arith-v0 through the official `TextArenaEnv` client and uses one senv session per rollout. Generation is batched across sessions, and the advantage of each episode is its reward minus the mean reward of its group. The reward comes only from the server.
+
+```bash
+senv serve --env arith --arith-ops 2 --max-sessions 64 --bind 127.0.0.1:8790 &
+
+export PYTHONPATH="scripts:$PWD/OpenEnv/src:$PWD/OpenEnv/envs"
+export SENV_BASE_URL=http://127.0.0.1:8790
+python scripts/arith_grpo.py --steps 100 --lr 2e-5 \
+  --system tool-example --invalid-penalty 0.05 \
+  --out experiment-out/arith-grpo/train.json
 ```
 
-The Python script calls the unmodified `EchoEnv.reset`, `EchoEnv.step`
-(`CallToolAction` for `echo_message` and `echo_with_length` with `héllo`,
-length 5), `EchoEnv.state`, `list_tools`, and `call_tool` on one session; a
-second `EchoEnv` whose reset stays at `step_count` 0; then a new `EchoEnv`
-after close, which receives a new episode. The client file path is checked
-against `OPENENV_CLIENT` when that variable is set. `echo_compat.sh` sets it
-to `envs/echo_env/client.py` inside `OPENENV_SRC`.
+<!-- GRPO results are filled in below once the run completes. -->
 
-`scripts/wordle_compat.sh` is the same kind of check for Wordle. It starts
-`senv serve --env wordle` and imports the unmodified `TextArenaEnv` from
-`envs/textarena_env/client.py` in that OpenEnv tree. On 2026-11-09 that script
-printed:
+Earlier experiments are written up in [docs/EXPERIMENT.md](docs/EXPERIMENT.md) (Wordle, REINFORCE with linear and SmolLM2 policies), [docs/ARITH.md](docs/ARITH.md), and [docs/ARITH-DIAGNOSIS.md](docs/ARITH-DIAGNOSIS.md) (the sampler and decoding bugs that blocked the first Arith runs).
 
-```text
-PASS official TextArenaEnv Wordle reset/step/state, feedback, win, invalid, isolation
+## 5. How it works
+
+```
+ OpenEnv client ──WebSocket / HTTP──▶ Axum shell ──command──▶ kernel(snapshot, cmd) ─▶ write set + reply
+                                      (protocol,               pure, no clock, no RNG
+                                       sessions)               one MemoryEngine per session
 ```
 
-`cargo test --locked --offline` then also passed the two Wordle WebSocket
-tests in `tests/wordle.rs` (17 library tests, 3 Echo protocol tests, 2 Wordle
-tests). Wordle is a 5-letter, 6-guess game on that client's socket. The word
-list is `assets/wordle/words.txt` (15,034 words from a system spelling list).
-It is not NLTK, not the New York Times list, and not CPython's RNG. `PROTOCOL.md`
-lists the other differences, including that `state()` reveals the secret.
+- The **shell** ([`src/server.rs`](src/server.rs), [`src/protocol.rs`](src/protocol.rs)) parses the OpenEnv protocol, owns the session table, and renders observations.
+- Each **kernel** ([`src/kernel.rs`](src/kernel.rs), [`src/wordle.rs`](src/wordle.rs), [`src/arith.rs`](src/arith.rs)) is a pure transition `(snapshot, command) → (write set, reply)`. The shell passes in the seed and episode id, so a transition never reads a clock or a random source.
+- Each session gets its own `h5i_app::MemoryEngine`. Sessions are isolated because no two of them share an engine. When a socket closes, its engine is dropped.
 
-`proofs/SenvWordle.lean` (Lean 4.31, `lake build` in `proofs/`) proves the
-pure Wordle reset, the green-before-yellow marker, win and six-miss rewards,
-and the one-invalid allowance. It has no `sorry` or `admit`. It does not
-prove WebSocket isolation or that sessions have separate engines.
-`proofs/CORRESPONDENCE.md` maps the Lean names to `mark` and `step_core`.
+[DESIGN.md](DESIGN.md) has the full architecture. [`proofs/`](proofs/) holds the Lean 4 model of the Wordle kernel (reset, green-before-yellow marking, rewards, the one-invalid allowance), with no `sorry`. [`proofs/CORRESPONDENCE.md`](proofs/CORRESPONDENCE.md) maps the Lean names back to the Rust code. The proofs do not cover socket isolation; the integration tests check that.
 
-`docs/BENCHMARKS.md` records one 2026-11-09 run of `scripts/bench.sh` on a 4 vCPU host. The client was `scripts/bench.py`. On one WebSocket, 400 Echo steps averaged 0.121 ms on senv and 2.097 ms on the pinned Python Echo server. Rust Wordle steps averaged 0.223 ms (n=240). The GPU was idle. That page is the whole claim.
+## 6. Performance
 
-`docs/EXPERIMENT.md` records two Wordle runs through the unmodified `TextArenaEnv` client on the same date, held-out seeds 10000..10039. Uniform random won 0/40 (mean reward 0.165). A trained four-feature linear policy won 6/40 when sampled and 23/40 when greedy. That linear policy is a softmax over the word list, not a language model. Free-text SmolLM2-135M-Instruct won 0/40 before and after 32 REINFORCE episodes because repeated invalid replies ended the games around step 3. A second run restricts SmolLM2 to a seeded shortlist of at most 32 feedback-consistent dictionary words: the uniform shortlist won 26/40, pretrained sampling won 30/40, and after 32 REINFORCE episodes sampling won 31/40. That one-win change is not clear evidence of learning. The shortlist itself accounts for most of the wins. It is not a reasoning result.
+One run on a 4 vCPU AMD EPYC 7R32. Both Echo servers used the same client. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
-On 2026-11-10, `cargo test --locked --offline` passed 21 library tests, 3 Echo protocol tests, 2 Wordle tests, and 2 Arith tests. `cargo clippy --all-targets --locked --offline -- -D warnings` was clean. Arith-v0 is a custom task (`senv serve --env arith`), not an upstream environment. The expression value is scored in the server and is absent from the observation and from `state.raw_state`. `scripts/arith_compat.sh` printed `PASS official TextArenaEnv Arith-v0 reset/step/state, score, hidden value, isolation`.
+| Server | Mean step | p99 step | Steps/s (one socket) | RSS |
+|---|---:|---:|---:|---:|
+| senv Echo | 0.121 ms | 0.157 ms | 8,276 | 5.3 MB |
+| Python OpenEnv Echo | 2.097 ms | 2.386 ms | 477 | 108 MB |
+| senv Wordle | 0.223 ms | 0.334 ms | 4,476 | 6.0 MB |
 
-`docs/ARITH.md` is the 2026-11-10 Arith run on the same client. Difficulty froze at 3 operators because no validation pilot sat in the success band. On held-out seeds 10000..10199, `answer 0` scored 3/200 and a random legal line scored 6/200. SmolLM2-135M-Instruct scored 0/200 before and after 200 REINFORCE episodes. A 40-episode Qwen answer-format warmup at 2 operators scored 0/40 when the baseline started at 0.25. The same run with the baseline started at 0 reached validation format 1 and 2/40 successes; the final policy mostly emits `calc 8 * 6` and `answer 10`. `docs/ARITH-DIAGNOSIS.md` is the follow-up with training left stopped: the sampler had inherited a repetition penalty and a top-k cutoff, the trainer scored an untempered softmax, and newline stopping dropped a correct `answer 432` on validation seed 2000. Those three are fixed. Direct nested answers are still wrong.
+## 7. Compatibility and limits
 
-## Limits
+The compatibility scripts run the official clients against a live server: [`scripts/echo_compat.sh`](scripts/echo_compat.sh), [`scripts/wordle_compat.sh`](scripts/wordle_compat.sh), and [`scripts/arith_compat.sh`](scripts/arith_compat.sh). The behaviors most likely to surprise someone who knows upstream OpenEnv:
 
-The full list is `PROTOCOL.md`. The ones that surprise people who know
-upstream OpenEnv:
+- A WebSocket disconnect destroys the session. Upstream keeps an HTTP-created session until `session/close`.
+- There is no simulation-mode HTTP API (`POST /reset`, `/step`, `/state`), no CORS, and no Gradio UI.
+- Echo never sets `done`, and a step's reward is JSON `null`.
+- In Wordle, `state()` reveals the secret, as upstream does. Arith never reveals its value.
 
-- A WebSocket disconnect destroys the session. Upstream keeps an HTTP-created
-  session until `session/close`. The official client still succeeds, because
-  it ignores a close error after detach.
-- The server accepts WebSocket messages up to 16 MiB. The client's default
-  ceiling is 100 MB.
-- Echo never sets `done`. A step's reward is JSON null. Reset's reward is 0.0.
-- `seed` is stored and ignored.
-- There is no `/reset`, `/step`, or `/state` HTTP simulation API, no CORS, and
-  no Gradio UI.
-- Kernel proofs, if they are added later, will not establish socket isolation.
-  Separate engines and the session table are what isolate clients, and the
-  tests are what check that.
+[PROTOCOL.md](PROTOCOL.md) is the full list.
+
+## 8. Development
+
+```bash
+cargo test --locked
+cargo clippy --all-targets --locked -- -D warnings
+OPENENV_SRC=$PWD/OpenEnv bash scripts/echo_compat.sh   # official-client check
+(cd proofs && lake build)                              # Lean proofs
+```
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE). OpenEnv and h5i attributions are in [NOTICE](NOTICE).
