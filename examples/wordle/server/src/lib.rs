@@ -1,45 +1,133 @@
 //! Wordle as a senv environment, on the OpenEnv `TextArenaEnv` WebSocket contract.
 //!
-//! The kernel (`wordle-kernel`) decides marks, rewards, and `done`. This crate
-//! is the trusted shell: it picks the secret from the seed, binds the kernel to
-//! h5i-app, and renders TextArena-shaped JSON from the committed snapshot.
-//! Reward signals are computed from the committed log the same way OpenEnv's
-//! Wordle provider reads the observation text.
+//! Marking, rewards, and termination are decided by `wordle-kernel`, which
+//! `h5i app extract` translates to Lean and `../proofs/Theorems.lean` proves
+//! things about. This crate is the trusted shell around it: it picks the
+//! secret from the seed, looks guesses up in the dictionary, keeps the episode
+//! id and the transcript, and renders TextArena-shaped JSON. Reward signals are
+//! computed from the committed transcript the same way OpenEnv's Wordle
+//! provider reads the observation text.
 
+pub mod game;
+
+use game::{
+    ENV_ID, LogEntry, MAX_ACTION_BYTES, ascii_word, mark_char, parse_message, prompt_text,
+    push_phase, render_messages, secret_from_episode, secret_from_seed, signals_for_log,
+};
 use senv::wire::{reject_unknown, string_field};
 use senv::{Environment, Kernel, Metadata, Observation, Phase, Reward, TenantId, WireError};
 use serde_json::{Map, Value, json};
-use wordle_kernel::episode::{Command, Principal, Reply, SESSION_TENANT, Snapshot, WordleError};
-use wordle_kernel::{
-    self as wordle, WORD_LEN, ascii_word, fresh, prompt_text, render_messages, secret_from_episode,
-    secret_from_seed, signals_for_log,
-};
+use wordle_kernel::{self as k, WORD_LEN};
 
-/// The h5i-app binding of the Wordle kernel.
+/// A session's state: the kernel's game plus the shell's bookkeeping.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Episode {
+    pub episode_id: String,
+    pub seed: Option<i64>,
+    pub step_count: u64,
+    pub log: Vec<LogEntry>,
+    pub core: k::Core,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Command {
+    Reset {
+        seed: Option<i64>,
+        episode_id: String,
+        secret: [u8; WORD_LEN],
+    },
+    /// `message` is the agent's raw text; `mv` is what the shell parsed.
+    Step {
+        message: String,
+        mv: k::Move,
+    },
+    State,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Error {
+    Kernel(k::Error),
+    ActionTooLong,
+    StepCountOverflow,
+}
+
+/// The h5i-app binding: the extracted kernel decides, this wrapper records.
 pub struct WordleKernel;
 
 impl Kernel for WordleKernel {
-    type Principal = Principal;
-    type Snapshot = Snapshot;
+    type Principal = ();
+    type Snapshot = Episode;
     type Command = Command;
-    type WriteSet = Snapshot;
-    type Reply = Reply;
-    type Error = WordleError;
+    type WriteSet = Option<Episode>;
+    type Reply = k::Reply;
+    type Error = Error;
 
-    fn tenant(actor: &Principal) -> TenantId {
-        TenantId(actor.tenant)
+    fn tenant(_: &()) -> TenantId {
+        TenantId(1)
     }
 
     fn transition(
-        actor: &Principal,
-        snap: &Snapshot,
+        _: &(),
+        ep: &Episode,
         cmd: &Command,
-    ) -> Result<(Snapshot, Reply), WordleError> {
-        wordle_kernel::episode::transition(actor, snap, cmd)
+    ) -> Result<(Option<Episode>, k::Reply), Error> {
+        match cmd {
+            Command::Reset {
+                seed,
+                episode_id,
+                secret,
+            } => {
+                let (w, reply) =
+                    k::transition(&(), &ep.core, &k::Command::Reset { secret: *secret })
+                        .map_err(Error::Kernel)?;
+                Ok((
+                    Some(Episode {
+                        episode_id: episode_id.clone(),
+                        seed: *seed,
+                        step_count: 0,
+                        log: Vec::new(),
+                        core: k::apply(&ep.core, &w),
+                    }),
+                    reply,
+                ))
+            }
+            Command::Step { message, mv } => {
+                if message.len() > MAX_ACTION_BYTES {
+                    return Err(Error::ActionTooLong);
+                }
+                let step_count = ep
+                    .step_count
+                    .checked_add(1)
+                    .ok_or(Error::StepCountOverflow)?;
+                let (w, reply) = k::transition(&(), &ep.core, &k::Command::Step { mv: *mv })
+                    .map_err(Error::Kernel)?;
+                let mut log = ep.log.clone();
+                if let Some(phase) = &reply.phase {
+                    push_phase(&mut log, message, phase);
+                }
+                Ok((
+                    Some(Episode {
+                        step_count,
+                        log,
+                        core: k::apply(&ep.core, &w),
+                        ..ep.clone()
+                    }),
+                    reply,
+                ))
+            }
+            Command::State => {
+                let (_, reply) =
+                    k::transition(&(), &ep.core, &k::Command::State).map_err(Error::Kernel)?;
+                Ok((None, reply))
+            }
+        }
     }
 
-    fn apply(snap: &Snapshot, ws: &Snapshot) -> Snapshot {
-        wordle_kernel::episode::apply(snap, ws)
+    fn apply(ep: &Episode, w: &Option<Episode>) -> Episode {
+        match w {
+            Some(next) => next.clone(),
+            None => ep.clone(),
+        }
     }
 
     fn read_only(cmd: &Command) -> bool {
@@ -68,17 +156,13 @@ impl Environment for Wordle {
         schema_document()
     }
 
-    fn principal(&self) -> Principal {
-        Principal {
-            tenant: SESSION_TENANT,
-        }
-    }
+    fn principal(&self) {}
 
-    fn initial(&self, episode_id: &str) -> Snapshot {
-        Snapshot {
+    fn initial(&self, episode_id: &str) -> Episode {
+        Episode {
             episode_id: episode_id.to_string(),
-            core: fresh(secret_from_episode(episode_id)),
-            ..Snapshot::default()
+            core: k::fresh(secret_from_episode(episode_id)),
+            ..Episode::default()
         }
     }
 
@@ -96,8 +180,10 @@ impl Environment for Wordle {
 
     fn step(&self, action: &Map<String, Value>) -> Result<Command, WireError> {
         reject_unknown(action, &["message"])?;
+        let message = string_field(action, "message")?;
         Ok(Command::Step {
-            message: string_field(action, "message")?,
+            mv: parse_message(&message),
+            message,
         })
     }
 
@@ -105,26 +191,29 @@ impl Environment for Wordle {
         Command::State
     }
 
-    fn observe(&self, phase: Phase, snapshot: &Snapshot, _reply: &Reply) -> Observation {
+    fn observe(&self, phase: Phase, snapshot: &Episode, _reply: &k::Reply) -> Observation {
         observation(snapshot, phase == Phase::Step)
     }
 
-    fn render_state(&self, snapshot: &Snapshot, _reply: &Reply) -> Value {
+    fn render_state(&self, snapshot: &Episode, _reply: &k::Reply) -> Value {
         state(snapshot)
     }
 
-    fn refuse(&self, error: &WordleError) -> WireError {
+    fn refuse(&self, error: &Error) -> WireError {
         match error {
-            WordleError::ActionTooLong => {
+            Error::ActionTooLong => {
                 WireError::validation("action message is longer than 4096 bytes")
             }
-            WordleError::AlreadyDone => WireError::execution("episode is done"),
-            WordleError::StepCountOverflow => WireError::execution("step count overflowed"),
+            Error::Kernel(k::Error::Done) => WireError::execution("episode is done"),
+            Error::Kernel(k::Error::InvalidSecret) => {
+                WireError::execution("the secret is not a five-letter word")
+            }
+            Error::StepCountOverflow => WireError::execution("step count overflowed"),
         }
     }
 }
 
-fn observation(snap: &Snapshot, with_signals: bool) -> Observation {
+fn observation(snap: &Episode, with_signals: bool) -> Observation {
     let messages = render_messages(&snap.core.secret, snap.core.reward_milli, &snap.log);
     let message_values: Vec<Value> = messages
         .iter()
@@ -137,7 +226,7 @@ fn observation(snap: &Snapshot, with_signals: bool) -> Observation {
         })
         .collect();
     let mut metadata = json!({
-        "env_id": wordle::ENV_ID,
+        "env_id": ENV_ID,
         "turn": snap.core.turn,
         "raw_messages": message_values.clone(),
     });
@@ -164,20 +253,20 @@ fn observation(snap: &Snapshot, with_signals: bool) -> Observation {
     });
     Observation::new(
         observation,
-        Reward::Milli(snap.last_reward_milli),
+        Reward::Milli(snap.core.reward_milli),
         snap.core.done,
     )
     .with_metadata(metadata)
 }
 
-fn state(snap: &Snapshot) -> Value {
+fn state(snap: &Episode) -> Value {
     let mut history = Vec::new();
     for index in 0..usize::from(snap.core.guess_count) {
         let letters = snap.core.guesses[index];
-        let marks = wordle::mark(&snap.core.secret, &letters);
+        let marks = k::mark(&snap.core.secret, &letters);
         let code: Vec<String> = marks
             .iter()
-            .map(|mark| mark.as_char().to_string())
+            .map(|mark| mark_char(*mark).to_string())
             .collect();
         history.push(json!([ascii_word(&letters), code]));
     }
@@ -201,11 +290,11 @@ fn state(snap: &Snapshot) -> Value {
     json!({
         "episode_id": snap.episode_id,
         "step_count": snap.step_count,
-        "env_id": wordle::ENV_ID,
+        "env_id": ENV_ID,
         "num_players": 1,
         "max_turns": null,
         "turn": snap.core.turn,
-        "last_reward": milli_f64(snap.last_reward_milli),
+        "last_reward": milli_f64(snap.core.reward_milli),
         "last_info": last_info,
         "raw_state": {
             "turn": snap.core.turn,
@@ -215,13 +304,14 @@ fn state(snap: &Snapshot) -> Value {
             "rewards": rewards,
             "game_state": {
                 "word_length": WORD_LEN,
-                "num_guesses": wordle::MAX_GUESSES,
+                "num_guesses": k::MAX_GUESSES,
                 "secret_word": ascii_word(&snap.core.secret),
                 "guess_history": history,
             }
         }
     })
 }
+
 fn milli_f64(milli: i64) -> f64 {
     (milli as f64) / 1000.0
 }
@@ -231,7 +321,7 @@ pub fn schema_document() -> Value {
         "action": {
             "type": "object",
             "properties": {
-                "message": { "type": "string", "maxLength": wordle::MAX_ACTION_BYTES }
+                "message": { "type": "string", "maxLength": MAX_ACTION_BYTES }
             },
             "required": ["message"]
         },
@@ -244,7 +334,7 @@ pub fn schema_document() -> Value {
             "properties": {
                 "episode_id": { "type": "string" },
                 "step_count": { "type": "integer", "minimum": 0 },
-                "env_id": { "const": wordle::ENV_ID },
+                "env_id": { "const": ENV_ID },
                 "num_players": { "const": 1 },
                 "turn": { "type": "integer", "minimum": 0 }
             },

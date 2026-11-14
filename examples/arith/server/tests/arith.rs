@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use arith_env::Arith;
-use arith_kernel::{self as arith, generate};
+use arith_env::{expression, generate, prompt_text};
 use futures_util::{SinkExt, StreamExt};
 use senv::{Server, ServerConfig};
 use serde_json::{Value, json};
@@ -241,13 +241,14 @@ async fn same_seed_is_the_same_expression() {
 fn hidden_value_seed() -> (i64, i64) {
     for seed in 0..5_000 {
         let problem = generate(seed, 3);
-        let rendered = problem.value.to_string();
+        let value = arith_kernel::value(&problem).unwrap();
+        let rendered = value.to_string();
         if rendered.len() < 2 {
             continue;
         }
-        let prompt = arith::prompt_text(&arith::expression(&problem));
+        let prompt = prompt_text(&expression(&problem));
         if !prompt.contains(&rendered) {
-            return (seed, problem.value);
+            return (seed, value);
         }
     }
     panic!("no seed hid the value");
