@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>senv — verified RL environments for OpenEnv, on h5i</title>
-  <meta name="description" content="senv is a Rust library for writing reinforcement-learning environments as h5i-app kernels and serving them to unmodified OpenEnv clients.">
+  <title>senv: Serve an h5i App as an RL Environment | h5i</title>
+  <meta name="description" content="senv is an h5i-app subproject: write a reinforcement-learning environment as an h5i-app kernel, prove its rewards with h5i app prove, and serve it to unmodified OpenEnv clients.">
   <meta name="author" content="h5i-dev">
   <meta name="theme-color" content="#D21C1C">
   <meta name="color-scheme" content="dark">
@@ -13,133 +13,106 @@
   <link rel="sitemap" type="application/xml" href="/sitemap.xml">
   <link rel="icon" type="image/png" href="/_static/logo.png">
   <link rel="apple-touch-icon" href="/_static/logo.png">
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="senv">
-  <meta property="og:title" content="senv — verified RL environments for OpenEnv, on h5i">
-  <meta property="og:description" content="Write the environment as an h5i-app kernel, prove things about it in Lean, and serve it to OpenEnv clients.">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="h5i">
+  <meta property="og:title" content="senv: Serve an h5i App as an RL Environment">
+  <meta property="og:description" content="Write the environment as an h5i-app kernel, prove its rewards in Lean 4, and serve it to OpenEnv clients.">
   <meta property="og:url" content="https://senv.h5i.dev/">
-  <meta property="og:image" content="https://senv.h5i.dev/_static/logo.png">
+  <meta property="og:image" content="https://h5i.dev/_static/social-card.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="senv — verified RL environments for OpenEnv, on h5i">
-  <meta name="twitter:description" content="Write the environment as an h5i-app kernel, prove things about it in Lean, and serve it to OpenEnv clients.">
-  <meta name="twitter:image" content="https://senv.h5i.dev/_static/logo.png">
+  <meta name="twitter:title" content="senv: Serve an h5i App as an RL Environment">
+  <meta name="twitter:description" content="Write the environment as an h5i-app kernel, prove its rewards in Lean 4, and serve it to OpenEnv clients.">
+  <meta name="twitter:image" content="https://h5i.dev/_static/social-card.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800;900&family=Space+Grotesk:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet"></noscript>
   <link rel="stylesheet" href="/_static/blog.css">
   <link rel="stylesheet" href="/_static/highlight.css">
 </head>
-<body>
-<a class="skip-link" href="#hero">Skip to content</a>
-<div class="scroll-progress" id="scroll-progress"></div>
-<nav>
-  <a class="nav-logo" href="/">
-    <img src="/_static/logo.png" alt="h5i">
-    <span>senv</span>
-  </a>
+<!-- This site is a page of h5i.dev that happens to live on its own host: the
+     nav and footer are h5i's, and blog.css, highlight.* and manual.* are
+     verbatim copies of h5i/docs/_static. Sync them from there; do not edit. -->
+<body><nav class="blog-nav">
+  <a class="nav-logo" href="https://h5i.dev/"><img src="/_static/logo.png" alt="h5i"><span>h5i</span></a>
   <ul class="nav-links">
-    <li><a href="#write">Write one</a></li>
-    <li><a href="/manual/">Manual</a></li>
-    <li><a href="https://github.com/h5i-dev/senv/blob/main/docs/PROTOCOL.md">Protocol</a></li>
-    <li><a href="https://github.com/h5i-dev/senv" class="nav-cta">GitHub &rarr;</a></li>
+    <li><a href="https://h5i.dev/features/">Features</a></li><li><a href="https://h5i.dev/guides/">Guides</a></li>
+    <li><a href="https://h5i.dev/manual/">Manual</a></li><li><a href="https://h5i.dev/blog/">Blog</a></li>
+    <li><a href="https://h5i.dev/showcase/">Showcase</a></li>
+    <li><a href="https://github.com/h5i-dev/h5i" class="nav-cta">GitHub &rarr;</a></li>
   </ul>
-</nav>
+</nav><main class="article-wrap"><article class="post">
+<header><div class="post-eyebrow">h5i app / Subproject &middot; senv</div>
+<h1>Serve an h5i App as an RL Environment</h1><p class="post-deck">senv runs an h5i-app kernel behind the OpenEnv wire. The kernel decides every reward and every <code>done</code>, so <code>h5i app prove</code> reaches the numbers a policy is trained on.</p>
+<div class="post-meta"><span>Rust library</span><span>OpenEnv 58d03440 &middot; h5i-app 0.5.5 &middot; Rust 1.88+</span></div></header>
+<div class="callout"><strong>Where it fits.</strong> senv is part of <a href="https://h5i.dev/manual/#h5i-app">h5i app</a>. The kernel contract, extraction, proofs and mutation testing are the ordinary <code>h5i app</code> ones. senv replaces the Axum routes with an OpenEnv server, so the unmodified OpenEnv Python clients can train against the kernel.</div>
+<p>An RL environment is a state machine that also hands out rewards. If the reward is computed in the server code that renders observations, nothing checks it but tests. If it is a field the kernel commits, a Lean theorem about the kernel covers it for every input: that a reward stays in range, that only a correct answer pays, that every episode ends.</p>
 
-<header class="hero" id="hero">
-  <div class="hero-inner">
-    <div class="hero-badge">Rust library · h5i-app kernels · OpenEnv wire · Apache-2.0</div>
-    <h1 class="hero-title">RL environments as <em>h5i apps</em></h1>
-    <p class="hero-sub">
-      Write the rules as an h5i-app kernel: a pure function that decides every reward and every
-      <code>done</code>. Prove properties of it in Lean 4 with h5i's tooling. senv serves it on the
-      OpenEnv wire, so the unmodified Python clients train against it.
-    </p>
-    <div class="hero-install" id="quickstart">
-      <code>senv = { git = "https://github.com/h5i-dev/senv" }</code>
-      <button class="copy-btn" type="button">copy</button>
-    </div>
-    <div class="hero-meta">
-      <span>OpenEnv 58d03440</span>
-      <span>h5i-app 0.5.5</span>
-      <span>Rust 1.88+</span>
-    </div>
-  </div>
-</header>
-
-<section id="write">
-  <div class="container">
-    <div class="section-head">
-      <span class="section-tag">How it fits</span>
-      <h2 class="section-title">The kernel decides. The shell renders.</h2>
-      <p class="section-sub">An environment is a kernel crate and a server crate, the same layout as any h5i app.</p>
-    </div>
-    <div class="feat-grid feat-grid-four">
-      <div class="feat-card">
-        <div class="feat-name">Kernel</div>
-        <div class="feat-desc">An ordinary <code>h5i_app::Kernel</code>. <code>transition</code> takes the snapshot and a command and returns the next snapshot and a reply. Rewards and termination live here, where <code>h5i app extract</code> and <code>h5i app prove</code> can reach them.</div>
-      </div>
-      <div class="feat-card">
-        <div class="feat-name">Environment</div>
-        <div class="feat-desc">Implement <code>senv::Environment</code>: turn an OpenEnv <code>reset</code> or <code>step</code> into a command, and render the committed snapshot as an observation. Optional MCP tools go on <code>POST /mcp</code>.</div>
-      </div>
-      <div class="feat-card">
-        <div class="feat-name">One engine per session</div>
-        <div class="feat-desc">Each OpenEnv session runs on its own <code>MemoryEngine</code>, so a property of the kernel holds per session. Disconnect drops the engine.</div>
-      </div>
-      <div class="feat-card">
-        <div class="feat-name">In-process too</div>
-        <div class="feat-desc"><code>senv::Session</code> drives the same kernel and rendering without a socket, for tests and for Rust rollouts.</div>
-      </div>
-    </div>
-<pre><code>#[tokio::main]
+<h2 id="layout">1. Lay the environment out like any h5i app</h2>
+<p>An environment is a kernel crate and a server crate. The kernel crate has no web or database dependencies: it holds the snapshot, command, reply and error types and a pure <code>transition</code>, kept in the Aeneas subset so <code>h5i app extract</code> can translate it. The server crate implements <code>h5i_app::Kernel</code> for a marker type and <code>senv::Environment</code> for the shell.</p>
+<pre><code class="language-text">OpenEnv reset/step → senv::Environment → kernel transition(snapshot, command)
+                                                ↓
+                       committed snapshot (reward, done) → observation</code></pre>
+<p><code>Environment</code> turns a <code>reset</code> or <code>step</code> into a kernel command and renders what the kernel committed. The binary is one call:</p>
+<pre><code class="language-rust">#[tokio::main]
 async fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
     senv::run(MyEnv::default(), senv::ServeArgs::from_env_and_args()).await
 }</code></pre>
-  </div>
-</section>
+<p>Each OpenEnv session runs on its own <code>MemoryEngine</code>, so a property of the kernel holds per episode, and disconnecting drops the engine. <code>senv::Session</code> drives the same kernel and rendering without a socket, for tests and Rust rollouts.</p>
 
-<section id="checked">
-  <div class="container">
-    <div class="section-head">
-      <span class="section-tag">Examples</span>
-      <h2 class="section-title">Three environments, checked against the official clients.</h2>
-    </div>
-<pre><code>PASS official EchoEnv reset/step/state, isolation, reconnect
+<h2 id="prove">2. Prove the rewards</h2>
+<p>In <code>examples/wordle</code>, the reward the agent sees is the field the step committed:</p>
+<pre><code class="language-rust">// examples/wordle/kernel/src/lib.rs, in transition:
+Command::Step { mv } =&gt; match step_core(game, mv) {
+    Ok((next, phase)) =&gt; Ok((
+        Some(next),
+        Reply {
+            reward_milli: next.reward_milli,
+            done: next.done,
+            phase: Some(phase),
+        },
+    )),
+    Err(e) =&gt; Err(e),
+},</code></pre>
+<p>so a theorem about the extracted <code>transition</code> is a theorem about that reward:</p>
+<pre><code class="language-lean">-- examples/wordle/proofs/Theorems.lean
+/-- Every reward a step commits is between 0 and 1000. -/
+theorem reward_in_range (c : Core) (mv : Move) :
+    transition () c (.Step mv) ⦃ r =&gt; ∀ c' rep, r = .Ok (some c', rep) →
+      0 ≤ rep.reward_milli.val ∧ rep.reward_milli.val ≤ 1000 ⦄</code></pre>
+<pre><code class="language-bash">cd examples/wordle
+h5i app extract
+h5i app prove     # the 13 theorems in h5i-app.toml, plus panic-free and read-only
+h5i app mutate    # 10 planted bugs; each must break a proof</code></pre>
+<p>Besides the range, the Wordle proofs show that guesses are marked by the TextArena rule, that a guess pays 1000 exactly when it is the secret, that a repeated guess is never scored, and that every game ends. The mutants include a loss that pays like a win and a secret that changes mid-game.</p>
+
+<h2 id="serve">3. Serve it to OpenEnv clients</h2>
+<pre><code class="language-bash">cargo run -p wordle-env      # serves on 127.0.0.1:8000</code></pre>
+<p>The official clients connect unchanged. The compatibility scripts build each example, wait for <code>/health</code>, and run the client from an OpenEnv checkout:</p>
+<pre><code class="language-text">PASS official EchoEnv reset/step/state, isolation, reconnect
 PASS official TextArenaEnv Wordle reset/step/state, feedback, win, invalid, isolation
 PASS official TextArenaEnv Arith-v0 reset/step/state, score, hidden value, isolation</code></pre>
-    <p><code>examples/echo</code> is the OpenEnv Echo MCP environment. <code>examples/wordle</code> is Wordle-v0, and <code>h5i app prove</code> checks that its kernel marks guesses by the TextArena rule and pays only for the secret. <code>examples/arith</code> is a multi-turn calculator task whose answer never appears in the observation or in <code>state()</code>. The wire subset and the differences from upstream are in the <a href="https://github.com/h5i-dev/senv/blob/main/docs/PROTOCOL.md">protocol note</a>.</p>
-  </div>
-</section>
+<table class="data">
+  <thead><tr><th>Example</th><th>Client</th><th>What the proofs say</th></tr></thead>
+  <tbody>
+    <tr><td><a href="https://github.com/h5i-dev/senv/tree/main/examples/wordle"><code>wordle</code></a></td><td><code>TextArenaEnv</code> Wordle-v0</td><td>TextArena marking, only the secret pays 1000, repeats are not scored, games end</td></tr>
+    <tr><td><a href="https://github.com/h5i-dev/senv/tree/main/examples/arith"><code>arith</code></a></td><td><code>TextArenaEnv</code> Arith-v0</td><td>An answer pays 1 exactly when it equals the problem's value; episodes end; the problem never changes</td></tr>
+    <tr><td><a href="https://github.com/h5i-dev/senv/tree/main/examples/echo"><code>echo</code></a></td><td><code>EchoEnv</code></td><td>None: the smallest complete server, with an MCP tool on <code>POST /mcp</code></td></tr>
+  </tbody>
+</table>
 
-<section id="cta">
-  <div class="container">
-    <h2 class="cta-title">Write an environment.</h2>
-    <p class="cta-sub">Apache-2.0. The kernel contract is h5i-app. The protocol follows OpenEnv, which is BSD-3-Clause. See NOTICE.</p>
-    <div class="hero-actions">
-      <a href="/manual/" class="btn btn-primary">Read the manual</a>
-      <a href="https://github.com/h5i-dev/senv" class="btn btn-ghost">GitHub</a>
-    </div>
-  </div>
-</section>
+<h2 id="boundary">What the proof covers</h2>
+<p>A theorem covers the extracted kernel. It does not cover the shell: message parsing, the word list, the secret chosen for a seed, or the rendering of observations. Isolation between sessions is a separate engine per session, checked by tests rather than proved. senv implements a subset of the OpenEnv wire: no HTTP <code>/reset</code>, <code>/step</code> or <code>/state</code>, no CORS, no web UI. The differences are in the <a href="https://github.com/h5i-dev/senv/blob/main/docs/PROTOCOL.md">protocol note</a>.</p>
 
-<footer>
-  <div class="footer-inner">
-    <div class="footer-brand">
-      <img src="/_static/logo.png" alt="h5i">
-      <span>senv<span class="red"> / by h5i</span></span>
-    </div>
-    <nav class="footer-links">
-      <a href="/">Home</a>
-      <a href="/manual/">Manual</a>
-      <a href="https://github.com/h5i-dev/senv/blob/main/docs/PROTOCOL.md">Protocol</a>
-      <a href="https://github.com/h5i-dev/senv/blob/main/docs/DESIGN.md">Design</a>
-      <a href="https://h5i.dev/">h5i.dev</a>
-      <a href="https://github.com/h5i-dev/senv">GitHub</a>
-    </nav>
-    <div class="footer-legal">Apache 2.0 · Built with Rust</div>
-  </div>
-</footer>
-<script src="/_static/blog.js" defer></script>
-<script src="/_static/highlight.js" defer></script>
-</body>
-</html>
+<h2 id="further-reading">Go deeper</h2>
+<p>The <a href="/manual/">senv manual</a> lists the <code>Environment</code> methods, the serve flags and the Python setup. The <a href="https://github.com/h5i-dev/senv/blob/main/docs/DESIGN.md">design note</a> explains the session model. For the kernel and proof workflow itself, read <a href="https://h5i.dev/guides/build-and-verify-a-web-app/">Build and Verify a Web App</a> and the <a href="https://h5i.dev/manual/#h5i-app">h5i app manual</a>.</p>
+
+<a class="next-up" href="/manual/"><span class="label">Next</span><h3>senv Manual</h3><p>The Environment trait, serve flags, the Python clients, and the limits of the protocol subset.</p></a>
+<div class="post-cta"><h3>Start from an example</h3><p>Copy <code>examples/arith</code> or <code>examples/wordle</code>, then replace the kernel with your environment's rules.</p>
+<div class="hero-actions"><a class="btn btn-primary" href="/manual/">Read the senv manual</a><a class="btn btn-ghost" href="https://github.com/h5i-dev/senv">Source on GitHub</a></div></div>
+</article></main><footer class="blog-footer"><div class="blog-footer-inner">
+  <div class="brand">h5i<span class="red"> / high-five</span></div>
+  <nav class="links"><a href="https://h5i.dev/">Home</a><a href="https://h5i.dev/guides/">Guides</a><a href="https://h5i.dev/blog/">Blog</a><a href="https://h5i.dev/manual/">Manual</a><a href="https://h5i.dev/showcase/">Showcase</a><a href="https://github.com/h5i-dev/senv">senv on GitHub</a></nav>
+  <div class="legal">Apache 2.0 &middot; Built with Rust</div>
+</div></footer>
+<script src="/_static/blog.js" defer></script><script src="/_static/highlight.js" defer></script></body></html>
