@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>senv manual</title>
+  <title>senv Manual: Write an OpenEnv Environment</title>
   <meta name="description" content="How to write an OpenEnv environment as an h5i-app kernel with senv, serve it, and call it from Python.">
   <meta name="author" content="h5i-dev">
   <meta name="theme-color" content="#D21C1C">
@@ -11,127 +11,162 @@
   <link rel="canonical" href="https://senv.h5i.dev/manual/">
   <link rel="sitemap" type="application/xml" href="/sitemap.xml">
   <link rel="icon" type="image/png" href="/_static/logo.png">
-  <meta property="og:title" content="senv manual">
+  <meta property="og:site_name" content="h5i">
+  <meta property="og:title" content="senv Manual: Write an OpenEnv Environment">
   <meta property="og:description" content="The Environment trait, serve flags, the Python clients, and the limits of the protocol subset.">
   <meta property="og:url" content="https://senv.h5i.dev/manual/">
-  <meta property="og:image" content="https://senv.h5i.dev/_static/logo.png">
-  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800;900&family=Space+Grotesk:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <meta property="og:image" content="https://h5i.dev/_static/social-card.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet"></noscript>
   <link rel="stylesheet" href="/_static/blog.css">
   <link rel="stylesheet" href="/_static/highlight.css">
+  <link rel="stylesheet" href="/_static/manual.css">
 </head>
 <body>
-<a class="skip-link" href="#write">Skip to content</a>
+<a class="skip-link" href="#the-two-crates">Skip to content</a>
 <nav>
-  <a class="nav-logo" href="/">
+  <a class="nav-logo" href="https://h5i.dev/">
     <img src="/_static/logo.png" alt="h5i">
-    <span>senv</span>
+    <span>h5i</span>
   </a>
   <ul class="nav-links">
-    <li><a href="/">Home</a></li>
-    <li><a href="#write">Write</a></li>
-    <li><a href="#serve">Serve</a></li>
-    <li><a href="#python">Python</a></li>
-    <li><a href="#limits">Limits</a></li>
+    <li><a href="https://h5i.dev/features/">Features</a></li>
+    <li><a href="https://h5i.dev/guides/">Guides</a></li>
+    <li><a href="https://h5i.dev/manual/">Manual</a></li>
+    <li><a href="https://h5i.dev/blog/">Blog</a></li>
+    <li><a href="https://h5i.dev/showcase/">Showcase</a></li>
     <li><a href="https://github.com/h5i-dev/senv" class="nav-cta">GitHub &rarr;</a></li>
   </ul>
 </nav>
-
-<header class="hero" id="write">
-  <div class="hero-inner">
-    <div class="hero-badge">Manual</div>
-    <h1 class="hero-title">Write an environment</h1>
-    <p class="hero-sub">A kernel crate with the rules, a server crate with the OpenEnv shell. Rust 1.88 or newer.</p>
-    <div class="hero-install">
-      <code>cargo run -p arith-env -- --ops 3</code>
-      <button class="copy-btn" type="button">copy</button>
+<main class="manual-wrap">
+  <aside class="manual-nav" aria-label="Manual chapters">
+<div class="mn-group"><p class="mn-head">Write</p>
+<a href="#the-two-crates"><span class="mn-n">01</span><span>The two crates</span></a>
+</div>
+<div class="mn-group"><p class="mn-head">Run</p>
+<a href="#serve"><span class="mn-n">02</span><span>Serve</span></a>
+<a href="#python"><span class="mn-n">03</span><span>Python</span></a>
+</div>
+<div class="mn-group"><p class="mn-head">Reference</p>
+<a href="#limits"><span class="mn-n">04</span><span>Limits</span></a>
+</div>
+    <div class="mn-foot">
+      <a href="/">senv overview</a>
+      <a href="https://h5i.dev/manual/#h5i-app">h5i app manual</a>
     </div>
-  </div>
-</header>
-
-<section>
-  <div class="container">
-    <h2>The two crates</h2>
-    <p>The kernel crate has no web or database dependencies. It holds the snapshot, command, reply, and error types and a pure <code>transition</code>. Keep it in the Aeneas subset if you want <code>h5i app extract</code> to translate it to Lean.</p>
-    <p>The server crate implements <code>h5i_app::Kernel</code> for a marker type that calls the kernel, and <code>senv::Environment</code> for the shell:</p>
-    <table class="data">
-      <thead><tr><th>Method</th><th>Required</th><th>Job</th></tr></thead>
-      <tbody>
-        <tr><td><code>metadata</code></td><td>yes</td><td><code>GET /metadata</code></td></tr>
-        <tr><td><code>principal</code></td><td>yes</td><td>The principal every command runs as</td></tr>
-        <tr><td><code>reset</code></td><td>yes</td><td>Seed and episode id to a kernel command</td></tr>
-        <tr><td><code>step</code></td><td>yes</td><td>The step payload to a kernel command, or a validation error</td></tr>
-        <tr><td><code>state</code></td><td>yes</td><td>The read-only state command</td></tr>
-        <tr><td><code>observe</code></td><td>yes</td><td>Committed snapshot and reply to an observation, reward, and done</td></tr>
-        <tr><td><code>render_state</code></td><td>yes</td><td>The <code>state</code> frame</td></tr>
-        <tr><td><code>refuse</code></td><td>yes</td><td>A kernel error to a wire error</td></tr>
-        <tr><td><code>schema</code>, <code>initial</code></td><td>no</td><td><code>GET /schema</code>; the snapshot before the first reset</td></tr>
-        <tr><td><code>tools</code>, <code>call_tool</code>, <code>tool_result</code></td><td>no</td><td>MCP tools on <code>POST /mcp</code></td></tr>
-      </tbody>
-    </table>
-    <p>Read the reward and <code>done</code> from what the kernel committed. If <code>observe</code> computed them, a proof about the kernel would not cover the reward the agent sees.</p>
-  </div>
-</section>
-
-<section id="serve">
-  <div class="container">
-    <h2>Serve</h2>
-    <p><code>senv::run(env, senv::ServeArgs::from_env_and_args())</code> parses these flags and serves until Ctrl-C. A binary with its own flags flattens <code>ServeArgs</code> into its <code>clap</code> parser.</p>
-    <table class="data">
-      <thead><tr><th>Flag</th><th>Environment</th><th>Default</th></tr></thead>
-      <tbody>
-        <tr><td><code>--bind</code></td><td><code>SENV_BIND</code></td><td><code>127.0.0.1:8000</code></td></tr>
-        <tr><td><code>--max-sessions</code></td><td><code>MAX_CONCURRENT_ENVS</code></td><td>8</td></tr>
-        <tr><td><code>--max-message-bytes</code></td><td></td><td>16777216</td></tr>
-        <tr><td><code>--idle-timeout-secs</code></td><td></td><td>120, or 0 to keep unattached sessions</td></tr>
-      </tbody>
-    </table>
-    <p><code>GET /health</code> returns <code>{"status":"healthy"}</code>. <code>GET /metadata</code> and <code>GET /schema</code> come from the environment. <code>POST /mcp</code> creates sessions and serves tools. <code>GET /ws</code> carries reset, step, and state. For tests, <code>Server::spawn("127.0.0.1:0")</code> serves on a free port in the background.</p>
-  </div>
-</section>
-
-<section id="python">
-  <div class="container">
-    <h2>Python</h2>
-    <p>Check out OpenEnv at <code>58d0344011fe961342706c90288f7e842b15b1c9</code>. Install <code>scripts/echo-client-requirements.txt</code> from this repository into a Python 3.10+ virtualenv. Point <code>PYTHONPATH</code> at <code>OpenEnv/src</code> and <code>OpenEnv/envs</code>. With <code>cargo run -p echo-env</code> listening:</p>
-    <pre><code>from echo_env import CallToolAction, EchoEnv
+  </aside>
+  <div class="manual-main">
+  <article class="manual-body">
+    <header class="manual-head">
+      <p class="crumbs"><a href="https://h5i.dev/">h5i</a><i>/</i><a href="https://h5i.dev/manual/#h5i-app">h5i app</a><i>/</i><a href="/">senv</a><i>/</i><span>manual</span></p>
+      <p class="post-eyebrow">Library reference</p>
+      <h1>senv Manual</h1>
+      <p class="manual-meta"><span>Rust 1.88+</span><i>|</i><span>h5i-app 0.5.5</span><i>|</i><span class="ok">4 chapters</span></p>
+      <details class="manual-mobile-toc"><summary>Chapters</summary>
+<div class="mn-group"><p class="mn-head">Write</p>
+<a href="#the-two-crates"><span class="mn-n">01</span><span>The two crates</span></a>
+</div>
+<div class="mn-group"><p class="mn-head">Run</p>
+<a href="#serve"><span class="mn-n">02</span><span>Serve</span></a>
+<a href="#python"><span class="mn-n">03</span><span>Python</span></a>
+</div>
+<div class="mn-group"><p class="mn-head">Reference</p>
+<a href="#limits"><span class="mn-n">04</span><span>Limits</span></a>
+</div>
+      </details>
+    </header>
+<p>How to write an OpenEnv environment with senv: a kernel crate with the rules, a server crate with the OpenEnv shell. The kernel is an ordinary <a href="https://h5i.dev/manual/#h5i-app">h5i-app</a> kernel, so <code>h5i app extract</code> and <code>h5i app prove</code> work on it unchanged.</p>
+<div class="codeblock"><div class="codeblock-head"><span>terminal</span><button class="copy-btn" type="button">Copy</button></div><pre><code class="language-bash">cargo run -p arith-env -- --ops 3
+</code></pre></div>
+<hr />
+<h2 id="the-two-crates" data-n="01">The two crates</h2>
+<p>The kernel crate has no web or database dependencies. It holds the snapshot, command, reply, and error types and a pure <code>transition</code>. Keep it in the Aeneas subset if you want <code>h5i app extract</code> to translate it to Lean.</p>
+<p>The server crate implements <code>h5i_app::Kernel</code> for a marker type that calls the kernel, and <code>senv::Environment</code> for the shell:</p>
+<table>
+  <thead><tr><th>Method</th><th>Required</th><th>Job</th></tr></thead>
+  <tbody>
+    <tr><td><code>metadata</code></td><td>yes</td><td><code>GET /metadata</code></td></tr>
+    <tr><td><code>principal</code></td><td>yes</td><td>The principal every command runs as</td></tr>
+    <tr><td><code>reset</code></td><td>yes</td><td>Seed and episode id to a kernel command</td></tr>
+    <tr><td><code>step</code></td><td>yes</td><td>The step payload to a kernel command, or a validation error</td></tr>
+    <tr><td><code>state</code></td><td>yes</td><td>The read-only state command</td></tr>
+    <tr><td><code>observe</code></td><td>yes</td><td>Committed snapshot and reply to an observation, reward, and done</td></tr>
+    <tr><td><code>render_state</code></td><td>yes</td><td>The <code>state</code> frame</td></tr>
+    <tr><td><code>refuse</code></td><td>yes</td><td>A kernel error to a wire error</td></tr>
+    <tr><td><code>schema</code>, <code>initial</code></td><td>no</td><td><code>GET /schema</code>; the snapshot before the first reset</td></tr>
+    <tr><td><code>tools</code>, <code>call_tool</code>, <code>tool_result</code></td><td>no</td><td>MCP tools on <code>POST /mcp</code></td></tr>
+  </tbody>
+</table>
+<p>Read the reward and <code>done</code> from what the kernel committed. If <code>observe</code> computed them, a proof about the kernel would not cover the reward the agent sees.</p>
+  
+<hr />
+<h2 id="serve" data-n="02">Serve</h2>
+<p><code>senv::run(env, senv::ServeArgs::from_env_and_args())</code> parses these flags and serves until Ctrl-C. A binary with its own flags flattens <code>ServeArgs</code> into its <code>clap</code> parser.</p>
+<table>
+  <thead><tr><th>Flag</th><th>Environment</th><th>Default</th></tr></thead>
+  <tbody>
+    <tr><td><code>--bind</code></td><td><code>SENV_BIND</code></td><td><code>127.0.0.1:8000</code></td></tr>
+    <tr><td><code>--max-sessions</code></td><td><code>MAX_CONCURRENT_ENVS</code></td><td>8</td></tr>
+    <tr><td><code>--max-message-bytes</code></td><td></td><td>16777216</td></tr>
+    <tr><td><code>--idle-timeout-secs</code></td><td></td><td>120, or 0 to keep unattached sessions</td></tr>
+  </tbody>
+</table>
+<p><code>GET /health</code> returns <code>{"status":"healthy"}</code>. <code>GET /metadata</code> and <code>GET /schema</code> come from the environment. <code>POST /mcp</code> creates sessions and serves tools. <code>GET /ws</code> carries reset, step, and state. For tests, <code>Server::spawn("127.0.0.1:0")</code> serves on a free port in the background.</p>
+  
+<hr />
+<h2 id="python" data-n="03">Python</h2>
+<p>Check out OpenEnv at <code>58d0344011fe961342706c90288f7e842b15b1c9</code>. Install <code>scripts/echo-client-requirements.txt</code> from this repository into a Python 3.10+ virtualenv. Point <code>PYTHONPATH</code> at <code>OpenEnv/src</code> and <code>OpenEnv/envs</code>. With <code>cargo run -p echo-env</code> listening:</p>
+<div class="codeblock"><div class="codeblock-head"><span>python</span><button class="copy-btn" type="button">Copy</button></div><pre><code class="language-python">from echo_env import CallToolAction, EchoEnv
 
 with EchoEnv(base_url="http://127.0.0.1:8000").sync() as env:
-    env.reset()
-    step = env.step(CallToolAction(tool_name="echo_message", arguments={"message": "Hello!"}))
-    assert step.observation.result["data"] == "Hello!"
-    assert env.state().step_count == 1</code></pre>
-    <p><code>scripts/echo_compat.sh</code>, <code>scripts/wordle_compat.sh</code>, and <code>scripts/arith_compat.sh</code> build each example, wait for <code>/health</code>, and run the unmodified client. Set <code>OPENENV_SRC</code> to the checkout.</p>
+env.reset()
+step = env.step(CallToolAction(tool_name="echo_message", arguments={"message": "Hello!"}))
+assert step.observation.result["data"] == "Hello!"
+assert env.state().step_count == 1</code></pre></div>
+<p><code>scripts/echo_compat.sh</code>, <code>scripts/wordle_compat.sh</code>, and <code>scripts/arith_compat.sh</code> build each example, wait for <code>/health</code>, and run the unmodified client. Set <code>OPENENV_SRC</code> to the checkout.</p>
+  
+<hr />
+<h2 id="limits" data-n="04">Limits</h2>
+<ul>
+  <li>Disconnecting the WebSocket destroys the session. A later <code>session/close</code> may report an unknown id. The official client ignores that.</li>
+  <li>Messages stop at 16 MiB unless you raise <code>--max-message-bytes</code>. The Python client's default is 100 MB.</li>
+  <li>There is no HTTP <code>/reset</code>, <code>/step</code>, or <code>/state</code>, no CORS, and no web UI. Sessions always run on <code>MemoryEngine</code>.</li>
+  <li>A proof about the kernel does not cover socket isolation or rendering. Isolation is a separate engine per session, checked by tests.</li>
+</ul>
+<p>The message shapes are in <a href="https://github.com/h5i-dev/senv/blob/main/docs/PROTOCOL.md">PROTOCOL.md</a>. The architecture is in <a href="https://github.com/h5i-dev/senv/blob/main/docs/DESIGN.md">DESIGN.md</a>.</p>
+  
+  </article>
   </div>
-</section>
-
-<section id="limits">
-  <div class="container">
-    <h2>Limits</h2>
-    <ul>
-      <li>Disconnecting the WebSocket destroys the session. A later <code>session/close</code> may report an unknown id. The official client ignores that.</li>
-      <li>Messages stop at 16 MiB unless you raise <code>--max-message-bytes</code>. The Python client's default is 100 MB.</li>
-      <li>There is no HTTP <code>/reset</code>, <code>/step</code>, or <code>/state</code>, no CORS, and no web UI. Sessions always run on <code>MemoryEngine</code>.</li>
-      <li>A proof about the kernel does not cover socket isolation or rendering. Isolation is a separate engine per session, checked by tests.</li>
-    </ul>
-    <p>The message shapes are in <a href="https://github.com/h5i-dev/senv/blob/main/docs/PROTOCOL.md">PROTOCOL.md</a>. The architecture is in <a href="https://github.com/h5i-dev/senv/blob/main/docs/DESIGN.md">DESIGN.md</a>.</p>
-  </div>
-</section>
-
-<footer>
-  <div class="footer-inner">
-    <div class="footer-brand">
-      <img src="/_static/logo.png" alt="h5i">
-      <span>senv<span class="red"> / by h5i</span></span>
-    </div>
-    <nav class="footer-links">
-      <a href="/">Home</a>
-      <a href="/manual/">Manual</a>
-      <a href="https://github.com/h5i-dev/senv/blob/main/docs/PROTOCOL.md">Protocol</a>
-      <a href="https://github.com/h5i-dev/senv">GitHub</a>
+  <aside class="manual-aside" aria-label="On this page">
+    <p class="ma-head">On this page</p>
+    <nav class="ma-toc">
+<div class="ma-sec" data-sec="the-two-crates"><a href="#the-two-crates">The two crates</a>
+</div>
+<div class="ma-sec" data-sec="serve"><a href="#serve">Serve</a>
+</div>
+<div class="ma-sec" data-sec="python"><a href="#python">Python</a>
+</div>
+<div class="ma-sec" data-sec="limits"><a href="#limits">Limits</a>
+</div>
     </nav>
-    <div class="footer-legal">Apache 2.0 · Built with Rust</div>
-  </div>
-</footer>
+    <p class="ma-head">Metadata</p>
+    <dl class="ma-meta">
+      <div><dt>Chapters</dt><dd>4</dd></div>
+      <div><dt>Wire</dt><dd>OpenEnv 58d03440</dd></div>
+      <div><dt>Protocol</dt><dd><a href="https://github.com/h5i-dev/senv/blob/main/docs/PROTOCOL.md">PROTOCOL.md &#8599;</a></dd></div>
+      <div><dt>Design</dt><dd><a href="https://github.com/h5i-dev/senv/blob/main/docs/DESIGN.md">DESIGN.md &#8599;</a></dd></div>
+    </dl>
+  </aside>
+</main>
+<footer class="blog-footer"><div class="blog-footer-inner">
+  <div class="brand">h5i<span class="red"> / high-five</span></div>
+  <nav class="links"><a href="https://h5i.dev/">Home</a><a href="https://h5i.dev/guides/">Guides</a><a href="https://h5i.dev/blog/">Blog</a><a href="https://h5i.dev/manual/">Manual</a><a href="https://h5i.dev/showcase/">Showcase</a><a href="https://github.com/h5i-dev/senv">senv on GitHub</a></nav>
+  <div class="legal">Apache 2.0 &middot; Built with Rust</div>
+</div></footer>
 <script src="/_static/blog.js" defer></script>
+<script src="/_static/highlight.js" defer></script>
+<script src="/_static/manual.js" defer></script>
 </body>
 </html>
