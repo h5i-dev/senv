@@ -40,7 +40,7 @@
   <ul class="nav-links">
     <li><a href="#write">Write one</a></li>
     <li><a href="/manual/">Manual</a></li>
-    <li><a href="https://github.com/h5i-dev/senv/blob/main/PROTOCOL.md">Protocol</a></li>
+    <li><a href="https://github.com/h5i-dev/senv/blob/main/docs/PROTOCOL.md">Protocol</a></li>
     <li><a href="https://github.com/h5i-dev/senv" class="nav-cta">GitHub &rarr;</a></li>
   </ul>
 </nav>
@@ -107,7 +107,7 @@ async fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
 <pre><code>PASS official EchoEnv reset/step/state, isolation, reconnect
 PASS official TextArenaEnv Wordle reset/step/state, feedback, win, invalid, isolation
 PASS official TextArenaEnv Arith-v0 reset/step/state, score, hidden value, isolation</code></pre>
-    <p><code>examples/echo</code> is the OpenEnv Echo MCP environment. <code>examples/wordle</code> is Wordle-v0 with a Lean 4 model of its kernel. <code>examples/arith</code> is a multi-turn calculator task whose answer never appears in the observation or in <code>state()</code>. The wire subset and the differences from upstream are in the <a href="https://github.com/h5i-dev/senv/blob/main/PROTOCOL.md">protocol note</a>.</p>
+    <p><code>examples/echo</code> is the OpenEnv Echo MCP environment. <code>examples/wordle</code> is Wordle-v0, and <code>h5i app prove</code> checks that its kernel marks guesses by the TextArena rule and pays only for the secret. <code>examples/arith</code> is a multi-turn calculator task whose answer never appears in the observation or in <code>state()</code>. The wire subset and the differences from upstream are in the <a href="https://github.com/h5i-dev/senv/blob/main/docs/PROTOCOL.md">protocol note</a>.</p>
   </div>
 </section>
 
@@ -131,8 +131,8 @@ PASS official TextArenaEnv Arith-v0 reset/step/state, score, hidden value, isola
     <nav class="footer-links">
       <a href="/">Home</a>
       <a href="/manual/">Manual</a>
-      <a href="https://github.com/h5i-dev/senv/blob/main/PROTOCOL.md">Protocol</a>
-      <a href="https://github.com/h5i-dev/senv/blob/main/DESIGN.md">Design</a>
+      <a href="https://github.com/h5i-dev/senv/blob/main/docs/PROTOCOL.md">Protocol</a>
+      <a href="https://github.com/h5i-dev/senv/blob/main/docs/DESIGN.md">Design</a>
       <a href="https://h5i.dev/">h5i.dev</a>
       <a href="https://github.com/h5i-dev/senv">GitHub</a>
     </nav>

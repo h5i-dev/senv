@@ -7,8 +7,8 @@
 - [Overview](https://senv.h5i.dev/): what the library is.
 - [Manual](https://senv.h5i.dev/manual/): the `Environment` trait, serve flags, the Python clients, limits.
 - [README](https://github.com/h5i-dev/senv/blob/main/README.md): a complete environment in two crates.
-- [Protocol](https://github.com/h5i-dev/senv/blob/main/PROTOCOL.md): the supported OpenEnv subset.
-- [Design](https://github.com/h5i-dev/senv/blob/main/DESIGN.md): kernel, shell, sessions, and what a kernel proof covers.
+- [Protocol](https://github.com/h5i-dev/senv/blob/main/docs/PROTOCOL.md): the supported OpenEnv subset.
+- [Design](https://github.com/h5i-dev/senv/blob/main/docs/DESIGN.md): kernel, shell, sessions, and what a kernel proof covers.
 - [Notice](https://github.com/h5i-dev/senv/blob/main/NOTICE): Apache-2.0 for senv and h5i-app; BSD-3-Clause for the OpenEnv behavior this library follows.
 
 ## Pins
@@ -26,7 +26,7 @@
 ## Examples
 
 - `examples/echo` (`cargo run -p echo-env`): the OpenEnv Echo MCP environment for the `EchoEnv` client.
-- `examples/wordle` (`cargo run -p wordle-env`): Wordle-v0 for `TextArenaEnv`, with a Lean 4 model of the kernel in `examples/wordle/proofs`.
+- `examples/wordle` (`cargo run -p wordle-env`): Wordle-v0 for `TextArenaEnv`, with its kernel proved in `examples/wordle/proofs`.
 - `examples/arith` (`cargo run -p arith-env -- --ops 3`): Arith-v0, a multi-turn calculator task for `TextArenaEnv`. The value is never in the observation or `state()`.
 
 ## Behavior that callers hit

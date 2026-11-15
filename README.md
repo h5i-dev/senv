@@ -183,7 +183,7 @@ OpenEnv client ── WebSocket / HTTP ──▶ senv::Server ──▶ Session 
                                       table, capacity    engine each  render snapshot  next snapshot
 ```
 
-`Server` owns the routes and the session table. Each session holds one `MemoryEngine`, and when its socket closes the engine is dropped. [DESIGN.md](DESIGN.md) has the details, and [PROTOCOL.md](PROTOCOL.md) lists the OpenEnv wire subset.
+`Server` owns the routes and the session table. Each session holds one `MemoryEngine`, and when its socket closes the engine is dropped. [docs/DESIGN.md](docs/DESIGN.md) has the details, and [docs/PROTOCOL.md](docs/PROTOCOL.md) lists the OpenEnv wire subset.
 
 ## 8. Compatibility and limits
 
