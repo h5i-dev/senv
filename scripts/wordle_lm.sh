@@ -33,7 +33,7 @@ fi
 python="${SENV_PYTHON:-python3}"
 bind="${SENV_BIND:-127.0.0.1:8782}"
 base_url="http://${bind}"
-bin="${SENV_BIN:-${CARGO_TARGET_DIR:-$root/target}/release/senv}"
+bin="${SENV_BIN:-${CARGO_TARGET_DIR:-$root/target}/release/wordle-env}"
 if [[ ! -x "$bin" ]]; then
   echo "senv binary is missing at $bin" >&2
   exit 2
@@ -52,7 +52,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"$bin" serve --bind "$bind" --env wordle --max-sessions 4 >"$EXPERIMENT_OUT/server.log" 2>&1 &
+"$bin" --bind "$bind" --max-sessions 4 >"$EXPERIMENT_OUT/server.log" 2>&1 &
 server_pid=$!
 
 for _ in $(seq 1 100); do

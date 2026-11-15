@@ -24,7 +24,7 @@ port="${SENV_ARITH_PORT:-8786}"
 export SENV_BASE_URL="http://127.0.0.1:${port}"
 export SENV_MODEL_ID="Qwen/Qwen2.5-0.5B-Instruct"
 export SENV_MODEL_REVISION="7ae557604adf67be50417f59c2c2f167def9a775"
-bin="${CARGO_TARGET_DIR:-$root/target}/release/senv"
+bin="${CARGO_TARGET_DIR:-$root/target}/release/arith-env"
 episodes="${SENV_WARMUP_EPISODES:-40}"
 bonus="${SENV_ANSWER_BONUS:-0.5}"
 
@@ -56,7 +56,7 @@ stop_server() {
 }
 trap stop_server EXIT
 
-"$bin" serve --bind "127.0.0.1:${port}" --env arith --arith-ops 2 --max-sessions 2 \
+"$bin" --bind "127.0.0.1:${port}" --ops 2 --max-sessions 2 \
   >"$out/server.log" 2>&1 &
 server_pid=$!
 for _ in $(seq 1 100); do

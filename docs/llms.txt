@@ -1,31 +1,36 @@
 # senv
 
-> senv is an OpenEnv-compatible Echo environment server written in Rust. Each WebSocket session runs reset, step, and state on its own h5i-app MemoryEngine. It is not a Python environment manager and it is not an OS sandbox.
+> senv is a Rust library for writing reinforcement-learning environments as h5i-app kernels and serving them to unmodified OpenEnv clients over the OpenEnv WebSocket protocol. The kernel is a pure h5i-app `Kernel` that decides rewards and termination; `senv::Environment` is the shell that parses OpenEnv requests and renders observations. Each session runs on its own h5i-app MemoryEngine.
 
 ## Start here
 
-- [Overview](https://senv.h5i.dev/): what the server is, and the 2026-11-09 client result.
-- [Manual](https://senv.h5i.dev/manual/): `senv serve` flags, the Python EchoEnv snippet, limits.
-- [Protocol](https://github.com/h5i-dev/senv/blob/main/PROTOCOL.md): the supported OpenEnv subset.
-- [Design](https://github.com/h5i-dev/senv/blob/main/DESIGN.md): shell, kernel, and what a kernel proof would not establish.
-- [Notice](https://github.com/h5i-dev/senv/blob/main/NOTICE): Apache-2.0 for senv and h5i-app; BSD-3-Clause for the OpenEnv behavior this server follows.
+- [Overview](https://senv.h5i.dev/): what the library is.
+- [Manual](https://senv.h5i.dev/manual/): the `Environment` trait, serve flags, the Python clients, limits.
+- [README](https://github.com/h5i-dev/senv/blob/main/README.md): a complete environment in two crates.
+- [Protocol](https://github.com/h5i-dev/senv/blob/main/docs/PROTOCOL.md): the supported OpenEnv subset.
+- [Design](https://github.com/h5i-dev/senv/blob/main/docs/DESIGN.md): kernel, shell, sessions, and what a kernel proof covers.
+- [Notice](https://github.com/h5i-dev/senv/blob/main/NOTICE): Apache-2.0 for senv and h5i-app; BSD-3-Clause for the OpenEnv behavior this library follows.
 
 ## Pins
 
-- OpenEnv: `58d0344011fe961342706c90288f7e842b15b1c9` (meta-pytorch/OpenEnv).
+- OpenEnv: `58d0344011fe961342706c90288f7e842b15b1c9` (openenv/OpenEnv).
 - h5i-app: `0.5.5` (crates.io).
+
+## API
+
+- `senv::Environment`: `metadata`, `principal`, `reset`, `step`, `state`, `observe`, `render_state`, `refuse`; optional `schema`, `initial`, `tools`, `call_tool`, `tool_result`. `type Kernel: h5i_app::Kernel`.
+- `senv::run(env, ServeArgs)`: serve with `--bind`, `--max-sessions`, `--max-message-bytes`, `--idle-timeout-secs`.
+- `senv::Server::new(env, ServerConfig)`: `router()`, `serve(listener)`, `spawn(addr)` for tests.
+- `senv::Session::open(Arc<env>, episode_id)`: in-process `reset`, `step`, `state`, `call_tool`, `snapshot`.
+
+## Examples
+
+- `examples/echo` (`cargo run -p echo-env`): the OpenEnv Echo MCP environment for the `EchoEnv` client.
+- `examples/wordle` (`cargo run -p wordle-env`): Wordle-v0 for `TextArenaEnv`, with its kernel proved in `examples/wordle/proofs`.
+- `examples/arith` (`cargo run -p arith-env -- --ops 3`): Arith-v0, a multi-turn calculator task for `TextArenaEnv`. The value is never in the observation or `state()`.
 
 ## Behavior that callers hit
 
-- `senv serve` listens on `127.0.0.1:8000` unless `--bind` or `SENV_BIND` is set. `--env` is `echo` (default), `wordle`, or `arith`. `--arith-ops` is 2, 3, or 4 and applies only to the custom Arith-v0 task.
-- `EchoEnv` (production mode) posts `openenv/session/create` to `/mcp`, then opens `/ws?session_id=`.
-- `reset`, `step`, and `state` are WebSocket messages. `list_tools` and `call_tool` are HTTP JSON-RPC and do not increment `step_count`.
-- Reset reward is `0.0`, done is false, metadata message is `Echo environment ready!`.
-- `echo_message` returns the message. `echo_with_length` returns `{message, length}` where length counts Unicode scalars.
 - A WebSocket disconnect destroys that session. The official client ignores the following `session/close` error.
 - Default cap is 8 sessions. Default max WebSocket message is 16 MiB. Unattached sessions idle out after 120 seconds.
 - There is no `/reset`, `/step`, or `/state` HTTP API, no CORS, and no Gradio UI.
-
-## Checked
-
-On 2026-11-09, `scripts/echo_compat.sh` against the pinned unmodified client printed `PASS official EchoEnv reset/step/state, isolation, reconnect`. `scripts/wordle_compat.sh` printed `PASS official TextArenaEnv Wordle reset/step/state, feedback, win, invalid, isolation`. Wordle uses a system spelling list of 15,034 five-letter words, not NLTK and not the New York Times list, and its seeded secret is not CPython's RNG. `cargo test --locked --offline` passed 17 library tests, 3 Echo protocol tests, and 2 Wordle WebSocket tests. `cargo clippy --all-targets --locked --offline -- -D warnings` was clean. `proofs/SenvWordle.lean` proves the pure Wordle transition and does not prove socket isolation. `docs/BENCHMARKS.md` is one 2026-11-09 run of `scripts/bench.py` on one 4 vCPU host: senv Echo step mean 0.121 ms (n=400) and the pinned Python Echo server 2.097 ms; senv Wordle step mean 0.223 ms (n=240). The GPU was idle. `docs/EXPERIMENT.md` is Wordle through `TextArenaEnv` on held-out seeds 10000..10039: random 0/40, trained linear softmax 6/40, linear greedy 23/40. Free-text SmolLM2-135M-Instruct won 0/40. With guesses limited to 32 feedback-consistent words, the uniform shortlist won 26/40, pretrained SmolLM2 sampling won 30/40, and sampling after 32 REINFORCE episodes won 31/40. `docs/ARITH.md` is custom Arith-v0 on 2026-11-10: held-out `answer 0` 3/200, random legal line 6/200, SmolLM2-135M-Instruct 0/200 before and after 200 REINFORCE episodes. A 40-episode Qwen answer-format warmup at 2 operators scored 0/40 with baseline 0.25, and 2/40 with format rate 1 when the baseline started at 0. `docs/ARITH-DIAGNOSIS.md` found that those runs also inherited Qwen's repetition penalty 1.1 and top-k 20 (SmolLM2 inherited top-k 50) and scored an untempered softmax. After pinning the decoder, Qwen's greedy seed-2000 continuation contains `answer 432` on the second line; the harness now keeps that line. Nested integer answers stay wrong, and RL was not resumed.

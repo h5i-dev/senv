@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drive the unmodified TextArenaEnv client against `senv serve --env wordle`.
+"""Drive the unmodified TextArenaEnv client against the `wordle-env` example server.
 
 The client is imported from the pinned OpenEnv tree. This file does not vendor
 or patch it. Wordle here is the senv game on that client's WebSocket contract,

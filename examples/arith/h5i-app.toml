@@ -1,0 +1,73 @@
+# Read by `h5i app`: extract, check, prove, mutate, doctor.
+
+[extract]
+crate = "kernel"
+# Charon starts here and extracts what it reaches.
+start-from = ["transition", "apply", "read_only"]
+
+[check]
+# Must exist and use only Lean's standard axioms. Every theorem in a
+# hand-written module under proofs/ is gated anyway; naming the main ones
+# here catches a rename.
+theorems = [
+    "arith_kernel.Theorems.calc_spec",
+    "arith_kernel.Theorems.value_spec",
+    "arith_kernel.Theorems.answer_pays_iff_correct",
+    "arith_kernel.Theorems.pays_only_for_the_value",
+    "arith_kernel.Theorems.episode_ends",
+    "arith_kernel.Theorems.done_is_final",
+    "arith_kernel.Theorems.task_is_fixed",
+    "arith_kernel.Theorems.reset_is_valid",
+]
+
+[obligations]
+panic-free = "arith_kernel.Theorems.panic_free"
+read-only = "arith_kernel.Theorems.read_only_sound"
+
+# Bugs the proofs must reject (`h5i app mutate`). Each is a reward-hacking
+# hole an RL agent could find; each `old` occurs once in kernel/src/lib.rs.
+
+[[mutant]]
+name = "any_answer_wins"
+old = "if answer == v {"
+new = "if answer == answer {"
+
+[[mutant]]
+name = "off_by_one_answer"
+old = "if answer == v {"
+new = "if answer == v + 1 {"
+
+[[mutant]]
+name = "calc_pays"
+old = "let won = last == Feedback::Correct;"
+new = "let won = last != Feedback::Incorrect;"
+
+[[mutant]]
+name = "endless_episode"
+old = "let done = is_answer(action) || at_limit(steps);"
+new = "let done = is_answer(action);"
+
+[[mutant]]
+name = "answer_does_not_end"
+old = "let done = is_answer(action) || at_limit(steps);"
+new = "let done = at_limit(steps);"
+
+[[mutant]]
+name = "replay_after_done"
+old = "if s.done || s.steps >= MAX_STEPS {"
+new = "if s.steps >= MAX_STEPS {"
+
+[[mutant]]
+name = "wrong_precedence"
+old = "        calc(p.digits[0], p.ops[0], p.digits[1]),\n        p.ops[1],\n        p.digits[2],"
+new = "        calc(p.digits[1], p.ops[1], p.digits[2]),\n        p.ops[0],\n        p.digits[0],"
+
+[[mutant]]
+name = "accept_zero_digit"
+old = "1 <= d && d <= 9"
+new = "0 <= d && d <= 9"
+
+[[mutant]]
+name = "task_swap"
+old = "                    problem: s.problem,\n"
+new = "                    problem: empty_problem(),\n"

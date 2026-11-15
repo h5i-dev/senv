@@ -1,0 +1,16 @@
+[package]
+name = "arith-kernel"
+description = "Arith-v0's kernel: every reward and termination decision, extracted to Lean by `h5i app extract`."
+version = "0.1.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# Extracted to Lean by `h5i app extract`. Keep it to the Rust that Charon and
+# Aeneas translate, and its dependencies to crates that are extracted with it
+# (h5i-app-std, h5i-app-sql, h5i-app-schema), never I/O.
+[dependencies]
+
+[lints]
+workspace = true

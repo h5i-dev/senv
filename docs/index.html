@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>senv — OpenEnv Echo on h5i-app</title>
-  <meta name="description" content="senv serves an OpenEnv-compatible Echo environment. Each WebSocket session runs reset, step, and state on its own h5i-app MemoryEngine.">
+  <title>senv — verified RL environments for OpenEnv, on h5i</title>
+  <meta name="description" content="senv is a Rust library for writing reinforcement-learning environments as h5i-app kernels and serving them to unmodified OpenEnv clients.">
   <meta name="author" content="h5i-dev">
   <meta name="theme-color" content="#D21C1C">
   <meta name="color-scheme" content="dark">
@@ -15,13 +15,13 @@
   <link rel="apple-touch-icon" href="/_static/logo.png">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="senv">
-  <meta property="og:title" content="senv — OpenEnv Echo on h5i-app">
-  <meta property="og:description" content="An OpenEnv-compatible Echo environment. Each session is an h5i-app MemoryEngine.">
+  <meta property="og:title" content="senv — verified RL environments for OpenEnv, on h5i">
+  <meta property="og:description" content="Write the environment as an h5i-app kernel, prove things about it in Lean, and serve it to OpenEnv clients.">
   <meta property="og:url" content="https://senv.h5i.dev/">
   <meta property="og:image" content="https://senv.h5i.dev/_static/logo.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="senv — OpenEnv Echo on h5i-app">
-  <meta name="twitter:description" content="An OpenEnv-compatible Echo environment. Each session is an h5i-app MemoryEngine.">
+  <meta name="twitter:title" content="senv — verified RL environments for OpenEnv, on h5i">
+  <meta name="twitter:description" content="Write the environment as an h5i-app kernel, prove things about it in Lean, and serve it to OpenEnv clients.">
   <meta name="twitter:image" content="https://senv.h5i.dev/_static/logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -38,78 +38,83 @@
     <span>senv</span>
   </a>
   <ul class="nav-links">
-    <li><a href="#run">Run</a></li>
+    <li><a href="#write">Write one</a></li>
     <li><a href="/manual/">Manual</a></li>
-    <li><a href="https://github.com/h5i-dev/senv/blob/main/PROTOCOL.md">Protocol</a></li>
+    <li><a href="https://github.com/h5i-dev/senv/blob/main/docs/PROTOCOL.md">Protocol</a></li>
     <li><a href="https://github.com/h5i-dev/senv" class="nav-cta">GitHub &rarr;</a></li>
   </ul>
 </nav>
 
 <header class="hero" id="hero">
   <div class="hero-inner">
-    <div class="hero-badge">OpenEnv Echo · one MemoryEngine per session · Apache-2.0</div>
-    <h1 class="hero-title"><em>Echo</em> for OpenEnv, on h5i-app</h1>
+    <div class="hero-badge">Rust library · h5i-app kernels · OpenEnv wire · Apache-2.0</div>
+    <h1 class="hero-title">RL environments as <em>h5i apps</em></h1>
     <p class="hero-sub">
-      senv serves the production Echo protocol, and <code>--env wordle</code> serves a
-      5-letter Wordle on the TextArenaEnv socket. <code>reset</code>, <code>step</code>, and
-      <code>state</code> are kernel transitions. The official Python clients
-      talk to this process without changes.
+      Write the rules as an h5i-app kernel: a pure function that decides every reward and every
+      <code>done</code>. Prove properties of it in Lean 4 with h5i's tooling. senv serves it on the
+      OpenEnv wire, so the unmodified Python clients train against it.
     </p>
     <div class="hero-install" id="quickstart">
-      <code>cargo run --locked --bin senv -- serve</code>
+      <code>senv = { git = "https://github.com/h5i-dev/senv" }</code>
       <button class="copy-btn" type="button">copy</button>
     </div>
     <div class="hero-meta">
-      <span>Listens on 127.0.0.1:8000</span>
       <span>OpenEnv 58d03440</span>
       <span>h5i-app 0.5.5</span>
+      <span>Rust 1.88+</span>
     </div>
   </div>
 </header>
 
-<section id="run">
+<section id="write">
   <div class="container">
     <div class="section-head">
-      <span class="section-tag">What it does</span>
-      <h2 class="section-title">A session is an engine.</h2>
-      <p class="section-sub">The Axum shell parses JSON. The kernel decides the next episode. Dropping the socket drops the engine.</p>
+      <span class="section-tag">How it fits</span>
+      <h2 class="section-title">The kernel decides. The shell renders.</h2>
+      <p class="section-sub">An environment is a kernel crate and a server crate, the same layout as any h5i app.</p>
     </div>
     <div class="feat-grid feat-grid-four">
       <div class="feat-card">
-        <div class="feat-name">Official Echo client</div>
-        <div class="feat-desc"><code>EchoEnv.reset()</code>, <code>step()</code>, and <code>state()</code> use the WebSocket. <code>list_tools</code> and <code>call_tool</code> use <code>POST /mcp</code> and do not increment <code>step_count</code>.</div>
+        <div class="feat-name">Kernel</div>
+        <div class="feat-desc">An ordinary <code>h5i_app::Kernel</code>. <code>transition</code> takes the snapshot and a command and returns the next snapshot and a reply. Rewards and termination live here, where <code>h5i app extract</code> and <code>h5i app prove</code> can reach them.</div>
       </div>
       <div class="feat-card">
-        <div class="feat-name">One engine per socket</div>
-        <div class="feat-desc">Each session builds its own <code>h5i_app::MemoryEngine</code>. A second client cannot see the first episode. Disconnect destroys the session.</div>
+        <div class="feat-name">Environment</div>
+        <div class="feat-desc">Implement <code>senv::Environment</code>: turn an OpenEnv <code>reset</code> or <code>step</code> into a command, and render the committed snapshot as an observation. Optional MCP tools go on <code>POST /mcp</code>.</div>
       </div>
       <div class="feat-card">
-        <div class="feat-name">Bounded</div>
-        <div class="feat-desc">Eight live sessions by default. A ninth create is a capacity error. Messages larger than 16 MiB are rejected. Unattached sessions expire.</div>
+        <div class="feat-name">One engine per session</div>
+        <div class="feat-desc">Each OpenEnv session runs on its own <code>MemoryEngine</code>, so a property of the kernel holds per session. Disconnect drops the engine.</div>
       </div>
       <div class="feat-card">
-        <div class="feat-name">Not a sandbox</div>
-        <div class="feat-desc">senv no longer manages Python environments, uv, or an OS security boundary. The old command set is history in this git repository, not a feature of this binary.</div>
+        <div class="feat-name">In-process too</div>
+        <div class="feat-desc"><code>senv::Session</code> drives the same kernel and rendering without a socket, for tests and for Rust rollouts.</div>
       </div>
     </div>
+<pre><code>#[tokio::main]
+async fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
+    senv::run(MyEnv::default(), senv::ServeArgs::from_env_and_args()).await
+}</code></pre>
   </div>
 </section>
 
 <section id="checked">
   <div class="container">
     <div class="section-head">
-      <span class="section-tag">Checked on 2026-11-09</span>
-      <h2 class="section-title">The unmodified client passed.</h2>
+      <span class="section-tag">Examples</span>
+      <h2 class="section-title">Three environments, checked against the official clients.</h2>
     </div>
-    <pre><code>PASS official EchoEnv reset/step/state, isolation, reconnect</code></pre>
-    <p>That run imported <code>envs/echo_env/client.py</code> from OpenEnv <code>58d0344011fe961342706c90288f7e842b15b1c9</code>. Cargo tests covered malformed frames, a second socket, capacity, and idle cleanup. The wire subset and the differences from upstream are in the <a href="https://github.com/h5i-dev/senv/blob/main/PROTOCOL.md">protocol note</a>. The <a href="/manual/">manual</a> has the commands.</p>
+<pre><code>PASS official EchoEnv reset/step/state, isolation, reconnect
+PASS official TextArenaEnv Wordle reset/step/state, feedback, win, invalid, isolation
+PASS official TextArenaEnv Arith-v0 reset/step/state, score, hidden value, isolation</code></pre>
+    <p><code>examples/echo</code> is the OpenEnv Echo MCP environment. <code>examples/wordle</code> is Wordle-v0, and <code>h5i app prove</code> checks that its kernel marks guesses by the TextArena rule and pays only for the secret. <code>examples/arith</code> is a multi-turn calculator task whose answer never appears in the observation or in <code>state()</code>. The wire subset and the differences from upstream are in the <a href="https://github.com/h5i-dev/senv/blob/main/docs/PROTOCOL.md">protocol note</a>.</p>
   </div>
 </section>
 
 <section id="cta">
   <div class="container">
-    <h2 class="cta-title">Serve Echo.</h2>
-    <p class="cta-sub">Apache-2.0. The kernel is h5i-app. The protocol follows OpenEnv, which is BSD-3-Clause. See NOTICE.</p>
+    <h2 class="cta-title">Write an environment.</h2>
+    <p class="cta-sub">Apache-2.0. The kernel contract is h5i-app. The protocol follows OpenEnv, which is BSD-3-Clause. See NOTICE.</p>
     <div class="hero-actions">
       <a href="/manual/" class="btn btn-primary">Read the manual</a>
       <a href="https://github.com/h5i-dev/senv" class="btn btn-ghost">GitHub</a>
@@ -126,8 +131,8 @@
     <nav class="footer-links">
       <a href="/">Home</a>
       <a href="/manual/">Manual</a>
-      <a href="https://github.com/h5i-dev/senv/blob/main/PROTOCOL.md">Protocol</a>
-      <a href="https://github.com/h5i-dev/senv/blob/main/DESIGN.md">Design</a>
+      <a href="https://github.com/h5i-dev/senv/blob/main/docs/PROTOCOL.md">Protocol</a>
+      <a href="https://github.com/h5i-dev/senv/blob/main/docs/DESIGN.md">Design</a>
       <a href="https://h5i.dev/">h5i.dev</a>
       <a href="https://github.com/h5i-dev/senv">GitHub</a>
     </nav>

@@ -1,0 +1,79 @@
+# Read by `h5i app`: extract, check, prove, mutate, doctor.
+
+[extract]
+crate = "kernel"
+start-from = ["transition", "apply", "read_only"]
+
+[check]
+theorems = [
+    "wordle_kernel.Theorems.completion_spec",
+    "wordle_kernel.Theorems.reward_in_range",
+    "wordle_kernel.Theorems.game_ends",
+    "wordle_kernel.Theorems.fresh_moves",
+    "wordle_kernel.Theorems.done_is_final",
+    "wordle_kernel.Theorems.secret_is_fixed",
+    "wordle_kernel.Theorems.loss_pays_less",
+    "wordle_kernel.Theorems.all_green_spec",
+    "wordle_kernel.Theorems.mark_spec",
+    "wordle_kernel.Theorems.guess_pays_iff_secret",
+    "wordle_kernel.Theorems.repeat_is_not_scored",
+    "wordle_kernel.Theorems.reset_secret_valid",
+    "wordle_kernel.Model.mark_eq_spec",
+]
+
+[obligations]
+panic-free = "wordle_kernel.Theorems.panic_free"
+read-only = "wordle_kernel.Theorems.read_only_sound"
+
+# Bugs the proofs must reject (`h5i app mutate`). Each `old` occurs once in
+# kernel/src/lib.rs.
+
+[[mutant]]
+name = "loss_pays_like_a_win"
+old = "                next.reward_milli = reward_milli;\n                PlayOutcome::Loss { reward_milli }"
+new = "                next.reward_milli = WIN_MILLI;\n                PlayOutcome::Loss { reward_milli }"
+
+[[mutant]]
+name = "unlimited_invalid_moves"
+old = "if game.error_count < ERROR_ALLOWANCE {"
+new = "if game.error_count < 255 {"
+
+[[mutant]]
+name = "replay_after_done"
+old = "if game.done || game.guess_count >= MAX_GUESSES || game.turn >= MAX_GUESSES {"
+new = "if game.guess_count >= MAX_GUESSES || game.turn >= MAX_GUESSES {"
+
+[[mutant]]
+name = "win_pays_less"
+old = "                next.reward_milli = WIN_MILLI;\n                PlayOutcome::Win"
+new = "                next.reward_milli = 2000;\n                PlayOutcome::Win"
+
+[[mutant]]
+name = "secret_swap"
+old = "            next.guesses[game.guess_count as usize] = letters;\n"
+new = "            next.guesses[game.guess_count as usize] = letters;\n            next.secret = letters;\n"
+
+[[mutant]]
+name = "yellow_reuses_a_letter"
+old = "                    left[j] = CONSUMED;\n"
+new = ""
+
+[[mutant]]
+name = "green_does_not_consume"
+old = "            remaining[i] = CONSUMED;\n"
+new = ""
+
+[[mutant]]
+name = "repeats_allowed"
+old = "            } else if already_guessed(game, letters) {"
+new = "            } else if false && already_guessed(game, letters) {"
+
+[[mutant]]
+name = "any_secret_accepted"
+old = "            if is_word(secret) {"
+new = "            if true {"
+
+[[mutant]]
+name = "first_letter_only"
+old = "    while i < WORD_LEN {\n        if guess[i] == remaining[i] {"
+new = "    while i < 1 {\n        if guess[i] == remaining[i] {"

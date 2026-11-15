@@ -47,8 +47,8 @@ else
   do_test=1
 fi
 
-cargo build --locked --release --bin senv
-bin="${CARGO_TARGET_DIR:-$root/target}/release/senv"
+cargo build --locked --release -p arith-env
+bin="${CARGO_TARGET_DIR:-$root/target}/release/arith-env"
 server_pid=""
 
 stop_server() {
@@ -63,7 +63,7 @@ trap stop_server EXIT
 start_server() {
   local ops="$1"
   stop_server
-  "$bin" serve --bind "127.0.0.1:${port}" --env arith --arith-ops "$ops" --max-sessions 4 \
+  "$bin" --bind "127.0.0.1:${port}" --ops "$ops" --max-sessions 4 \
     >"$out/server-ops${ops}.log" 2>&1 &
   server_pid=$!
   for _ in $(seq 1 100); do

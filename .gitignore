@@ -219,8 +219,12 @@ __marimo__/
 /PERSONA.md
 
 # Lean build output. Sources under proofs/ are tracked.
-.lake/
+.lake
+# proofs/.lake may be a symlink to a larger disk.
 
 # Local benchmark and experiment output. Measured runs belong on a large disk.
 /bench-out/
 /experiment-out/
+
+# h5i app run records (check, mutate).
+.h5i/

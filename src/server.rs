@@ -1,11 +1,10 @@
-//! Axum shell around one Echo environment per session.
+//! Axum shell: OpenEnv routes, the session table, and one [`Session`] per client.
 //!
-//! `POST /mcp` creates the session the official `EchoEnv` client asks for.
+//! `POST /mcp` creates the session that production OpenEnv clients ask for.
 //! `GET /ws` attaches that session, or creates one when `session_id` is
 //! omitted. The socket's task owns the attachment. When it finishes, the
-//! session and its `MemoryEngine` are dropped.
-//!
-//! That cleanup is a property of this table, not of the kernel.
+//! session and its engine are dropped. That cleanup is a property of this
+//! table, not of any kernel.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,29 +21,11 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
-use crate::arith_env::{self, ArithEnvironment};
-use crate::env::{EchoEnvironment, EnvError, Environment};
-use crate::kernel::{Body, StepAction};
-use crate::protocol::{self, Incoming, WireError};
-use crate::wordle_env::{self, WordleEnvironment};
+use crate::env::{Environment, ToolError, WireError};
+use crate::session::{Dispatch, Session, ToolCallError};
+use crate::wire;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EnvKind {
-    Echo,
-    Wordle,
-    Arith,
-}
-
-impl EnvKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Echo => "echo",
-            Self::Wordle => "wordle",
-            Self::Arith => "arith",
-        }
-    }
-}
-
+/// Limits that apply to every environment.
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
     pub max_sessions: usize,
@@ -52,9 +33,6 @@ pub struct ServerConfig {
     /// Sessions that never attach, or whose socket is already gone, are
     /// removed after this long. `None` disables the sweep.
     pub idle_timeout: Option<Duration>,
-    pub kind: EnvKind,
-    /// Operator count for [`EnvKind::Arith`]. Ignored by Echo and Wordle.
-    pub arith_ops: u8,
 }
 
 impl Default for ServerConfig {
@@ -63,34 +41,93 @@ impl Default for ServerConfig {
             max_sessions: 8,
             max_message_bytes: 16 * 1024 * 1024,
             idle_timeout: Some(Duration::from_secs(120)),
-            kind: EnvKind::Echo,
-            arith_ops: 3,
         }
     }
 }
 
-#[derive(Clone)]
-pub struct AppState {
-    sessions: Arc<SessionTable>,
+/// An OpenEnv server for one environment.
+pub struct Server<E: Environment> {
+    env: Arc<E>,
+    sessions: Arc<SessionTable<E>>,
     config: Arc<ServerConfig>,
 }
 
-struct SessionTable {
-    inner: Mutex<HashMap<String, Arc<Slot>>>,
+impl<E: Environment> Clone for Server<E> {
+    fn clone(&self) -> Self {
+        Self {
+            env: self.env.clone(),
+            sessions: self.sessions.clone(),
+            config: self.config.clone(),
+        }
+    }
+}
+
+impl<E: Environment> Server<E> {
+    pub fn new(env: E, config: ServerConfig) -> Self {
+        let env = Arc::new(env);
+        Self {
+            sessions: Arc::new(SessionTable::new(env.clone(), &config)),
+            env,
+            config: Arc::new(config),
+        }
+    }
+
+    pub fn environment(&self) -> &E {
+        &self.env
+    }
+
+    /// The OpenEnv routes. Merge them into a larger Axum app if you need to.
+    pub fn router(&self) -> Router {
+        Router::new()
+            .route("/health", get(health))
+            .route("/metadata", get(metadata::<E>))
+            .route("/schema", get(schema::<E>))
+            .route("/mcp", post(mcp::<E>))
+            .route("/ws", get(ws::<E>))
+            .with_state(self.clone())
+    }
+
+    /// Bind `addr`, serve in a background task, and return the bound address.
+    /// Meant for tests: `"127.0.0.1:0"` picks a free port. There is no idle
+    /// sweep and no shutdown signal; the task ends with the runtime.
+    pub async fn spawn(self, addr: &str) -> std::io::Result<std::net::SocketAddr> {
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        let local = listener.local_addr()?;
+        let router = self.router();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, router).await;
+        });
+        Ok(local)
+    }
+
+    /// Serve until Ctrl-C. Idle sessions are swept every 30 seconds.
+    pub async fn serve(self, listener: tokio::net::TcpListener) -> std::io::Result<()> {
+        let sweeper = self.sessions.clone();
+        let sweep = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                sweeper.sweep();
+            }
+        });
+        let result = axum::serve(listener, self.router())
+            .with_graceful_shutdown(async {
+                let _ = tokio::signal::ctrl_c().await;
+            })
+            .await;
+        sweep.abort();
+        result
+    }
+}
+
+struct SessionTable<E: Environment> {
+    env: Arc<E>,
+    inner: Mutex<HashMap<String, Arc<Slot<E>>>>,
     max_sessions: usize,
     idle_timeout: Option<Duration>,
-    kind: EnvKind,
-    arith_ops: u8,
 }
 
-enum Live {
-    Echo(EchoEnvironment),
-    Wordle(WordleEnvironment),
-    Arith(ArithEnvironment),
-}
-
-struct Slot {
-    env: Live,
+struct Slot<E: Environment> {
+    session: Session<E>,
     attached: AtomicBool,
     pending_close: AtomicBool,
     last_activity: Mutex<Instant>,
@@ -108,25 +145,24 @@ enum CloseOutcome {
     Closing,
 }
 
-impl SessionTable {
-    fn new(config: &ServerConfig) -> Self {
+impl<E: Environment> SessionTable<E> {
+    fn new(env: Arc<E>, config: &ServerConfig) -> Self {
         Self {
+            env,
             inner: Mutex::new(HashMap::new()),
             max_sessions: config.max_sessions,
             idle_timeout: config.idle_timeout,
-            kind: config.kind,
-            arith_ops: config.arith_ops,
         }
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<Slot>>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<Slot<E>>>> {
         match self.inner.lock() {
             Ok(guard) => guard,
             Err(poison) => poison.into_inner(),
         }
     }
 
-    fn sweep_locked(&self, sessions: &mut HashMap<String, Arc<Slot>>) {
+    fn sweep_locked(&self, sessions: &mut HashMap<String, Arc<Slot<E>>>) {
         let Some(idle) = self.idle_timeout else {
             return;
         };
@@ -148,7 +184,7 @@ impl SessionTable {
         self.sweep_locked(&mut sessions);
     }
 
-    fn insert(&self, attached: bool) -> Result<(String, Arc<Slot>), SessionError> {
+    fn insert(&self, attached: bool) -> Result<(String, Arc<Slot<E>>), SessionError> {
         let mut sessions = self.lock();
         self.sweep_locked(&mut sessions);
         if sessions.len() >= self.max_sessions {
@@ -159,13 +195,8 @@ impl SessionTable {
         }
         let id = Uuid::new_v4().to_string();
         let episode_id = Uuid::new_v4().to_string();
-        let env = match self.kind {
-            EnvKind::Echo => Live::Echo(EchoEnvironment::open(episode_id)),
-            EnvKind::Wordle => Live::Wordle(WordleEnvironment::open(episode_id)),
-            EnvKind::Arith => Live::Arith(ArithEnvironment::open(episode_id, self.arith_ops)),
-        };
         let slot = Arc::new(Slot {
-            env,
+            session: Session::open(self.env.clone(), &episode_id),
             attached: AtomicBool::new(attached),
             pending_close: AtomicBool::new(false),
             last_activity: Mutex::new(Instant::now()),
@@ -174,15 +205,7 @@ impl SessionTable {
         Ok((id, slot))
     }
 
-    fn open(&self) -> Result<String, SessionError> {
-        self.insert(false).map(|(id, _)| id)
-    }
-
-    fn open_and_attach(&self) -> Result<(String, Arc<Slot>), SessionError> {
-        self.insert(true)
-    }
-
-    fn attach(&self, id: &str) -> Result<Arc<Slot>, SessionError> {
+    fn attach(&self, id: &str) -> Result<Arc<Slot<E>>, SessionError> {
         let sessions = self.lock();
         let slot = sessions
             .get(id)
@@ -197,7 +220,7 @@ impl SessionTable {
         Ok(slot.clone())
     }
 
-    fn get(&self, id: &str) -> Result<Arc<Slot>, SessionError> {
+    fn get(&self, id: &str) -> Result<Arc<Slot<E>>, SessionError> {
         let sessions = self.lock();
         let slot = sessions
             .get(id)
@@ -208,8 +231,7 @@ impl SessionTable {
     }
 
     fn destroy(&self, id: &str) {
-        let mut sessions = self.lock();
-        sessions.remove(id);
+        self.lock().remove(id);
     }
 
     fn close_http(&self, id: &str) -> Result<CloseOutcome, SessionError> {
@@ -227,7 +249,7 @@ impl SessionTable {
     }
 }
 
-fn touch(slot: &Slot) {
+fn touch<E: Environment>(slot: &Slot<E>) {
     let mut guard = match slot.last_activity.lock() {
         Ok(guard) => guard,
         Err(poison) => poison.into_inner(),
@@ -235,65 +257,16 @@ fn touch(slot: &Slot) {
     *guard = Instant::now();
 }
 
-impl AppState {
-    pub fn new(config: ServerConfig) -> Self {
-        let sessions = Arc::new(SessionTable::new(&config));
-        Self {
-            sessions,
-            config: Arc::new(config),
-        }
-    }
-
-    pub fn kind(&self) -> EnvKind {
-        self.config.kind
-    }
-
-    pub fn router(&self) -> Router {
-        Router::new()
-            .route("/health", get(health))
-            .route("/metadata", get(metadata))
-            .route("/schema", get(schema))
-            .route("/mcp", post(mcp))
-            .route("/ws", get(ws))
-            .with_state(self.clone())
-    }
-}
-
-pub async fn serve(listener: tokio::net::TcpListener, state: AppState) -> std::io::Result<()> {
-    let sweeper = state.clone();
-    let sweep = tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(30)).await;
-            sweeper.sessions.sweep();
-        }
-    });
-    let result = axum::serve(listener, state.router())
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await;
-    sweep.abort();
-    result
-}
-
 async fn health() -> Json<Value> {
     Json(json!({ "status": "healthy" }))
 }
 
-async fn metadata(State(state): State<AppState>) -> Json<Value> {
-    Json(match state.kind() {
-        EnvKind::Echo => protocol::metadata_document(),
-        EnvKind::Wordle => wordle_env::metadata_document(),
-        EnvKind::Arith => arith_env::metadata_document(),
-    })
+async fn metadata<E: Environment>(State(server): State<Server<E>>) -> Json<Value> {
+    Json(server.env.metadata().to_json())
 }
 
-async fn schema(State(state): State<AppState>) -> Json<Value> {
-    Json(match state.kind() {
-        EnvKind::Echo => protocol::schema_document(),
-        EnvKind::Wordle => wordle_env::schema_document(),
-        EnvKind::Arith => arith_env::schema_document(),
-    })
+async fn schema<E: Environment>(State(server): State<Server<E>>) -> Json<Value> {
+    Json(server.env.schema())
 }
 
 #[derive(Deserialize)]
@@ -301,55 +274,49 @@ struct WsQuery {
     session_id: Option<String>,
 }
 
-async fn ws(
+async fn ws<E: Environment>(
     upgrade: WebSocketUpgrade,
-    State(state): State<AppState>,
+    State(server): State<Server<E>>,
     Query(query): Query<WsQuery>,
 ) -> impl IntoResponse {
-    let max = state.config.max_message_bytes;
+    let max = server.config.max_message_bytes;
     upgrade
         .max_message_size(max)
         .max_frame_size(max)
-        .on_upgrade(move |socket| handle_socket(socket, state, query.session_id))
+        .on_upgrade(move |socket| handle_socket(socket, server, query.session_id))
 }
 
-async fn handle_socket(mut socket: WebSocket, state: AppState, session_id: Option<String>) {
+async fn handle_socket<E: Environment>(
+    mut socket: WebSocket,
+    server: Server<E>,
+    session_id: Option<String>,
+) {
     let attached = match session_id.as_deref().filter(|id| !id.is_empty()) {
-        Some(id) => match state.sessions.attach(id) {
-            Ok(slot) => Some((id.to_string(), slot)),
-            Err(error) => {
-                let _ = send_text(&mut socket, &session_error_frame(&error)).await;
-                close_socket(&mut socket).await;
-                return;
-            }
-        },
-        None => match state.sessions.open_and_attach() {
-            Ok(pair) => Some(pair),
-            Err(error) => {
-                let _ = send_text(&mut socket, &session_error_frame(&error)).await;
-                close_socket(&mut socket).await;
-                return;
-            }
-        },
+        Some(id) => server
+            .sessions
+            .attach(id)
+            .map(|slot| (id.to_string(), slot)),
+        None => server.sessions.insert(true),
     };
-    let Some((id, slot)) = attached else {
-        return;
+    let (id, slot) = match attached {
+        Ok(pair) => pair,
+        Err(error) => {
+            let _ = send_text(&mut socket, &session_error_frame(&error)).await;
+            close_socket(&mut socket).await;
+            return;
+        }
     };
     message_loop(&mut socket, &slot).await;
-    state.sessions.destroy(&id);
+    server.sessions.destroy(&id);
     close_socket(&mut socket).await;
 }
 
-async fn message_loop(socket: &mut WebSocket, slot: &Slot) {
-    loop {
-        let message = match socket.recv().await {
-            Some(Ok(message)) => message,
-            _ => break,
-        };
+async fn message_loop<E: Environment>(socket: &mut WebSocket, slot: &Slot<E>) {
+    while let Some(Ok(message)) = socket.recv().await {
         match message {
             Message::Text(text) => {
                 touch(slot);
-                match dispatch(&slot.env, text.as_str()) {
+                match slot.session.dispatch(text.as_str()) {
                     Dispatch::Reply(frame) => {
                         if send_text(socket, &frame).await.is_err() {
                             break;
@@ -359,7 +326,7 @@ async fn message_loop(socket: &mut WebSocket, slot: &Slot) {
                 }
             }
             Message::Binary(_) => {
-                let frame = protocol::error_frame(&WireError::new(
+                let frame = wire::error_frame(&WireError::new(
                     "INVALID_JSON",
                     "Invalid JSON: binary frame",
                 ));
@@ -378,145 +345,30 @@ async fn message_loop(socket: &mut WebSocket, slot: &Slot) {
     }
 }
 
-enum Dispatch {
-    Reply(String),
-    Close,
-}
-
-fn dispatch(env: &Live, text: &str) -> Dispatch {
-    match env {
-        Live::Echo(env) => dispatch_echo(env, text),
-        Live::Wordle(env) => dispatch_wordle(env, text),
-        Live::Arith(env) => dispatch_arith(env, text),
-    }
-}
-
-fn dispatch_arith(env: &ArithEnvironment, text: &str) -> Dispatch {
-    let incoming = match arith_env::parse_incoming(text) {
-        Ok(incoming) => incoming,
-        Err(error) => return Dispatch::Reply(protocol::error_frame(&error)),
-    };
-    match incoming {
-        arith_env::Incoming::Close => Dispatch::Close,
-        arith_env::Incoming::State => Dispatch::Reply(env.state_frame()),
-        arith_env::Incoming::Reset { seed, episode_id } => {
-            let episode_id = episode_id.unwrap_or_else(|| Uuid::new_v4().to_string());
-            match env.reset(seed, episode_id) {
-                Ok(frame) => Dispatch::Reply(frame),
-                Err(error) => Dispatch::Reply(protocol::error_frame(&WireError::new(
-                    arith_code(&error),
-                    error.to_string(),
-                ))),
-            }
-        }
-        arith_env::Incoming::Step { message } => match env.step(message) {
-            Ok(frame) => Dispatch::Reply(frame),
-            Err(error) => Dispatch::Reply(protocol::error_frame(&WireError::new(
-                arith_code(&error),
-                error.to_string(),
-            ))),
-        },
-    }
-}
-
-fn arith_code(error: &crate::arith_env::ArithError) -> &'static str {
-    match error {
-        crate::arith_env::ArithError::ActionTooLong => "VALIDATION_ERROR",
-        crate::arith_env::ArithError::AlreadyDone
-        | crate::arith_env::ArithError::StepCountOverflow => "EXECUTION_ERROR",
-    }
-}
-
-fn dispatch_wordle(env: &WordleEnvironment, text: &str) -> Dispatch {
-    let incoming = match wordle_env::parse_incoming(text) {
-        Ok(incoming) => incoming,
-        Err(error) => return Dispatch::Reply(protocol::error_frame(&error)),
-    };
-    match incoming {
-        wordle_env::Incoming::Close => Dispatch::Close,
-        wordle_env::Incoming::State => Dispatch::Reply(env.state_frame()),
-        wordle_env::Incoming::Reset { seed, episode_id } => {
-            let episode_id = episode_id.unwrap_or_else(|| Uuid::new_v4().to_string());
-            match env.reset(seed, episode_id) {
-                Ok(frame) => Dispatch::Reply(frame),
-                Err(error) => Dispatch::Reply(protocol::error_frame(&WireError::new(
-                    wordle_code(&error),
-                    error.to_string(),
-                ))),
-            }
-        }
-        wordle_env::Incoming::Step { message } => match env.step(message) {
-            Ok(frame) => Dispatch::Reply(frame),
-            Err(error) => Dispatch::Reply(protocol::error_frame(&WireError::new(
-                wordle_code(&error),
-                error.to_string(),
-            ))),
-        },
-    }
-}
-
-fn wordle_code(error: &crate::wordle_env::WordleError) -> &'static str {
-    match error {
-        crate::wordle_env::WordleError::ActionTooLong => "VALIDATION_ERROR",
-        crate::wordle_env::WordleError::AlreadyDone
-        | crate::wordle_env::WordleError::StepCountOverflow => "EXECUTION_ERROR",
-    }
-}
-
-fn dispatch_echo(env: &EchoEnvironment, text: &str) -> Dispatch {
-    let incoming = match protocol::parse_incoming(text) {
-        Ok(incoming) => incoming,
-        Err(error) => return Dispatch::Reply(protocol::error_frame(&error)),
-    };
-    match incoming {
-        Incoming::Close => Dispatch::Close,
-        Incoming::State => match env.state() {
-            Ok(state) => {
-                Dispatch::Reply(protocol::state_frame(&state.episode_id, state.step_count))
-            }
-            Err(error) => Dispatch::Reply(execution_frame(&error)),
-        },
-        Incoming::Reset { seed, episode_id } => {
-            let episode_id = episode_id.unwrap_or_else(|| Uuid::new_v4().to_string());
-            match env.reset(seed, episode_id) {
-                Ok(outcome) => Dispatch::Reply(protocol::observation_frame(&outcome)),
-                Err(error) => Dispatch::Reply(execution_frame(&error)),
-            }
-        }
-        Incoming::Step(action) => match env.step(action) {
-            Ok(outcome) => Dispatch::Reply(protocol::observation_frame(&outcome)),
-            Err(error) => Dispatch::Reply(execution_frame(&error)),
-        },
-    }
-}
-
-fn execution_frame(error: &EnvError) -> String {
-    protocol::error_frame(&WireError::new("EXECUTION_ERROR", error.to_string()))
-}
-
 fn session_error_frame(error: &SessionError) -> String {
-    match error {
-        SessionError::Capacity { active, max } => protocol::error_frame(
-            &WireError::new(
-                "CAPACITY_REACHED",
-                format!("Server at capacity: {active}/{max} sessions active. Cannot accept new connections."),
-            )
-            .with_extra(vec![
-                ("active_sessions", json!(active)),
-                ("max_sessions", json!(max)),
-            ]),
-        ),
+    let error = match error {
+        SessionError::Capacity { active, max } => WireError::new(
+            "CAPACITY_REACHED",
+            format!(
+                "Server at capacity: {active}/{max} sessions active. Cannot accept new connections."
+            ),
+        )
+        .with_extra(vec![
+            ("active_sessions", json!(active)),
+            ("max_sessions", json!(max)),
+        ]),
         SessionError::Unknown(id) => {
-            protocol::error_frame(&WireError::new("SESSION_ERROR", format!("Unknown session_id: {id}")))
+            WireError::new("SESSION_ERROR", format!("Unknown session_id: {id}"))
         }
-        SessionError::AlreadyAttached(id) => protocol::error_frame(&WireError::new(
+        SessionError::AlreadyAttached(id) => WireError::new(
             "SESSION_ERROR",
             format!("Session {id} already has an attached WebSocket"),
-        )),
+        ),
         SessionError::Closing(id) => {
-            protocol::error_frame(&WireError::new("SESSION_ERROR", format!("Session {id} is closing")))
+            WireError::new("SESSION_ERROR", format!("Session {id} is closing"))
         }
-    }
+    };
+    wire::error_frame(&error)
 }
 
 async fn send_text(socket: &mut WebSocket, text: &str) -> Result<(), axum::Error> {
@@ -527,17 +379,19 @@ async fn close_socket(socket: &mut WebSocket) {
     let _ = socket.send(Message::Close(None)).await;
 }
 
-async fn mcp(State(state): State<AppState>, body: axum::body::Bytes) -> impl IntoResponse {
+async fn mcp<E: Environment>(
+    State(server): State<Server<E>>,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
     let request: Value = match serde_json::from_slice(&body) {
         Ok(value) => value,
         Err(_) => return rpc_response(rpc_error(Value::Null, -32700, "Parse error", None)),
     };
-    let obj = match request.as_object() {
-        Some(obj) => obj,
-        None => return rpc_response(rpc_error(Value::Null, -32600, "Invalid Request", None)),
+    let Some(obj) = request.as_object() else {
+        return rpc_response(rpc_error(Value::Null, -32600, "Invalid Request", None));
     };
     let id = obj.get("id").cloned().unwrap_or(Value::Null);
-    if obj.get("jsonrpc").and_then(Value::as_str) != Some("2.0") || !obj.get("method").is_some() {
+    if obj.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
         return rpc_response(rpc_error(id, -32600, "Invalid Request", None));
     }
     let Some(method) = obj.get("method").and_then(Value::as_str) else {
@@ -549,8 +403,8 @@ async fn mcp(State(state): State<AppState>, body: axum::body::Bytes) -> impl Int
         Some(_) => return rpc_response(rpc_error(id, -32602, "Params must be an object", None)),
     };
     let payload = match method {
-        "openenv/session/create" => match state.sessions.open() {
-            Ok(session_id) => rpc_ok(id, json!({ "session_id": session_id })),
+        "openenv/session/create" => match server.sessions.insert(false) {
+            Ok((session_id, _)) => rpc_ok(id, json!({ "session_id": session_id })),
             Err(error) => session_rpc_error(id, &error),
         },
         "openenv/session/close" => match params.get("session_id").and_then(Value::as_str) {
@@ -560,7 +414,7 @@ async fn mcp(State(state): State<AppState>, body: axum::body::Bytes) -> impl Int
                 "Invalid params - 'session_id' is required",
                 None,
             ),
-            Some(session_id) => match state.sessions.close_http(session_id) {
+            Some(session_id) => match server.sessions.close_http(session_id) {
                 Ok(CloseOutcome::Closed) => {
                     rpc_ok(id, json!({ "session_id": session_id, "closed": true }))
                 }
@@ -571,17 +425,25 @@ async fn mcp(State(state): State<AppState>, body: axum::body::Bytes) -> impl Int
                 Err(error) => session_rpc_error(id, &error),
             },
         },
-        "tools/list" => match session_from_params(&state, &params) {
-            Ok(slot) => {
-                let tools = match &slot.env {
-                    Live::Echo(_) => protocol::http_tools(),
-                    Live::Wordle(_) | Live::Arith(_) => Vec::new(),
-                };
+        "tools/list" => match session_from_params(&server, &params) {
+            Ok(_) => {
+                let tools: Vec<Value> = server
+                    .env
+                    .tools()
+                    .into_iter()
+                    .map(|tool| {
+                        json!({
+                            "name": tool.name,
+                            "description": tool.description,
+                            "inputSchema": tool.input_schema,
+                        })
+                    })
+                    .collect();
                 rpc_ok(id, json!({ "tools": tools }))
             }
             Err(error) => session_rpc_error(id, &error),
         },
-        "tools/call" => match call_tool(&state, id.clone(), &params) {
+        "tools/call" => match call_tool(&server, id.clone(), &params) {
             Ok(value) => rpc_ok(id, value),
             Err(error) => error,
         },
@@ -590,23 +452,23 @@ async fn mcp(State(state): State<AppState>, body: axum::body::Bytes) -> impl Int
     rpc_response(payload)
 }
 
-fn session_from_params(
-    state: &AppState,
+fn session_from_params<E: Environment>(
+    server: &Server<E>,
     params: &Map<String, Value>,
-) -> Result<Arc<Slot>, SessionError> {
-    let Some(id) = params.get("session_id").and_then(Value::as_str) else {
-        return Err(SessionError::Unknown(String::new()));
-    };
-    if id.is_empty() {
-        return Err(SessionError::Unknown(id.to_string()));
+) -> Result<Arc<Slot<E>>, SessionError> {
+    match params.get("session_id").and_then(Value::as_str) {
+        Some(id) if !id.is_empty() => server.sessions.get(id),
+        _ => Err(SessionError::Unknown(String::new())),
     }
-    state.sessions.get(id)
 }
 
-fn call_tool(state: &AppState, id: Value, params: &Map<String, Value>) -> Result<Value, Value> {
-    let name = match params.get("name").and_then(Value::as_str) {
-        Some(name) => name,
-        None => return Err(rpc_error(id, -32602, "Missing 'name' in params", None)),
+fn call_tool<E: Environment>(
+    server: &Server<E>,
+    id: Value,
+    params: &Map<String, Value>,
+) -> Result<Value, Value> {
+    let Some(name) = params.get("name").and_then(Value::as_str) else {
+        return Err(rpc_error(id, -32602, "Missing 'name' in params", None));
     };
     let arguments = match params.get("arguments") {
         None => Map::new(),
@@ -620,48 +482,26 @@ fn call_tool(state: &AppState, id: Value, params: &Map<String, Value>) -> Result
             ));
         }
     };
-    let slot = match session_from_params(state, params) {
-        Ok(slot) => slot,
-        Err(error) => return Err(session_rpc_error(id, &error)),
-    };
-    let Live::Echo(env) = &slot.env else {
-        return Err(rpc_error(
-            id,
-            -32601,
-            "tools/call is not available on this environment",
-            None,
-        ));
-    };
-    let outcome = match env.invoke(StepAction::Call(protocol::tool_call(name, &arguments))) {
-        Ok(outcome) => outcome,
-        Err(error) => return Err(rpc_error(id, -32603, error.to_string(), None)),
-    };
-    match outcome.body {
-        Body::Called { output, .. } => Ok(tool_result_value(&output)),
-        Body::Failed {
-            error_type,
-            message,
-            ..
-        } => {
-            let code = match error_type {
-                crate::kernel::ToolErrorType::NotFound
-                | crate::kernel::ToolErrorType::InvalidArgs => -32602,
-                crate::kernel::ToolErrorType::Execution => -32603,
-            };
-            Err(rpc_error(id, code, message, None))
+    let slot = session_from_params(server, params)
+        .map_err(|error| session_rpc_error(id.clone(), &error))?;
+    match slot.session.call_tool(name, &arguments) {
+        Ok(output) => Ok(tool_result_value(&output)),
+        Err(ToolCallError::NotFound(name)) => {
+            Err(rpc_error(id, -32602, format!("Unknown tool: {name}"), None))
         }
-        Body::Ready | Body::Tools => Err(rpc_error(
-            id,
-            -32603,
-            "tool call did not return a tool result",
-            None,
-        )),
+        Err(ToolCallError::Tool(ToolError::InvalidArgs(message))) => {
+            Err(rpc_error(id, -32602, message, None))
+        }
+        Err(ToolCallError::Tool(ToolError::Execution(message))) => {
+            Err(rpc_error(id, -32603, message, None))
+        }
+        Err(ToolCallError::Refused(error)) => Err(rpc_error(id, -32603, error.message, None)),
     }
 }
 
 /// The production HTTP client unwraps `result.data` when the payload is a
 /// FastMCP `CallToolResult`. Match that shape.
-fn tool_result_value(output: &Value) -> Value {
+pub fn tool_result_value(output: &Value) -> Value {
     let text = match output {
         Value::String(text) => text.clone(),
         other => other.to_string(),

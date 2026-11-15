@@ -40,14 +40,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # The site's headline install command is
-      # `curl -fsSL https://senv.h5i.dev/install.sh | sh`, and the script it
-      # serves is the repository's own. Copying it at publish time rather than
-      # keeping a second copy under `docs/` means the served installer cannot
-      # drift from the one in the tree — there is only ever one file.
-      - name: Serve the repository's installer at /install.sh
-        run: cp install.sh docs/install.sh
-
       # `docs/` is otherwise served verbatim: no Jekyll, no generator.
       # `include-hidden-files` keeps `.nojekyll` in the artifact, which matters
       # only on the day someone repoints the Pages source at a branch — the

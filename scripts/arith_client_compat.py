@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drive the unmodified TextArenaEnv client against `senv serve --env arith`.
+"""Drive the unmodified TextArenaEnv client against the `arith-env` example server.
 
 The client is imported from the pinned OpenEnv tree. Arith-v0 is a custom senv
 task on that socket, not an upstream OpenEnv environment and not TextArena.

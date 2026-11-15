@@ -28,8 +28,8 @@ mkdir -p "$out"
   nvidia-smi -L || true
 } >"$out/machine.txt"
 
-cargo build --locked --release --bin senv
-bin="${CARGO_TARGET_DIR:-$root/target}/release/senv"
+cargo build --locked --release -p echo-env -p wordle-env
+release="${CARGO_TARGET_DIR:-$root/target}/release"
 
 cleanup() {
   if [[ -n "${rust_pid:-}" ]]; then kill "$rust_pid" 2>/dev/null || true; fi
@@ -61,7 +61,7 @@ run_one() {
 }
 
 echo "rust echo" | tee "$out/progress.txt"
-"$bin" serve --bind 127.0.0.1:8771 --env echo --max-sessions 32 >"$out/rust-echo.log" 2>&1 &
+"$release/echo-env" --bind 127.0.0.1:8771 --max-sessions 32 >"$out/rust-echo.log" 2>&1 &
 rust_pid=$!
 wait_health http://127.0.0.1:8771 "$rust_pid"
 run_one echo http://127.0.0.1:8771 "$rust_pid" rust-echo.json
@@ -70,7 +70,7 @@ wait "$rust_pid" 2>/dev/null || true
 unset rust_pid
 
 echo "rust wordle" | tee -a "$out/progress.txt"
-"$bin" serve --bind 127.0.0.1:8772 --env wordle --max-sessions 32 >"$out/rust-wordle.log" 2>&1 &
+"$release/wordle-env" --bind 127.0.0.1:8772 --max-sessions 32 >"$out/rust-wordle.log" 2>&1 &
 rust_pid=$!
 wait_health http://127.0.0.1:8772 "$rust_pid"
 run_one wordle http://127.0.0.1:8772 "$rust_pid" rust-wordle.json
